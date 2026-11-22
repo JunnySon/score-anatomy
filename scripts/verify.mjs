@@ -94,6 +94,8 @@ const metrics = existsSync(join(OUT, 'metrics.jsonl'))
 
 const unitTests = unit ? unit.testResults.flatMap((f) => f.assertionResults) : [];
 const missingUnit = REQUIRED_UNIT_TESTS.filter((name) => !unitTests.some((t) => t.fullName === name && t.status === 'passed'));
+// 통과도 실패도 아닌 단위 테스트(건너뜀, 나중에 할 일로 표시)는 통과로 세지 않는다.
+const skippedUnit = unitTests.filter((t) => t.status !== 'passed' && t.status !== 'failed');
 
 const tests = [];
 function walk(suite, path) {
@@ -145,7 +147,11 @@ const REQUIRED = {
   shots: 64, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 300, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 100, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 70, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  e2eTests: 78, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  unitTests: 148, // 통과한 단위 테스트 수의 최소
+  leakChecks: 44, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
+  leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
+  leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
 };
 const auditsEnough = audits.length >= REQUIRED.auditStates;
 const smallEnough = smallAudits.length >= REQUIRED.smallStates;
@@ -158,7 +164,14 @@ const netComplete =
   net.length === ranTests.length && net.every((n) => isCount(n.total) && Array.isArray(n.external) && isCount(n.serviceWorkers) && isCount(n.permissionAsks));
 
 // ---------- 항목별 판정 ----------
-const unitOk = unitRun.ok && unit !== null && unit.numFailedTests === 0 && unit.numTotalTests > 0 && missingUnit.length === 0;
+const unitOk =
+  unitRun.ok &&
+  unit !== null &&
+  unit.numFailedTests === 0 &&
+  unit.numPassedTests === unit.numTotalTests &&
+  skippedUnit.length === 0 &&
+  unit.numPassedTests >= REQUIRED.unitTests &&
+  missingUnit.length === 0;
 const flowTests = byFile('flow.spec.ts');
 const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
@@ -185,12 +198,12 @@ const screenTextOk = auditsEnough && count(audits, (a) => a.forbidden) === 0 && 
 const renderedContrastOk = auditsEnough && count(audits, (a) => a.lowContrast) === 0 && count(audits, (a) => a.lowEdges) === 0;
 const contrastOk = contrastRun.ok && contrast !== null && contrast.ok && renderedContrastOk;
 const leakOk =
-  leaks.length > 0 &&
+  leaks.length >= REQUIRED.leakChecks &&
   count(leaks, (l) => l.leaks) === 0 &&
-  leakControls.length > 0 &&
+  leakControls.length >= REQUIRED.leakControls &&
   leakControls.every((c) => c.caught27 > 0 && c.caught15 > 0) &&
   leakDiff !== null &&
-  leakDiff.compared > 0 &&
+  leakDiff.compared >= REQUIRED.leakCompared &&
   leakDiff.differences.length === 0 &&
   leakDiff.controlShort === true &&
   leakDiff.controlMc === true;
@@ -248,7 +261,7 @@ function buildReport(textOk, textResult) {
       '단위 테스트',
       unitOk,
       unit
-        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개. 꼭 있어야 하는 검산 예시와 추가 경우 테스트 ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인`
+        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개, 건너뛴 것 ${skippedUnit.length}개. 꼭 있어야 하는 검산 예시와 추가 경우 테스트 ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인`
         : '결과 파일 없음',
     ],
     [
@@ -331,12 +344,13 @@ function buildReport(textOk, textResult) {
   say('| --- | --- | --- | --- |');
   for (const [no, name, ok, detail] of items) say(`| ${no} | ${name} | ${mark(ok)} | ${detail} |`);
   say();
-  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0 || failedSteps.length > 0) {
+  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0 || skippedUnit.length > 0 || failedSteps.length > 0) {
     say('## 실패한 것');
     say();
     for (const [no, name] of failed) say(`- ${no}번 ${name}`);
     for (const t of otherFailed) say(`- 테스트${t.skipped ? '(건너뜀)' : ''}: ${t.title}`);
     for (const name of missingUnit) say(`- 없거나 통과하지 못한 단위 테스트: ${name}`);
+    for (const t of skippedUnit) say(`- 건너뛴 단위 테스트: ${t.fullName}`);
     for (const name of failedSteps) say(`- 실패로 끝난 실행 단계: ${name}`);
     say();
   }
@@ -344,11 +358,11 @@ function buildReport(textOk, textResult) {
   say('## 1. 단위 테스트');
   say();
   if (unit) {
-    say('| 파일 | 테스트 수 | 실패 |');
-    say('| --- | --- | --- |');
+    say('| 파일 | 테스트 수 | 실패 | 건너뜀 |');
+    say('| --- | --- | --- | --- |');
     for (const f of unit.testResults) {
       const name = f.name.replace(ROOT, '').replace(/^[\\/]/, '').split('\\').join('/');
-      say(`| ${name} | ${f.assertionResults.length} | ${f.assertionResults.filter((a) => a.status !== 'passed').length} |`);
+      say(`| ${name} | ${f.assertionResults.length} | ${f.assertionResults.filter((a) => a.status === 'failed').length} | ${f.assertionResults.filter((a) => a.status !== 'passed' && a.status !== 'failed').length} |`);
     }
     say();
     say('7장 검산 예시의 기대값(실제 78점, 맞힌 문항 24개, 추측 표시 정답 7점, 찍음 전체 배점 18점, 찍기 운을 평균으로 본 점수 74.6, 실수 표시 오답 8점, 그 외 오답 14점, 등급별 남은 점수, 계단 3개)과');
@@ -476,7 +490,7 @@ function buildReport(textOk, textResult) {
   say();
   say('만든 쪽이 캡처를 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
   say();
-  say(`판정에 쓰는 최소 기준: 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지면 해당 항목이 실패로 적혀요.`);
+  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지면 해당 항목이 실패로 적혀요.`);
   say();
 
   say('## 자동으로 확인하지 못하는 것');
@@ -487,7 +501,10 @@ function buildReport(textOk, textResult) {
   say('- 화면 낭독기(VoiceOver, TalkBack)로 실제로 들었을 때의 흐름.');
   say('- 아티팩트 뷰어 안에서의 동작. 뼈대와 비슷한 틀에 넣어 여는 것까지만 확인했어요.');
   say();
-  return { text: L.join('\n'), ok: failed.length === 0 && otherFailed.length === 0 && missingUnit.length === 0 && failedSteps.length === 0 };
+  return {
+    text: L.join('\n'),
+    ok: failed.length === 0 && otherFailed.length === 0 && missingUnit.length === 0 && skippedUnit.length === 0 && failedSteps.length === 0,
+  };
 }
 
 // 7. 금지 문자 파일 검사. 보고서 자신도 검사 대상이므로, 먼저 보고서를 한 번 쓰고 검사한 뒤 결과를 넣어 다시 쓴다.

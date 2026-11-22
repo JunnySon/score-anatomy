@@ -6,6 +6,7 @@ import {
   deleteAllSessions,
   deleteSession,
   finishTestRun,
+  logReviewConfirm,
   logScreenEvent,
   openSession,
   putAnswer,
@@ -255,9 +256,11 @@ describe('테스트 측정과 시험 기록', () => {
     logScreenEvent('anatomy');
     logScreenEvent('score');
     logScreenEvent('input');
+    logReviewConfirm();
     logScreenEvent('marks');
     logScreenEvent('start');
     let run = activeRun(store.get())!;
+    expect(run.reviewConfirmAt).toBeNull();
     expect(run.screens.map((x) => x.screen)).toEqual(['start', 'history', 'other:anatomy', 'other:score', 'other:input', 'other:marks', 'start']);
     expect(run.firstScoreAt).toBeNull();
     expect(run.inputStartAt).toBeNull();

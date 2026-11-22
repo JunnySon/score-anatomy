@@ -186,7 +186,10 @@ export function logScreenEvent(name: string): void {
 export function logReviewConfirm(): void {
   if (!store.get().activeRunId) return;
   const now = Date.now();
-  store.update((d) => withActiveRun(d, (run) => (run.reviewConfirmAt === null ? { ...run, reviewConfirmAt: now } : run)));
+  // 측정에 묶인 기록의 입력 확인만 적는다.
+  store.update((d) =>
+    withActiveRun(d, (run) => (run.sessionId === d.currentId && run.reviewConfirmAt === null ? { ...run, reviewConfirmAt: now } : run)),
+  );
 }
 
 /** 진행 중이던 측정을 닫는다. 최종 답을 옮겨 두고 끝난 시각을 남긴다. */

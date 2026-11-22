@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { exampleAnswers } from '../src/logic/example';
-import { chooseExam, enterKeypad, enterRows, expect, expectHash, loadExam, openApp, tapKey, test } from './helpers';
+import { chooseExam, enterKeypad, enterRows, expect, expectHash, loadExam, openApp, seedStore, tapKey, test } from './helpers';
 
 // (12) 테스트 진행자용 화면: 측정 기록, 정답지 대조, 내보내기.
 
@@ -231,3 +231,58 @@ test('테스트를 시작하지 않으면 측정 기록을 남기지 않는다',
   expect(stored.testRuns).toEqual([]);
   expect(stored.activeRunId).toBeNull();
 });
+
+test('측정 카드: 망가진 시작 시각은 비워 보여 주고, 카드 안의 입력 칸은 표면색이다', async ({ page }) => {
+  await openApp(page, '/');
+  const run = (id: string, participant: string, startedAt: number) => ({
+    id,
+    participant,
+    inputMode: 'keypad',
+    plannedExamId: 'sample-a',
+    startedAt,
+    endedAt: Date.UTC(2026, 10, 22, 10, 30, 0),
+    sessionId: null,
+    examId: 'sample-a',
+    screens: [],
+  });
+  await seedStore(page, {
+    version: 1,
+    sessions: [],
+    currentId: null,
+    // P01 은 시작 시각이 날짜로 쓸 수 없는 값이고, P02 는 멀쩡하다(Asia/Seoul 로 19시 0분 7초).
+    testRuns: [run('r1', 'P01', 1e20), run('r2', 'P02', Date.UTC(2026, 10, 22, 10, 0, 7))],
+  });
+  await page.reload();
+  await openApp(page, '/test');
+  const broken = page.locator('[data-testid="run-card"][data-participant="P01"]');
+  const fine = page.locator('[data-testid="run-card"][data-participant="P02"]');
+  await expect(broken.getByTestId('m-started')).toHaveText('아직 없음');
+  await expect(fine.getByTestId('m-started')).toHaveText('19:00:07');
+  // 1970년의 시각(Asia/Seoul 로 09:00:00)으로 적지 않는다.
+  await expect(broken).not.toContainText('09:00:00');
+  // 내보낸 값에서도 비어 있다.
+  await page.getByRole('button', { name: 'CSV 복사' }).click();
+  await expect(page.getByRole('status').filter({ hasText: '복사했어요.' })).toHaveCount(1);
+  const lines = (await page.evaluate(() => navigator.clipboard.readText())).split('\n');
+  const col = lines[0]!.split(',').indexOf('started_at');
+  const byParticipant = Object.fromEntries(lines.slice(1).map((l) => [l.split(',')[0], l.split(',')[col]]));
+  expect(byParticipant).toEqual({ P01: '', P02: '2026-11-22T10:00:07.000Z' });
+
+  // 카드 안의 입력 칸(정답지 대조)은 카드와 같은 표면색이고, 1px 테두리로 구분된다.
+  const colors = await fine.evaluate((card) => {
+    const input = card.querySelector('textarea')!;
+    const cs = getComputedStyle(input);
+    return {
+      card: getComputedStyle(card).backgroundColor,
+      input: cs.backgroundColor,
+      page: getComputedStyle(document.body).backgroundColor,
+      borderWidth: cs.borderTopWidth,
+      borderColor: cs.borderTopColor,
+    };
+  });
+  expect(colors.input).toBe(colors.card);
+  expect(colors.input).not.toBe(colors.page);
+  expect(colors.borderWidth).toBe('1px');
+  expect(colors.borderColor).not.toBe(colors.input);
+});
+

@@ -367,6 +367,62 @@ test('기록 화면: 같은 시험의 기록이 여러 건이어도 접근성 �
   await expect(page.getByTestId('score')).toHaveText('78점');
 });
 
+test('기록 화면: 같은 분에 만든 같은 시험, 같은 점수의 기록은 초까지 적어 구분한다', async ({ page }) => {
+  await openApp(page, '/');
+  const base = { examId: 'sample-a', gradedBefore: 'not_yet', answers: {} };
+  await seedStore(page, {
+    version: 1,
+    sessions: [
+      // 테스트의 시간대는 Asia/Seoul 이라 10:00Z 는 19시 0분이다.
+      { ...base, id: 's1', createdAt: '2026-11-22T10:00:12.000Z' },
+      { ...base, id: 's2', createdAt: '2026-11-22T10:00:05.000Z' },
+      // 분이 다른 기록은 시와 분까지만 적는다.
+      { ...base, id: 's3', createdAt: '2026-11-22T09:30:00.000Z' },
+    ],
+    currentId: null,
+  });
+  await page.reload();
+  await openApp(page, '/history');
+  await expect(page.getByTestId('history-item')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 22일 19시 0분 12초, 입력 중' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 22일 19시 0분 5초, 입력 중' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 22일 18시 30분, 입력 중' })).toHaveCount(1);
+  // 목록에 보이는 글자, 지우기 버튼의 이름, 삭제 확인 문구도 같은 값으로 구분된다.
+  await expect(page.getByTestId('history-item').filter({ hasText: '19시 0분 5초' })).toHaveCount(1);
+  await page.getByRole('button', { name: '예시 시험 A 기록 지우기, 2026년 11월 22일 19시 0분 5초, 입력 중' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('예시 시험 A, 2026년 11월 22일 19시 0분 5초, 입력 중 기록이에요.');
+  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
+  await expect(page.getByTestId('history-item')).toHaveCount(2);
+  // 같은 분의 기록이 하나만 남으면 초는 적지 않는다.
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 22일 19시 0분, 입력 중' })).toHaveCount(1);
+  expect((await page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'))).sessions.map((x: { id: string }) => x.id)).toEqual(['s1', 's3']);
+});
+
+test('표시 화면 격자: "안 풂" 글자가 옆 칸의 답 숫자와 같은 높이에 있다', async ({ page }) => {
+  const exam = loadExam('a');
+  const answers = { ...exampleAnswers(exam), 7: 'skip' };
+  await openApp(page, '/');
+  await seedStore(page, {
+    version: 1,
+    sessions: [{ id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers }],
+    currentId: 's1',
+  });
+  await page.reload();
+  await openApp(page, '/marks');
+  await expect(page.locator('[data-mark-cell="7"] .cell__val')).toHaveText('안 풂');
+  const centers = await page.evaluate(() => {
+    // 글자가 실제로 그려진 자리의 세로 가운데.
+    const textCenter = (selector: string) => {
+      const range = document.createRange();
+      range.selectNodeContents(document.querySelector(selector)!);
+      const r = range.getBoundingClientRect();
+      return r.top + r.height / 2;
+    };
+    return { skip: textCenter('[data-mark-cell="7"] .cell__val'), next: textCenter('[data-mark-cell="8"] .cell__val') };
+  });
+  expect(Math.abs(centers.skip - centers.next)).toBeLessThanOrEqual(1);
+});
+
 test('5행 방식: 안 풂으로 둔 문항은 접근성 이름으로도 구분된다', async ({ page }) => {
   await openApp(page, '/?input=rows');
   await page.getByRole('button', { name: '시험 고르기' }).click();

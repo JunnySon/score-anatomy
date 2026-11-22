@@ -759,12 +759,28 @@ test.describe('마지막 문항을 넣어 저절로 입력 확인으로 넘어�
 });
 
 test.describe('표시 화면: 눌러도 자리가 바뀌지 않는다', () => {
-  for (const size of [
-    { width: 390, height: 844 },
-    { width: 360, height: 640 },
+  // 기본 글자 크기를 키운 경우(20px, 24px)도 본다. 글자가 커지면 "자신 없음" 줄이 칸보다 높아질 수 있다.
+  for (const c of [
+    { width: 390, height: 844, fontPx: 16 },
+    { width: 360, height: 640, fontPx: 16 },
+    { width: 360, height: 640, fontPx: 20 },
+    { width: 360, height: 640, fontPx: 24 },
+    { width: 390, height: 844, fontPx: 24 },
   ]) {
-    test(`단답형 번호와 시간 선택지 (${size.width}x${size.height})`, async ({ page }) => {
-      await page.setViewportSize(size);
+    test(`단답형 번호와 시간 선택지 (${c.width}x${c.height}, 기본 글자 ${c.fontPx}px)`, async ({ page }) => {
+      await page.setViewportSize({ width: c.width, height: c.height });
+      if (c.fontPx !== 16) {
+        // 브라우저의 기본 글자 크기를 키운 것과 같은 효과(rem 기준이 커진다).
+        await page.addInitScript((px) => {
+          const apply = () => {
+            const style = document.createElement('style');
+            style.textContent = `html { font-size: ${px}px; }`;
+            document.head.appendChild(style);
+          };
+          if (document.head) apply();
+          else document.addEventListener('DOMContentLoaded', apply);
+        }, c.fontPx);
+      }
       const exam = loadExam('a');
       await openApp(page, '/');
       await seedStore(page, {
@@ -794,6 +810,22 @@ test.describe('표시 화면: 눌러도 자리가 바뀌지 않는다', () => {
       await expect(page.locator('[data-short-mark="27"]')).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('time-enough')).toHaveAttribute('aria-checked', 'true');
       expect(await layout()).toEqual(before);
+      // "자신 없음"은 한 줄에 다 들어가고, 글자가 칸의 안쪽 여백을 넘지 않는다.
+      const overflow = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-short-mark] small')].filter((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const text = range.getBoundingClientRect();
+          const cell = el.closest('[data-short-mark]')!;
+          const cs = getComputedStyle(cell);
+          const box = cell.getBoundingClientRect();
+          const left = box.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft);
+          const right = box.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
+          const oneLine = text.height <= parseFloat(getComputedStyle(el).lineHeight) + 1;
+          return !oneLine || text.left < left - 0.5 || text.right > right + 0.5;
+        }).length,
+      );
+      expect(overflow).toBe(0);
       await page.getByTestId('time-missed').click();
       expect(await layout()).toEqual(before);
 
@@ -833,3 +865,85 @@ test.describe('표시 화면: 눌러도 자리가 바뀌지 않는다', () => {
     });
   }
 });
+
+test.describe('같은 자리로 보는 거리와 키보드', () => {
+  const seedAll = async (page: Page) => {
+    const exam = loadExam('a');
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [{ id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers: exampleAnswers(exam) }],
+      currentId: 's1',
+    });
+    await page.reload();
+  };
+
+  test('앞 누름에서 가로나 세로로 20px 떨어진 자리는 받지 않고, 30px 떨어진 자리는 받는다', async ({ page }) => {
+    await seedAll(page);
+    // 입력 확인의 "맞아요, 다음으로"를 누르면 표시 화면으로 넘어가고, 그 자리 둘레에는 "채점하기"가 온다.
+    const cases = [
+      { dx: 20, dy: 0, accepted: false },
+      { dx: 0, dy: -20, accepted: false },
+      { dx: -20, dy: 20, accepted: false },
+      { dx: 30, dy: 0, accepted: true },
+      { dx: -30, dy: 0, accepted: true },
+    ];
+    for (const c of cases) {
+      await openApp(page, '/review');
+      await waitSettled(page);
+      const box = await boxOf(page.getByRole('button', { name: '맞아요, 다음으로' }));
+      const at = { x: box.x + box.width * 0.65, y: box.y + box.height / 2 };
+      const near = { x: at.x + c.dx, y: at.y + c.dy };
+      await page.waitForTimeout(600);
+      await tap(page, at);
+      await page.waitForTimeout(150);
+      await tap(page, near);
+      await page.waitForTimeout(700);
+      const label = `옮긴 거리 (${c.dx}, ${c.dy})`;
+      if (c.accepted) {
+        // 받은 누름은 그 자리의 "채점하기"를 눌러 점수 화면으로 간다.
+        await expectHash(page, '/score');
+      } else {
+        await expectHash(page, '/marks');
+        expect(await hitInside(page, near, 'button'), `${label}: 그 자리에 버튼이 와 있어야 함`).toBe(true);
+        expect((await stored(page)).sessions[0].gradedAt ?? null, label).toBeNull();
+      }
+      // 다음 경우를 위해 채점을 지운다.
+      await page.evaluate(() => {
+        const data = JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}');
+        delete data.sessions[0].gradedAt;
+        delete data.sessions[0].firstGradedAt;
+        window.localStorage.setItem('score-anatomy', JSON.stringify(data));
+      });
+      await page.reload();
+    }
+  });
+
+  test('키보드로 누른 것은 막지 않는다(화면 전체를 막고 있는 동안에도)', async ({ page }) => {
+    const exam = loadExam('b');
+    const answers: Record<number, number> = {};
+    for (const it of exam.items.slice(0, 29)) answers[it.no] = it.kind === 'mc' ? 1 : 12;
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [{ id: 's1', examId: 'sample-b', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', seenBefore: 'first', answers }],
+      currentId: 's1',
+    });
+    await page.reload();
+    await openApp(page, '/input?input=keypad');
+    await expect(page.getByTestId('now-no')).toHaveText('30번');
+    await tapKey(page, 4);
+    await waitSettled(page);
+    const go = await centerOfLoc(page.locator('[data-key="go"]'));
+    await page.waitForTimeout(600);
+    // 마지막 문항을 넣으면 입력 확인으로 넘어가고 0.5초 동안 화면 전체가 누름을 받지 않는다.
+    await tap(page, go);
+    await expectHash(page, '/review');
+    await expect(page.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+    // 그동안에도 키보드(초점을 두고 Enter)로 누른 버튼은 눌린다.
+    await page.getByRole('button', { name: '맞아요, 다음으로' }).focus();
+    await page.keyboard.press('Enter');
+    await expectHash(page, '/marks');
+  });
+});
+

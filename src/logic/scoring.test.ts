@@ -78,8 +78,11 @@ describe('예시 시험 데이터', () => {
     expect(examC.cuts).toBeUndefined();
   });
 
-  it('좌표 라벨은 예시 좌표뿐이다', () => {
-    for (const e of EXAMS) {
+  it('예시 시험의 좌표 라벨은 예시 좌표뿐이다', () => {
+    // 실제 시험(isSample이 false)을 추가하면 그 시험의 좌표에는 확인한 실제 표기를 쓴다(docs/시험_추가_방법.md).
+    const samples = EXAMS.filter((e) => e.isSample);
+    expect(samples.length).toBeGreaterThanOrEqual(3);
+    for (const e of samples) {
       for (const t of Object.values(e.types)) {
         for (const c of t.coords ?? []) expect(c.label).toBe('예시 좌표');
       }
@@ -252,7 +255,43 @@ describe('추가 경우', () => {
     expect(an.wrongPoints).toBe(100);
     expect(an.hasGuessMark).toBe(false);
     expect(grade.items.every((i) => i.skipped)).toBe(true);
-    expect(selectSteps(examA, grade).length).toBeGreaterThanOrEqual(2);
+    // 3위(11점)가 2위(15점)의 70%(10.5점) 이상이라 3개다.
+    expect(selectSteps(examA, grade).map((s) => [s.name, s.score])).toEqual([
+      ['미분', 16],
+      ['적분', 15],
+      ['지수함수와 로그함수', 11],
+    ]);
+  });
+
+  it('계단 70% 경계: 3위가 2위의 정확히 70%면 3개, 바로 아래면 2개', () => {
+    const wrongAt = (nos: number[]): Answers => {
+      const answers = allCorrect(examA);
+      for (const no of nos) {
+        const item = examA.items.find((i) => i.no === no)!;
+        const right = item.answer as number;
+        answers[no] = item.kind === 'mc' ? (right % 5) + 1 : (right + 1) % 1000;
+      }
+      return answers;
+    };
+    // 적분 12점, 미분 10점, 지수와 로그 7점: 7은 10의 정확히 70%.
+    const exact = gradeExam(examA, { answers: wrongAt([14, 20, 21, 6, 17, 24, 16, 23]), marks: {}, causes: {} });
+    expect(selectSteps(examA, exact).map((s) => [s.name, s.score])).toEqual([
+      ['적분', 12],
+      ['미분', 10],
+      ['지수와 로그', 7],
+    ]);
+    // 적분 15점, 미분 13점, 지수와 로그 9점: 9는 13의 70%(9.1점)에 못 미친다.
+    const below = gradeExam(examA, { answers: wrongAt([8, 14, 20, 21, 2, 6, 17, 30, 1, 16, 23]), marks: {}, causes: {} });
+    expect(selectSteps(examA, below).map((s) => [s.name, s.score])).toEqual([
+      ['적분', 15],
+      ['미분', 13],
+    ]);
+  });
+
+  it('고민 표시와 자신 없음 표시가 붙은 정답은 계단 점수에 들어가지 않는다', () => {
+    const marks: Marks = { 14: 'doubt', 20: 'doubt', 22: 'unsure' };
+    const grade = gradeExam(examA, { answers: allCorrect(examA), marks, causes: {} });
+    expect(selectSteps(examA, grade)).toEqual([]);
   });
 
   it('미입력이 남아 있으면 채점하지 않는다', () => {

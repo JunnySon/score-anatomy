@@ -57,18 +57,15 @@ export function stepReasons(step: Step): string[] {
 }
 
 /**
- * 재풀이 기록 라벨(지시서 8장 (10)).
+ * 재풀이 기록 라벨(지시서 8장 (10)). 지시서가 정한 세 가지만 쓴다.
  * 맞혔고 정답을 본 적이 없으면 "다시 풀어 맞힘"(원인이 실수였으면 "실수로 표시함, 다시 풀어 맞힘"),
  * 정답을 먼저 봤거나 "이미 했어요" 경로면 "정답 확인 후 다시 맞힘".
- * 지시서에 없는 경우(다시 풀다 틀린 뒤에 맞힘)는 "N번째에 맞힘"으로 사실만 적는다.
+ * 몇 번째에 맞혔는지(firstCorrectAttempt)는 기록에만 남기고 라벨에는 쓰지 않는다.
  * 같은 문항을 다시 맞힌 것만으로 처음 틀린 이유를 단정하지 않는다.
  */
 export function retryLabel(rec: RetryRecord, cause: Cause | null): string {
   if (!rec.correct) return S.retry.labelWrong;
   if (rec.answerKnown) return S.retry.labelCorrectKnown;
-  // 다시 풀다 틀린 적이 있으면 몇 번째에 맞혔는지 그대로 적는다(절대 원칙 4: 단정하지 않는다).
-  // 5지선다는 틀린 보기를 지워 가며 맞힐 수 있어서 "다시 풀어 맞힘"이라고 하면 과장이 된다.
-  if (rec.firstCorrectAttempt !== null && rec.firstCorrectAttempt > 1) return S.retry.labelCorrectLater(rec.firstCorrectAttempt);
   if (cause === 'slip') return S.retry.labelCorrectSlip;
   return S.retry.labelCorrect;
 }

@@ -5,7 +5,7 @@ import type { AnswerValue, AppData, Exam, GradedBefore, InputMode, SeenBefore, S
 import { demoStore } from './demo';
 import { newSession, setAnswer } from './session';
 import { store } from './store';
-import { activeRun, logAnswer, logScreen, newRun, withActiveRun, withFinalAnswers } from './testlog';
+import { activeRun, bindRun, logAnswer, logScreen, newRun, screenLogName, withActiveRun, withFinalAnswers } from './testlog';
 
 export function useAppData(): AppData {
   return useSyncExternalStore(store.subscribe, store.get, store.get);
@@ -79,38 +79,65 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
 
 /**
  * 시험을 골라 기록을 시작한다. 같은 시험의 채점 전 기록이 있으면 그 기록을 이어 쓴다.
- * 테스트가 진행 중이면 이번 참가자가 만든 기록만 이어 쓰고, 측정 기록을 그 기록에 묶는다.
+ * "채점은 아직인가요?"의 답은 방금 고른 것으로 바꾼다(잘못 눌렀다가 다시 고른 것을 받아 준다).
+ * 테스트가 진행 중이면 이번 참가자가 만든 기록(측정을 시작한 뒤에 만든 기록)만 이어 쓰고, 측정 기록을 그 기록에 묶는다.
  */
 export function startSession(examId: string, gradedBefore: GradedBefore, seenBefore: SeenBefore | null): void {
   const nowIso = new Date().toISOString();
   store.update((d) => {
     const run = activeRun(d);
-    const reusable = d.sessions.find(
-      (s) => s.examId === examId && s.firstGradedAt === null && (run ? s.id === run.sessionId : true),
-    );
+    // 이번 참가자가 만든 기록: 측정에 묶인 기록이거나, 측정을 시작한 뒤에 만든 기록.
+    const mine = (s: Session) => !run || s.id === run.sessionId || Date.parse(s.createdAt) > run.startedAt;
+    const reusable = d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && mine(s));
     let sessions = d.sessions;
     let session: Session;
     if (reusable) {
-      // "이미 했어요"라고 한 번 답한 기록은 다시 골라도 그대로 둔다.
-      session = { ...reusable, gradedBefore: reusable.gradedBefore === 'already' ? 'already' : gradedBefore, seenBefore };
+      session = { ...reusable, gradedBefore, seenBefore };
       sessions = sessions.map((s) => (s.id === reusable.id ? session : s));
     } else {
       session = newSession(examId, gradedBefore, seenBefore, nowIso);
       sessions = [session, ...sessions];
     }
     const nd: AppData = { ...d, sessions, currentId: session.id };
-    return withActiveRun(nd, (r) => (r.sessionId === session.id && r.examId === examId ? r : { ...r, sessionId: session.id, examId }));
+    return withActiveRun(nd, (r) => {
+      // 채점까지 마친 기록에 묶여 있으면 그대로 둔다. 그 뒤에 새로 시작한 기록은 재지 않는다.
+      const bound = d.sessions.find((s) => s.id === r.sessionId) ?? null;
+      if (bound && bound.firstGradedAt !== null && bound.id !== session.id) return r;
+      return bindRun(r, session.id, examId);
+    });
   });
+}
+
+/**
+ * 시작 화면의 "이어서 보기"가 열 기록(지시서 8장 (1): 지난 기록이 있으면 "이어서 보기").
+ * 지금 보는 기록이 있으면 그 기록, 없으면 남은 기록 가운데 가장 최근에 만든 것이다.
+ * 테스트가 진행 중이면 이번 참가자의 측정에 묶인 기록만 대상으로 한다(앞 참가자의 기록이 열리지 않게).
+ */
+export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | null {
+  const pick = (s: Session | undefined) => {
+    const exam = s ? findExam(s.examId) : null;
+    return s && exam ? { session: s, exam } : null;
+  };
+  const current = pick(d.sessions.find((s) => s.id === d.currentId));
+  if (current) return current;
+  const run = activeRun(d);
+  if (run) return pick(d.sessions.find((s) => s.id === run.sessionId));
+  // 새 기록은 목록 맨 앞에 넣으므로, 앞에서부터 처음 만나는 기록이 가장 최근 것이다.
+  for (const s of d.sessions) {
+    const found = pick(s);
+    if (found) return found;
+  }
+  return null;
 }
 
 export function openSession(id: string): void {
   store.update((d) => (d.sessions.some((s) => s.id === id) ? { ...d, currentId: id } : d));
 }
 
-/** 시험 기록이 사라지기 전에, 그 기록에 묶인 측정 기록에 최종 답을 옮겨 둔다. */
+/** 시험 기록이 사라지기 전에, 그 기록에 묶인 측정 기록에 최종 답을 옮겨 둔다. 이미 끝난 측정은 건드리지 않는다. */
 function keepFinalAnswers(d: AppData, ids: Set<string> | null): TestRun[] {
   return d.testRuns.map((r) => {
-    if (r.sessionId === null || (ids !== null && !ids.has(r.sessionId))) return r;
+    if (r.endedAt !== null || r.sessionId === null || (ids !== null && !ids.has(r.sessionId))) return r;
     const session = d.sessions.find((s) => s.id === r.sessionId) ?? null;
     return withFinalAnswers(r, session, session ? findExam(session.examId) : null);
   });
@@ -141,10 +168,12 @@ export function logScreenEvent(name: string): void {
   const now = Date.now();
   store.update((d) =>
     withActiveRun(d, (run) => {
-      let next = logScreen(run, name, now);
+      // 측정에 묶인 기록이 아닌 기록(앞 참가자의 기록 등)의 화면은 이름을 달리 적고 시각 측정에 쓰지 않는다.
+      const logged = screenLogName(name, d.currentId !== null && d.currentId === run.sessionId);
+      let next = logScreen(run, logged, now);
       // 답 입력 화면을 떠나 입력 확인으로 올 때 모든 문항이 차 있으면 입력 완료 시각을 남긴다.
       // (마지막 단답형을 "다음" 없이 "전체 보기"로 넘긴 경우에도 남게 한다.)
-      if (name === 'review' && next.inputDoneAt === null) {
+      if (logged === 'review' && next.inputDoneAt === null) {
         const session = d.sessions.find((s) => s.id === run.sessionId) ?? null;
         const exam = session ? findExam(session.examId) : null;
         if (session && exam && findMissing(exam, session.answers).length === 0) next = { ...next, inputDoneAt: now };

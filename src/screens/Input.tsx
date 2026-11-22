@@ -17,13 +17,16 @@ export function InputScreen({ h, mode }: { h: SessionHandle; mode: InputMode }) 
   return mode === 'rows' ? <InputRows h={h} /> : <InputKeypad h={h} />;
 }
 
-function InputTop({ h }: { h: SessionHandle }) {
+/** leave가 있으면 다른 화면으로 나가는 버튼이 그 함수를 거친다(확정하지 않은 숫자를 알릴 때 쓴다). */
+function InputTop({ h, leave }: { h: SessionHandle; leave?: (to: string) => void }) {
+  const go = leave ?? navigate;
   return (
     <TopBar
       back="/exams"
+      onBack={leave ? () => leave('/exams') : undefined}
       title={h.exam.title}
       right={
-        <button type="button" className="btn btn--text" onClick={() => navigate(h.path('/review'))}>
+        <button type="button" className="btn btn--text" onClick={() => go(h.path('/review'))}>
           {S.input.showAll}
         </button>
       }
@@ -106,10 +109,26 @@ function InputKeypad({ h }: { h: SessionHandle }) {
     setMsg(message);
   };
 
+  /** 누르고 있는 숫자가 들어 있는 답과 다른지. 다르면 "다음"을 누르지 않고 떠날 때 알린다. */
+  const dirty = typing && entry.text !== initEntry(existing).text;
+
   /** 칸을 눌러 그 문항으로 간다. 확정하지 않은 숫자는 버리고 알린다. */
   const goTo = (index: number) => {
     if (index === cursor) return;
-    moveTo(index, typing ? S.input.notCommitted(item.no) : null);
+    moveTo(index, dirty ? S.input.notCommitted(item.no) : null);
+  };
+
+  /**
+   * "전체 보기"나 위쪽 뒤로 가기로 나간다. 확정하지 않은 숫자가 있으면 버리고 알린 뒤 이 화면에 머문다.
+   * 다시 누르면 나간다. 누른 숫자가 말없이 사라지지 않게 하려는 것이다.
+   */
+  const leave = (to: string) => {
+    if (dirty) {
+      setDraft(null);
+      setMsg(S.input.notCommitted(item.no));
+      return;
+    }
+    navigate(to);
   };
 
   const advance = () => {
@@ -145,28 +164,32 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   };
 
   const eraseShort = () => {
-    if (entry.text !== '') {
-      // 누르고 있는 숫자는 한 자리씩 지운다.
-      setMsg(null);
-      setDraft({ no: item.no, entry: eraseDigit(entry) });
-    } else {
+    if (entry.text === '') {
       eraseBack();
+      return;
     }
+    // 누르고 있는 숫자는 한 자리씩 지운다.
+    setMsg(null);
+    const next = eraseDigit(entry);
+    if (next.text === '' && typeof existing === 'number') {
+      // 숫자를 끝까지 지우면 들어 있던 답도 지운다. 칸에 보이는 것과 저장된 답이 같아야 한다.
+      putAnswer(h, item.no, undefined, 'input');
+      setDraft(null);
+      return;
+    }
+    setDraft({ no: item.no, entry: next });
   };
 
   /** 단답형은 "다음"을 눌러야 확정되어 넘어간다. */
   const nextShort = () => {
-    if (typing) {
-      const v = entryValue(entry);
-      if (v === null) {
-        setMsg(S.common.emptyItem(item.no));
-        return;
-      }
+    const v = typing ? entryValue(entry) : null;
+    if (v !== null) {
       put(v);
     } else if (existing !== undefined) {
-      // 이미 들어 있는 답은 그대로 두고 넘어간다.
+      // 이미 들어 있는 답(숫자나 안 풂)은 그대로 두고 넘어간다.
       advance();
     } else {
+      setDraft(null);
       setMsg(S.common.emptyItem(item.no));
     }
   };
@@ -185,12 +208,15 @@ function InputKeypad({ h }: { h: SessionHandle }) {
       <DigitPad onDigit={onDigit} onErase={eraseShort} onSkip={() => put('skip')} onGo={nextShort} goLabel={S.common.next} />
     );
 
-  const shown = typing ? entry.text : answerText(existing, S.common.skip);
+  // 숫자를 누르다 다 지웠으면, 들어 있는 답(안 풂)이 다시 보인다.
+  const shown = typing && entry.text !== '' ? entry.text : answerText(existing, S.common.skip);
 
   return (
     <Screen
-      top={<InputTop h={h} />}
+      top={<InputTop h={h} leave={leave} />}
       bodyClass="body--fit"
+      // 키패드가 5지선다용에서 단답형용으로(또는 거꾸로) 바뀔 때, 연달아 누른 것이 새 키에 닿지 않게 한다.
+      guardKey={item.kind}
       footer={
         <>
           {msg ? (
@@ -320,6 +346,8 @@ function InputRows({ h }: { h: SessionHandle }) {
       top={<InputTop h={h} />}
       bodyClass="body--rows"
       layer={layer}
+      // 쪽이 넘어가면 같은 자리의 버튼이 다른 문항을 가리킨다. 연달아 누른 것으로 쪽을 건너뛰지 않게 한다.
+      guardKey={`page-${page}`}
       actions={
         <div className="actions__row">
           {/* 버튼 자리가 쪽마다 달라지지 않게 "이전"은 첫 쪽에서도 같은 자리에 둔다. */}
@@ -364,8 +392,8 @@ function InputRows({ h }: { h: SessionHandle }) {
             <li key={it.no} className="row" data-row={it.no}>
               <button
                 type="button"
-                className={`row__no${v === 'skip' ? ' row__no--skip' : ''}`}
-                aria-label={S.input.rowNoButton(it.no)}
+                className="row__no"
+                aria-label={v === 'skip' ? S.input.rowNoButtonSkipped(it.no) : S.input.rowNoButton(it.no)}
                 data-row-no={it.no}
                 onClick={() => setMenuNo(it.no)}
               >
@@ -393,7 +421,13 @@ function InputRows({ h }: { h: SessionHandle }) {
                   type="button"
                   className="row__short"
                   data-short={it.no}
-                  aria-label={typeof v === 'number' ? S.input.rowShortFilled(it.no, String(v)) : S.input.rowShortOpen(it.no)}
+                  aria-label={
+                    typeof v === 'number'
+                      ? S.input.rowShortFilled(it.no, String(v))
+                      : v === 'skip'
+                        ? S.input.rowShortFilled(it.no, S.common.skip)
+                        : S.input.rowShortOpen(it.no)
+                  }
                   onClick={() => setPadNo(it.no)}
                 >
                   {typeof v === 'number' ? <span className="row__short-val">{v}</span> : <span className="sub">{S.input.rowShortEmpty}</span>}

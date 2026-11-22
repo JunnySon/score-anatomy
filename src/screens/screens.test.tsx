@@ -165,7 +165,9 @@ describe('그 밖의 화면', () => {
     expect(t).toContain('예시 좌표 12번');
     expect(t).toContain('14번: 다시 풀어 맞힘');
     expect(t).toContain('15번: 실수로 표시함, 다시 풀어 맞힘');
-    expect(t).toContain('20번: 3번째에 맞힘');
+    // 세 번째에 맞힌 문항도 라벨은 지시서의 세 가지 가운데 하나다.
+    expect(t).toContain('20번: 다시 풀어 맞힘');
+    expect(t).not.toContain('번째에 맞힘');
     expect(t).toContain('29번: 다시 풀었지만 답이 다름');
     expect(t).not.toContain('실수 확인');
   });

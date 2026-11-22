@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { href, navigate } from '../router';
 import { S } from '../strings';
+import { markUiChanged } from '../tapGuard';
 
 // 화면 공통 부품: 화면 틀, 위쪽 줄, 하단 탭, 배지, 바텀시트, 삭제 확인 대화상자.
 
@@ -9,42 +10,6 @@ import { S } from '../strings';
  * 다른 화면으로 되돌려 보내는 주소는 화면을 그리지 않으므로 기록되지 않는다.
  */
 export const ScreenShownContext = createContext<(() => void) | null>(null);
-
-/** 화면이나 떠 있는 층이 막 나타난 뒤 누름을 받지 않는 시간(ms). */
-export const TAP_GUARD_MS = 500;
-
-/**
- * 같은 자리를 연달아 눌렀을 때 다음 화면의 버튼까지 눌리는 일을 막는다.
- * 화면(또는 key)이 바뀐 직후 잠깐은 false를 돌려주고, 그동안 그 영역은 누름을 받지 않는다.
- * 막고 있는 동안 그 영역을 또 누르면 시간을 다시 센다. 연타가 멈춘 뒤에야 누름을 받는다.
- */
-function useTapGuard(key: string, areaRef: React.RefObject<HTMLElement | null>): boolean {
-  const [armedKey, setArmedKey] = useState<string | null>(null);
-  useEffect(() => {
-    let timer = 0;
-    const onDown = (e: PointerEvent) => {
-      const el = areaRef.current;
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) start();
-    };
-    const arm = () => {
-      document.removeEventListener('pointerdown', onDown, true);
-      setArmedKey(key);
-    };
-    const start = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(arm, TAP_GUARD_MS);
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    start();
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener('pointerdown', onDown, true);
-    };
-  }, [key, areaRef]);
-  return armedKey === key;
-}
 
 export function IconBack() {
   return (
@@ -100,11 +65,12 @@ export function Badge({ children }: { children: ReactNode }) {
   return <span className="badge">{children}</span>;
 }
 
-export function TopBar({ back, title, right }: { back?: string; title: string; right?: ReactNode }) {
+/** onBack이 있으면 뒤로 가기 버튼이 주소로 바로 가지 않고 그 함수를 부른다. */
+export function TopBar({ back, onBack, title, right }: { back?: string; onBack?: () => void; title: string; right?: ReactNode }) {
   return (
     <header className="top">
       {back !== undefined ? (
-        <button type="button" className="icon-btn" aria-label={S.common.back} onClick={() => navigate(back)}>
+        <button type="button" className="icon-btn" aria-label={S.common.back} onClick={() => (onBack ? onBack() : navigate(back))}>
           <IconBack />
         </button>
       ) : null}
@@ -140,15 +106,20 @@ interface ScreenProps {
   /** 바텀시트나 삭제 확인 대화상자. */
   layer?: ReactNode;
   bodyClass?: string;
-  /** 같은 화면 안에서 아래 고정 영역의 내용이 바뀔 때 다시 잠깐 누름을 막고 싶으면 값을 바꾼다. */
+  /**
+   * 같은 화면 안에서 누른 자리의 내용이 바뀔 때(아래 버튼이 다른 버튼이 됨, 쪽이 넘어감) 값을 바꾼다.
+   * 값이 바뀌면 바로 앞에 누른 자리를 잠깐 막는다(src/tapGuard.ts).
+   */
   guardKey?: string;
 }
 
 export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey }: ScreenProps) {
   const bodyRef = useRef<HTMLElement>(null);
-  const dockRef = useRef<HTMLDivElement>(null);
-  const armed = useTapGuard(guardKey ?? '', dockRef);
   const onShown = useContext(ScreenShownContext);
+  // 화면이 새로 그려지거나 guardKey가 바뀌면, 같은 자리를 연달아 누른 것이 새 버튼에 닿지 않게 한다.
+  useLayoutEffect(() => {
+    markUiChanged();
+  }, [guardKey]);
   useEffect(() => {
     onShown?.();
     // 화면이 바뀌면 맨 위로 올리고, 보조 기기가 새 화면을 읽도록 초점을 옮긴다.
@@ -165,7 +136,7 @@ export function Screen({ top, children, actions, footer, tabs, layer, bodyClass,
         {children}
       </main>
       {actions || footer || tabs ? (
-        <div className={`dock${armed ? '' : ' dock--guard'}`} ref={dockRef}>
+        <div className="dock">
           {footer}
           {actions ? <div className="actions">{actions}</div> : null}
           {tabs ? <TabBar active={tabs} /> : null}
@@ -180,6 +151,11 @@ export function Screen({ top, children, actions, footer, tabs, layer, bodyClass,
 function useModalLayer(layerRef: React.RefObject<HTMLDivElement | null>, panelRef: React.RefObject<HTMLDivElement | null>, onClose: () => void) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  // 층이 열릴 때와 닫힐 때, 같은 자리를 연달아 누른 것이 새로 드러난 버튼에 닿지 않게 한다.
+  useLayoutEffect(() => {
+    markUiChanged();
+    return () => markUiChanged();
+  }, []);
   useEffect(() => {
     const layer = layerRef.current;
     if (!layer || !layer.parentElement) return;
@@ -203,10 +179,9 @@ export function BottomSheet({ title, onClose, children }: { title: string; onClo
   const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
-  const armed = useTapGuard('sheet', layerRef);
   useModalLayer(layerRef, panelRef, onClose);
   return (
-    <div className={`layer${armed ? '' : ' layer--guard'}`} ref={layerRef}>
+    <div className="layer" ref={layerRef}>
       <div className="scrim" aria-hidden="true" onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={panelRef}>
         <div className="sheet__head">
@@ -242,10 +217,9 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const bodyId = useId();
-  const armed = useTapGuard('dialog', layerRef);
   useModalLayer(layerRef, panelRef, onNo);
   return (
-    <div className={`layer layer--center${armed ? '' : ' layer--guard'}`} ref={layerRef}>
+    <div className="layer layer--center" ref={layerRef}>
       <div className="scrim" aria-hidden="true" onClick={onNo} />
       <div className="dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={bodyId} tabIndex={-1} ref={panelRef}>
         <h2 className="title" id={titleId}>

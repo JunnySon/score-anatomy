@@ -64,7 +64,13 @@ export function Marks({ h }: { h: SessionHandle }) {
   }
 
   return (
-    <Screen top={<TopBar back={h.path('/review')} title={exam.title} />} actions={actions} tabs="current">
+    <Screen
+      top={<TopBar back={h.path('/review')} title={exam.title} />}
+      actions={actions}
+      tabs="current"
+      // "답 저장하기"가 같은 자리의 "기록 보기"로 바뀔 때, 연달아 누른 것이 새 버튼에 닿지 않게 한다.
+      guardKey={saved ? 'saved' : 'open'}
+    >
       <div className="inline">
         <h2 className="title">{S.marks.title}</h2>
         {!released ? <Badge>{S.common.unreleased}</Badge> : null}

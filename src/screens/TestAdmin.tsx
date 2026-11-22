@@ -3,7 +3,7 @@ import { Chip, ConfirmDialog, Message, Screen, TopBar } from '../components/ui';
 import { EXAMS, findExam } from '../exams';
 import { navigate } from '../router';
 import { finishTestRun, resetTestRuns, setRunAnswerKey, startTestRun, useAppData } from '../state/hooks';
-import { exportCsv, exportJson, PARTICIPANT_PATTERN, parseAnswerKey, runMetrics, type RunExportRow } from '../state/testlog';
+import { exportCsv, exportJson, finalAnswersOf, PARTICIPANT_PATTERN, parseAnswerKey, runMetrics, type RunExportRow } from '../state/testlog';
 import { S } from '../strings';
 import type { InputMode, TestRun } from '../types';
 
@@ -57,7 +57,8 @@ function RunCard({ row }: { row: RunExportRow }) {
       setKeyMsg(parsed.errorIndex > 0 ? S.test.keyValueError(parsed.errorIndex) : S.test.keyCountError(keyExam.items.length, parsed.got));
       return;
     }
-    if (!session) {
+    // 시험 기록을 지웠어도 측정 기록에 옮겨 둔 최종 답이 있으면 대조한다.
+    if (finalAnswersOf(run, session, exam) === null) {
       setKeyMsg(S.test.keyNoSession);
       return;
     }
@@ -69,6 +70,11 @@ function RunCard({ row }: { row: RunExportRow }) {
     <li className="card" data-testid="run-card" data-participant={run.participant} data-mode={run.inputMode}>
       <h3>{S.test.runTitle(run.participant, S.test.modes[run.inputMode], exam?.title ?? keyExam?.title ?? '')}</h3>
       {run.examId !== null && run.examId !== run.plannedExamId ? <p className="sub">{S.test.plannedMismatch}</p> : null}
+      {run.examReselects > 0 ? (
+        <p className="sub" data-testid="reselect-note">
+          {S.test.examReselected(run.examReselects)}
+        </p>
+      ) : null}
       <dl className="kv mt3 sub">
         <dt>{S.test.metric.started}</dt>
         <dd>{fmtTime(run.startedAt)}</dd>
@@ -164,6 +170,8 @@ export function TestAdmin() {
   return (
     <Screen
       top={<TopBar back="/history" title={S.test.title} />}
+      // "이 참가자 마치기"를 누르면 아래 내용이 위로 올라온다. 연달아 누른 것이 다른 버튼에 닿지 않게 한다.
+      guardKey={active ? active.id : 'idle'}
       actions={
         <>
           {formMsg ? <Message>{formMsg}</Message> : null}

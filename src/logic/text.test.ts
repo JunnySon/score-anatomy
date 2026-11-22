@@ -128,11 +128,12 @@ describe('재풀이 기록 라벨', () => {
     expect(retrySentence(rec(false))).toBe('이번에도 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.');
   });
 
-  it('다시 풀다 틀린 뒤에 맞히면 몇 번째에 맞혔는지 적는다', () => {
-    expect(retryLabel(rec(true, 2), 'slip')).toBe('2번째에 맞힘');
-    expect(retryLabel(rec(true, 5), 'blank')).toBe('5번째에 맞힘');
-    // 정답을 본 뒤라면 그 사실이 먼저다.
+  it('다시 풀다 틀린 뒤에 맞혀도 라벨은 지시서의 세 가지뿐이다', () => {
+    expect(retryLabel(rec(true, 2), 'slip')).toBe('실수로 표시함, 다시 풀어 맞힘');
+    expect(retryLabel(rec(true, 5), 'blank')).toBe('다시 풀어 맞힘');
     expect(retryLabel(rec(true, 3, true), 'blank')).toBe('정답 확인 후 다시 맞힘');
+    // 문장과 라벨이 같은 말을 한다.
+    expect(retrySentence(rec(true, 2))).toBe('다시 풀어 맞혔어요.');
   });
 
   it('처음에 바로 맞힌 문항은 또 맞혀도 라벨이 바뀌지 않는다', () => {

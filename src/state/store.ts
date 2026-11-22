@@ -113,6 +113,7 @@ function cleanRun(raw: unknown): TestRun | null {
     reviewFixed: Array.isArray(raw.reviewFixed) ? raw.reviewFixed.filter((n): n is number => typeof n === 'number') : [],
     marksMs: num(raw.marksMs) ?? 0,
     firstScoreAt: num(raw.firstScoreAt),
+    examReselects: num(raw.examReselects) ?? 0,
     answerKeyText: typeof raw.answerKeyText === 'string' ? raw.answerKeyText : '',
     finalAnswers: Array.isArray(raw.finalAnswers) ? raw.finalAnswers.map((v) => (isAnswer(v) ? v : null)) : null,
   };

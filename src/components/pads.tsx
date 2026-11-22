@@ -184,7 +184,10 @@ export function AnswerSheet({
           onErase={() => {
             setMsg(null);
             if (entry.text !== '') {
-              setEntry(eraseDigit(entry));
+              const next = eraseDigit(entry);
+              setEntry(next);
+              // 숫자를 끝까지 지우면 들어 있던 답도 지운다. 칸에 보이는 것과 저장된 답이 같아야 한다.
+              if (next.text === '' && typeof value === 'number') onSet(undefined);
             } else if (value !== undefined) {
               onSet(undefined);
             }

@@ -24,7 +24,7 @@ function usePreview() {
   }, []);
 }
 
-export function Start({ resumeTo }: { resumeTo: string | null }) {
+export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResume?: () => void }) {
   const preview = usePreview();
   const openSample = () => {
     demoStore.reset();
@@ -42,7 +42,14 @@ export function Start({ resumeTo }: { resumeTo: string | null }) {
               </button>
             ) : null}
             {resumeTo ? (
-              <button type="button" className="btn btn--secondary grow" onClick={() => navigate(resumeTo)}>
+              <button
+                type="button"
+                className="btn btn--secondary grow"
+                onClick={() => {
+                  onResume?.();
+                  navigate(resumeTo);
+                }}
+              >
                 {S.start.resume}
               </button>
             ) : null}

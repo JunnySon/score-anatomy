@@ -36,6 +36,7 @@ body {
 h1,
 h2,
 h3,
+h4,
 p,
 ul,
 ol,
@@ -248,10 +249,11 @@ a {
   background: var(--bg);
   padding-bottom: env(safe-area-inset-bottom);
 }
-/* 화면이 바뀐 직후 잠깐은 누름을 받지 않는다(같은 자리를 연달아 눌러 다음 화면까지 넘어가는 일을 막는다). */
-.dock--guard,
-.layer--guard {
-  pointer-events: none;
+/* 화면이 바뀐 직후, 바로 앞에 누른 자리에 잠깐 두는 보이지 않는 가림막(src/tapGuard.ts). */
+.tap-shield {
+  position: fixed;
+  z-index: 100;
+  background: transparent;
 }
 .actions {
   border-top: 1px solid var(--line);
@@ -287,7 +289,7 @@ a {
   justify-content: center;
   font-size: var(--fs-sub);
   line-height: var(--lh-sub);
-  font-weight: 600;
+  font-weight: 400;
   color: var(--text-sub);
   text-decoration: none;
 }
@@ -343,6 +345,10 @@ a {
 .btn--text {
   color: var(--accent);
   padding: 0 var(--s3);
+}
+/* 보조 글자 크기의 글자 버튼(기록 화면의 "테스트 진행자용")은 보조 글자 굵기 400을 따른다. */
+.btn.sub {
+  font-weight: 400;
 }
 .btn--text:active {
   background: var(--surface);
@@ -410,11 +416,16 @@ a {
   color: var(--ok);
 }
 
-/* 카드와 상자 */
+/* 카드와 상자: 표면색(지시서 5장). 그 안에 놓인 표면색 요소는 배경색으로 바꿔서 구분한다. */
 .card {
-  border: 1px solid var(--line);
   border-radius: var(--r-card);
   padding: var(--s4);
+  background: var(--surface);
+  --under: var(--surface);
+}
+.card .msg,
+.card .field__input,
+.card .btn--text:active {
   background: var(--bg);
 }
 .box {
@@ -459,6 +470,11 @@ a {
   border: 2px solid var(--accent);
   padding: calc(var(--s2) - 1px) calc(var(--s3) - 1px);
   font-weight: 600;
+}
+/* 굵기 600은 첫 줄 글자에만 준다. 보조 글자와 배지는 400 그대로다. */
+.opt[aria-checked='true'] .sub,
+.opt[aria-checked='true'] .badge {
+  font-weight: 400;
 }
 .opt__dot {
   flex: none;
@@ -615,9 +631,12 @@ a {
   font-weight: 600;
   white-space: nowrap;
 }
+/* 안 풂, 미입력: 캡션 13/18, 400. 위아래 3px로 칸 높이(24px)를 그대로 둔다. */
 .cell__val--small {
   font-size: var(--fs-cap);
-  line-height: var(--lh-body);
+  line-height: var(--lh-cap);
+  font-weight: 400;
+  padding: 3px 0;
 }
 .cell[aria-current='true'] {
   border: 2px solid var(--accent);
@@ -762,9 +781,6 @@ a {
   line-height: var(--lh-cap);
   font-weight: 400;
   color: var(--text-sub);
-}
-.row__no--skip {
-  line-height: var(--lh-sub);
 }
 .row__choices {
   flex: 1;
@@ -929,15 +945,15 @@ a {
 }
 .seg--hatch {
   border: 2px solid var(--outline);
-  background: repeating-linear-gradient(135deg, var(--outline) 0 2px, var(--bg) 2px 6px);
+  background: repeating-linear-gradient(135deg, var(--outline) 0 2px, var(--under, var(--bg)) 2px 6px);
 }
 .seg--outline {
   border: 2px solid var(--outline);
-  background: var(--bg);
+  background: var(--under, var(--bg));
 }
 .seg--dashed {
   border: 2px dashed var(--outline);
-  background: var(--bg);
+  background: var(--under, var(--bg));
 }
 .bar--mini {
   height: 16px;

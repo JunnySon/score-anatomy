@@ -14,7 +14,17 @@ import { Score } from './screens/Score';
 import { Start } from './screens/Start';
 import { Steps } from './screens/Steps';
 import { TestAdmin } from './screens/TestAdmin';
-import { logScreenEvent, setInputMode, useAppData, useCurrentHandle, useDemoHandle, useGrade, type SessionHandle } from './state/hooks';
+import {
+  logScreenEvent,
+  openSession,
+  resumeCandidate,
+  setInputMode,
+  useAppData,
+  useCurrentHandle,
+  useDemoHandle,
+  useGrade,
+  type SessionHandle,
+} from './state/hooks';
 import { resumePath } from './state/session';
 import { activeRun } from './state/testlog';
 import { S } from './strings';
@@ -103,8 +113,17 @@ function Routes({ route, screenKey }: { route: Route; screenKey: string }) {
   }
 
   switch (route.name) {
-    case 'start':
-      return <Start key={key} resumeTo={current ? resumePath(current.session, current.exam) : null} />;
+    case 'start': {
+      // 지금 보는 기록이 없어도 지난 기록이 남아 있으면 "이어서 보기"로 가장 최근 기록을 연다.
+      const target = resumeCandidate(data);
+      return (
+        <Start
+          key={key}
+          resumeTo={target ? resumePath(target.session, target.exam) : null}
+          onResume={target ? () => openSession(target.session.id) : undefined}
+        />
+      );
+    }
     case 'exams':
       return <ExamSelect key={key} />;
     case 'history':

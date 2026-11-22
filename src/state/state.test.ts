@@ -371,8 +371,9 @@ describe('사용성 테스트 측정 기록', () => {
     expect(csv).toHaveLength(2);
     const head = csv[0]!.split(',');
     const cells = csv[1]!.split(',');
-    expect(head.slice(0, 5)).toEqual(['participant', 'input_mode', 'planned_exam', 'exam', 'started_at']);
-    expect(head).toHaveLength(13 + 30);
+    expect(head.slice(0, 6)).toEqual(['participant', 'input_mode', 'planned_exam', 'exam', 'exam_reselects', 'started_at']);
+    expect(head).toHaveLength(14 + 30);
+    expect(cells[head.indexOf('exam_reselects')]).toBe('0');
     expect(cells[0]).toBe('P01');
     expect(cells[head.indexOf('input_seconds')]).toBe('60.4');
     expect(cells[head.indexOf('residual_errors')]).toBe('1');

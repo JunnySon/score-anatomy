@@ -26,9 +26,47 @@ export function newRun(participant: string, inputMode: InputMode, plannedExamId:
     reviewFixed: [],
     marksMs: 0,
     firstScoreAt: null,
+    examReselects: 0,
     answerKeyText: '',
     finalAnswers: null,
   };
+}
+
+/**
+ * 측정 기록을 시험 기록에 묶는다. 다른 기록에 묶여 있었으면(참가자가 답을 넣다가 시험을 다시 고름)
+ * 앞 기록에서 잰 입력 측정을 비우고 다시 고른 횟수를 센다. 앞 시험에서 누른 횟수가 섞이지 않게 하려는 것이다.
+ * 화면 진입 기록과 시험 선택 화면에 처음 들어온 시각은 그대로 둔다.
+ */
+export function bindRun(run: TestRun, sessionId: string, examId: string): TestRun {
+  if (run.sessionId === sessionId && run.examId === examId) return run;
+  if (run.sessionId === null) return { ...run, sessionId, examId };
+  return {
+    ...run,
+    sessionId,
+    examId,
+    inputStartAt: null,
+    firstInputAt: null,
+    inputDoneAt: null,
+    reviewConfirmAt: null,
+    itemInputs: {},
+    reviewFixed: [],
+    marksMs: 0,
+    firstScoreAt: null,
+    finalAnswers: null,
+    examReselects: run.examReselects + 1,
+  };
+}
+
+/** 기록 한 건을 보여 주는 화면들. 측정에 묶인 기록이 아닌 기록에서 열리면 이름 앞에 OTHER_PREFIX를 붙여 적는다. */
+const SESSION_SCREENS = new Set(['input', 'review', 'marks', 'score', 'causes', 'anatomy', 'steps', 'retry']);
+export const OTHER_PREFIX = 'other:';
+
+/**
+ * 화면 진입 기록에 적을 이름. own은 지금 보는 기록이 이 측정에 묶인 기록인지다.
+ * 다른 기록(앞 참가자의 기록 등)의 화면은 답 입력 시작, 첫 점수, 표시 화면에 머문 시간에 쓰이지 않게 이름을 달리한다.
+ */
+export function screenLogName(name: string, own: boolean): string {
+  return SESSION_SCREENS.has(name) && !own ? `${OTHER_PREFIX}${name}` : name;
 }
 
 export function activeRun(data: AppData): TestRun | null {
@@ -128,15 +166,23 @@ export function answersInOrder(exam: Exam, answers: Answers): (AnswerValue | nul
   return exam.items.map((it) => answers[it.no] ?? null);
 }
 
-/** 시험 기록이 지워지거나 참가자가 끝날 때, 최종 제출한 답을 측정 기록에 옮겨 둔다. */
+/**
+ * 시험 기록이 지워지거나 참가자가 끝날 때, 최종 제출한 답을 측정 기록에 옮겨 둔다.
+ * 이미 끝난 측정의 사본은 다시 쓰지 않는다. 끝난 뒤에 누가 그 기록을 고쳐도 측정값이 바뀌지 않아야 한다.
+ */
 export function withFinalAnswers(run: TestRun, session: Session | null, exam: Exam | null): TestRun {
+  if (run.endedAt !== null) return run;
   if (!session || !exam || run.sessionId !== session.id) return run;
   return { ...run, finalAnswers: answersInOrder(exam, session.answers) };
 }
 
-/** 측정 기록의 최종 답. 시험 기록이 남아 있으면 그 답을, 없으면 옮겨 둔 사본을 쓴다. */
+/**
+ * 측정 기록의 최종 답.
+ * 끝난 측정은 마칠 때 옮겨 둔 사본만 쓴다. 진행 중인 측정은 시험 기록이 남아 있으면 지금 답을, 없으면 사본을 쓴다.
+ */
 export function finalAnswersOf(run: TestRun, session: Session | null, exam: Exam | null): (AnswerValue | null)[] | null {
-  if (session && exam) return answersInOrder(exam, session.answers);
+  if (run.endedAt !== null) return run.finalAnswers;
+  if (session && exam && run.sessionId === session.id) return answersInOrder(exam, session.answers);
   return run.finalAnswers;
 }
 
@@ -220,6 +266,7 @@ export function exportCsv(rows: RunExportRow[]): string {
     'input_mode',
     'planned_exam',
     'exam',
+    'exam_reselects',
     'started_at',
     'input_seconds',
     'input_count',
@@ -239,6 +286,7 @@ export function exportCsv(rows: RunExportRow[]): string {
       run.inputMode,
       run.plannedExamId,
       run.examId,
+      run.examReselects,
       iso(run.startedAt),
       m.inputSeconds,
       m.inputCount,

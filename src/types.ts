@@ -116,6 +116,8 @@ export interface TestRun {
   reviewFixed: number[];
   marksMs: number;
   firstScoreAt: number | null;
+  /** 답을 넣다가 다른 시험 기록으로 바꾼 횟수. 바꾸면 그때까지 잰 입력 측정은 비운다. */
+  examReselects: number;
   answerKeyText: string;
   /** 참가자가 최종 제출한 답의 사본. 시험 기록을 지워도 남은 오입력을 셀 수 있게 따로 둔다. 미입력은 null. */
   finalAnswers: (AnswerValue | null)[] | null;

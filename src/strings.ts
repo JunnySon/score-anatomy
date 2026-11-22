@@ -108,6 +108,7 @@ export const S = {
     rowAnswerLabel: (no: number) => `${no}번 답`,
     rowChoice: (n: number) => `${n}`,
     rowNoButton: (no: number) => `${no}번, 안 풂 또는 입력 지우기`,
+    rowNoButtonSkipped: (no: number) => `${no}번, 넣은 답 안 풂, 안 풂 또는 입력 지우기`,
     rowShortEmpty: '눌러서 답 넣기',
     rowShortFilled: (no: number, answer: string) => `${no}번 답 ${answer}, 눌러서 고치기`,
     rowShortOpen: (no: number) => `${no}번 답 넣기`,
@@ -286,7 +287,6 @@ export const S = {
     labelCorrect: '다시 풀어 맞힘',
     labelCorrectSlip: '실수로 표시함, 다시 풀어 맞힘',
     labelCorrectKnown: '정답 확인 후 다시 맞힘',
-    labelCorrectLater: (n: number) => `${n}번째에 맞힘`,
     labelWrong: '다시 풀었지만 답이 다름',
     recordLabel: '기록',
     nextItem: '다음 문항',
@@ -374,5 +374,6 @@ export const S = {
     resetConfirm: '테스트 기록을 모두 지울까요?',
     resetBody: '참가자가 넣은 시험 기록은 지우지 않아요. 측정 기록만 지워요.',
     plannedMismatch: '참가자가 계획과 다른 시험을 골랐어요.',
+    examReselected: (n: number) => `참가자가 답을 넣다가 시험을 ${n}번 다시 골랐어요. 마지막에 고른 기록만 쟀어요.`,
   },
 } as const;

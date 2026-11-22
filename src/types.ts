@@ -98,7 +98,7 @@ export interface TestRun {
   endedAt: number | null;
   sessionId: string | null;
   examId: string | null;
-  screens: { name: string; at: number }[];
+  screens: { screen: string; at: number }[];
   examSelectAt: number | null;
   inputStartAt: number | null;
   firstInputAt: number | null;

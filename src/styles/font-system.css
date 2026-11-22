@@ -1,0 +1,4 @@
+/* 단일 HTML 빌드: 시스템 글꼴만 쓴다. */
+:root {
+  --font: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', system-ui, sans-serif;
+}

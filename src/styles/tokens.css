@@ -1,0 +1,74 @@
+/* 디자인 값은 이 파일 한 곳에서만 정한다(디자인 기준 이름: 계측기). */
+/* 색 대비 검사(scripts/check-contrast.mjs)도 이 파일을 읽는다. */
+
+:root {
+  color-scheme: light dark;
+
+  /* 색: 밝은 화면 */
+  --bg: #FFFFFF;
+  --surface: #F4F5F7;
+  --line: #D9DCE1;
+  --outline: #868C96;
+  --text: #17191C;
+  --text-sub: #5B6168;
+  --accent: #2747D4;
+  --on-accent: #FFFFFF;
+  --ok: #0B7A4B;
+  --bad: #B93A1E;
+  --warn: #8A5300;
+  --scrim: rgba(17, 19, 21, 0.5);
+
+  /* 글자: 크기와 줄 높이 (rem, 16px 기준) */
+  --fs-hero: 3.5rem; /* 56px 주 숫자 */
+  --lh-hero: 3.75rem; /* 60px */
+  --fs-num: 1.75rem; /* 28px 보조 숫자 */
+  --lh-num: 2.125rem; /* 34px */
+  --fs-title: 1.375rem; /* 22px 제목 */
+  --lh-title: 1.875rem; /* 30px */
+  --fs-body: 1rem; /* 16px 본문 */
+  --lh-body: 1.5rem; /* 24px */
+  --fs-sub: 0.875rem; /* 14px 보조 */
+  --lh-sub: 1.25rem; /* 20px */
+  --fs-cap: 0.8125rem; /* 13px 캡션. 이보다 작은 글자는 쓰지 않는다. */
+  --lh-cap: 1.125rem; /* 18px */
+
+  /* 간격: 4px 단위 */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s8: 32px;
+  --gutter: 20px; /* 화면 좌우 여백 */
+
+  /* 모양 */
+  --r-card: 12px; /* 카드, 버튼 */
+  --r-chip: 8px; /* 칩, 배지 */
+  --touch: 48px; /* 터치 영역 최소 크기 */
+  --key-h: 64px; /* 답 숫자 키 높이 */
+  --main-h: 52px; /* 주 버튼 높이 */
+  --bar-h: 28px; /* 100점 막대 높이 */
+  --col: 430px; /* 가운데 칼럼 최대 폭 */
+
+  /* 전환 */
+  --t: 160ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* 색: 어두운 화면 */
+    --bg: #111315;
+    --surface: #1B1E22;
+    --line: #2C3036;
+    --outline: #7A818C;
+    --text: #ECEEF1;
+    --text-sub: #A4ABB5;
+    --accent: #8FA8FF;
+    --on-accent: #0E1220;
+    --ok: #4CC38A;
+    --bad: #FF8A75;
+    --warn: #F2B84B;
+    --scrim: rgba(0, 0, 0, 0.6);
+  }
+}

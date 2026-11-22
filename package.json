@@ -10,7 +10,7 @@
     "build:single": "vite build --mode single && node scripts/inline-single.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "e2e": "playwright test --trace off",
+    "e2e": "npm run build && npm run build:single && playwright test --trace off",
     "verify": "node scripts/verify.mjs"
   },
   "dependencies": {

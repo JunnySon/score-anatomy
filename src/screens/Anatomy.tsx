@@ -1,0 +1,194 @@
+import { useState } from 'react';
+import { ScoreBar } from '../components/ScoreBar';
+import { Badge, BottomSheet, Chip, IconInfo, Screen, TopBar } from '../components/ui';
+import { cutView, gradeKeys } from '../logic/cuts';
+import { analyze, type Grade } from '../logic/scoring';
+import { selectSteps } from '../logic/steps';
+import { actualLine, anatomySentences, luckLine } from '../logic/text';
+import { href, navigate } from '../router';
+import type { SessionHandle } from '../state/hooks';
+import { isMarkedAfterGrading, setTargetGrade } from '../state/session';
+import { S } from '../strings';
+
+// (8) 점수 해부 화면. 이 앱의 핵심 화면이다.
+// 주 숫자는 실제 점수 하나뿐이다. 추정값에는 "추정" 배지와 "약"을 붙인다.
+
+export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
+  const { exam, session } = h;
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const an = analyze(exam, grade);
+  const steps = selectSteps(exam, grade);
+  const keys = gradeKeys(exam);
+  const cv = cutView(exam, an, session.targetGrade);
+  const sentences = anatomySentences(an);
+  const unmarkedCauses = an.wrongCount - an.causeMarkedCount;
+  const causesHref = href(h.path('/causes'));
+  const badgeText = cv?.confirmed ? S.common.confirmed : S.common.estimate;
+  const line1 = cv ? actualLine(cv, an.actual) : null;
+  const line2 = cv ? luckLine(cv, an.luckAverageRounded) : null;
+
+  return (
+    <Screen
+      top={<TopBar back={h.isDemo ? '/' : '/score'} title={S.anatomy.top} />}
+      tabs="current"
+      layer={
+        sourceOpen && cv ? (
+          <BottomSheet title={S.anatomy.sourceTitle} onClose={() => setSourceOpen(false)}>
+            <div className="stack gap2" data-testid="cut-source">
+              {exam.isSample ? <p className="strong">{S.anatomy.sourceSample}</p> : null}
+              <p>{S.anatomy.source(cv.source)}</p>
+              <p>{S.anatomy.asOf(cv.asOf)}</p>
+              <p className="sub">{cv.confirmed ? S.anatomy.sourceConfirmed : S.anatomy.sourceEstimate}</p>
+            </div>
+          </BottomSheet>
+        ) : null
+      }
+      actions={
+        <button type="button" className="btn btn--primary" data-testid="to-steps" onClick={() => navigate(h.path('/steps'))}>
+          {S.anatomy.toSteps(steps.length)}
+        </button>
+      }
+    >
+      <div className="inline">
+        <p className="sub">{exam.title}</p>
+        {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
+      </div>
+      <p className="hero mt2" data-testid="actual">
+        {S.common.points(an.actual)}
+      </p>
+      <p className="mt2">{S.common.correctOf(an.itemCount, an.correctCount)}</p>
+
+      <div className="mt4">
+        <ScoreBar an={an} />
+      </div>
+
+      <div className="mt2" data-testid="rows">
+        {an.hasGuessMark ? (
+          <div className="arow" data-testid="row-guess">
+            <span className="swatch seg--hatch" aria-hidden="true" />
+            <span>{S.anatomy.rowGuess}</span>
+            <span className="num">{S.common.points(an.guessCorrectPoints)}</span>
+            <span className="sub arow__sub">{an.guessCorrectPoints > 0 ? S.anatomy.rowGuessSub(an.actual) : S.anatomy.rowGuessNone}</span>
+          </div>
+        ) : (
+          <p className="arow arow--text" data-testid="row-guess-empty">
+            {an.hasAnyMark ? S.anatomy.emptyGuess(an.actual) : S.anatomy.emptyMarks(an.actual)}
+          </p>
+        )}
+
+        {an.wrongCount === 0 ? null : an.causeMarkedCount === 0 ? (
+          <div className="arow arow--text" data-testid="row-slip-empty">
+            <p>{S.anatomy.causesUnmarked}</p>
+            <a className="btn btn--text btn--left link" href={causesHref}>
+              {S.anatomy.toCauses}
+            </a>
+          </div>
+        ) : an.slipPoints > 0 ? (
+          <div className="arow" data-testid="row-slip">
+            <span className="swatch seg--outline" aria-hidden="true" />
+            <span>{S.anatomy.rowSlip}</span>
+            <span className="num">{S.common.points(an.slipPoints)}</span>
+            <span className="sub arow__sub">{S.anatomy.rowSlipSub(an.actual)}</span>
+          </div>
+        ) : (
+          <p className="arow arow--text" data-testid="row-slip-none">
+            {S.anatomy.rowSlipNone}
+          </p>
+        )}
+        {an.causeMarkedCount > 0 && unmarkedCauses > 0 ? (
+          <div className="arow arow--text" data-testid="row-causes-partly">
+            <p className="sub">{S.anatomy.causesPartly(unmarkedCauses)}</p>
+            <a className="btn btn--text btn--left link" href={causesHref}>
+              {S.anatomy.toCauses}
+            </a>
+          </div>
+        ) : null}
+      </div>
+
+      {sentences.length > 0 ? (
+        <p className="mt3" data-testid="sentence">
+          {sentences.join(' ')}
+        </p>
+      ) : null}
+      {isMarkedAfterGrading(session) ? (
+        <p className="cap mt2" data-testid="after-grading-note">
+          {S.common.afterGradingNote}
+        </p>
+      ) : null}
+
+      <section className="box mt6" aria-label={S.anatomy.cutBoxLabel} data-testid="cutbox">
+        {keys.length === 0 ? (
+          <p data-testid="no-cuts">{S.anatomy.noCuts}</p>
+        ) : (
+          <>
+            <p className={cv ? 'sub' : 'strong'} id="target-q">
+              {cv ? S.anatomy.targetLabel : S.anatomy.targetQ}
+            </p>
+            <div className="chips mt2" role="radiogroup" aria-labelledby="target-q">
+              {keys.map((g) => (
+                <Chip key={g} testId={`grade-${g}`} checked={session.targetGrade === g} onSelect={() => h.update((s) => setTargetGrade(s, g))}>
+                  {S.anatomy.gradeChip(g)}
+                </Chip>
+              ))}
+            </div>
+            {cv && line1 ? (
+              <div className="mt3" aria-live="polite">
+                <div className="cut-head">
+                  <p className="strong" data-testid="cut-title">
+                    {S.anatomy.cutTitle(cv.grade, cv.lo, cv.hi)}
+                  </p>
+                  <button
+                    type="button"
+                    className="badge-btn"
+                    data-testid="cut-badge"
+                    aria-label={S.anatomy.cutBadgeLabel(badgeText)}
+                    onClick={() => setSourceOpen(true)}
+                  >
+                    <span className="badge">
+                      {badgeText}
+                      <IconInfo />
+                    </span>
+                  </button>
+                </div>
+                <p className="num" data-testid="cut-actual">
+                  {line1.lead.map((part, i) => (
+                    <span key={part}>
+                      {i > 0 ? ' ' : ''}
+                      <span className="nowrap">{part}</span>
+                    </span>
+                  ))}
+                </p>
+                {line1.rest ? <p className="mt2">{line1.rest}</p> : null}
+                {line2 ? (
+                  <div className="mt3">
+                    <p data-testid="cut-luck">
+                      {line2} <Badge>{S.common.estimate}</Badge>
+                    </p>
+                    <details>
+                      <summary>{S.anatomy.luckSummary(an.luckAverageRounded)}</summary>
+                      <p className="sub" data-testid="luck-detail">
+                        {S.anatomy.luckDetail(an.actual)}
+                      </p>
+                    </details>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        )}
+      </section>
+
+      <p className="mt4">
+        {h.isDemo ? (
+          <button type="button" className="btn btn--text btn--left" onClick={() => navigate('/exams')}>
+            {S.anatomy.pickExam}
+          </button>
+        ) : (
+          <button type="button" className="btn btn--text btn--left" onClick={() => navigate('/review')}>
+            {S.anatomy.fix}
+          </button>
+        )}
+      </p>
+    </Screen>
+  );
+}

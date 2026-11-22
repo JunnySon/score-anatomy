@@ -29,12 +29,14 @@ export const test = base.extend({
     const all: string[] = [];
     const external: string[] = [];
     let origin: string | null = null;
-    page.on('request', (req) => {
+    // 이 테스트의 브라우저 묶음(탭, 새 창, 워커 포함)에서 나가는 요청을 모두 기록한다.
+    const context = page.context();
+    context.on('request', (req) => {
       const url = req.url();
       if (isLocal(url)) return;
       all.push(url);
-      if (origin === null) origin = url.startsWith('file:') ? 'file:' : new URL(url).origin;
       const o = url.startsWith('file:') ? 'file:' : new URL(url).origin;
+      if (origin === null) origin = o;
       if (o !== origin) external.push(url);
     });
     page.on('websocket', (ws) => external.push(ws.url()));
@@ -44,8 +46,10 @@ export const test = base.extend({
       if (m.type() === 'error') errors.push(m.text());
     });
     await use(page);
-    addMetric({ kind: 'network', test: testInfo.titlePath.slice(1).join(' > '), total: all.length, external });
+    const workers = context.serviceWorkers().length;
+    addMetric({ kind: 'network', test: testInfo.titlePath.slice(1).join(' > '), total: all.length, external, serviceWorkers: workers });
     expect(external, '자기 주소 밖으로 나간 요청').toEqual([]);
+    expect(workers, '등록된 서비스 워커').toBe(0);
     expect(errors, '브라우저 콘솔 오류').toEqual([]);
   },
 });

@@ -1,9 +1,10 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { Page } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../src/logic/example';
-import type { Answers } from '../src/types';
-import { checkScreen, findAnswerLeaks, type AuditOptions, type LeakTarget } from './audit';
+import type { Answers, AnswerValue, Exam } from '../src/types';
+import { VARIANT_URL } from '../playwright.config';
+import { checkScreen, findAnswerLeaks, waitSettled, type AuditOptions, type LeakTarget } from './audit';
 import {
   addMetric,
   chooseCauses,
@@ -24,12 +25,15 @@ import {
   wrongValue,
 } from './helpers';
 
-// 모든 화면을 한 바퀴 돌면서 화면마다 검사하고(10장 3, 4, 5, 7, 9번) 캡처한다(10번).
+// 모든 화면을 한 바퀴 돌면서 화면마다 검사하고(10장 3, 4, 5, 7, 8, 9번) 캡처한다(10번).
 
 export interface TourRun {
   id: string;
   /** 캡처를 남길 폴더 이름(docs/screens 아래). 없으면 검사만 한다. */
   shotDir: string | null;
+  viewport: { width: number; height: number };
+  colorScheme: 'light' | 'dark';
+  deviceScaleFactor: number;
 }
 
 /** 검산 예시에서 틀린 문항과 그 정답. 정답 보기를 누르기 전에는 화면에 나오면 안 된다. */
@@ -42,7 +46,35 @@ const LEAK_TARGETS: LeakTarget[] = [
   { no: 29, answer: 257, distinctive: true },
 ];
 
-export async function tour(page: Page, run: TourRun): Promise<void> {
+/** 저장소에 직접 넣는 기록 한 건(드문 상태를 화면으로 만들 때 쓴다). */
+function seededSession(id: string, exam: Exam, answers: Record<number, AnswerValue>, more: Record<string, unknown> = {}) {
+  return {
+    id,
+    examId: exam.id,
+    createdAt: '2026-11-22T10:00:00.000Z',
+    gradedBefore: 'not_yet',
+    seenBefore: null,
+    answers,
+    marks: {},
+    marksEditedAfterGrading: false,
+    timeFeel: null,
+    savedAt: null,
+    gradedAt: '2026-11-22T10:05:00.000Z',
+    firstGradedAt: '2026-11-22T10:05:00.000Z',
+    answersEditedAfterGrading: [],
+    causes: {},
+    answerViewed: {},
+    targetGrade: null,
+    retries: {},
+    ...more,
+  };
+}
+
+function storeWith(session: { id: string }) {
+  return { version: 1, sessions: [session], currentId: session.id, inputMode: 'keypad', testRuns: [], activeRunId: null };
+}
+
+export async function tour(page: Page, browser: Browser, run: TourRun): Promise<void> {
   const examA = loadExam('a');
   const examB = loadExam('b');
   const examC = loadExam('c');
@@ -52,18 +84,19 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   let count = 0;
   let leakChecks = 0;
 
-  const stop = async (name: string, opts: AuditOptions = {}) => {
+  const shoot = async (target: Page, name: string, opts: AuditOptions = {}) => {
     count += 1;
-    await settle(page);
-    await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))));
-    await checkScreen(page, name, run.id, opts);
+    await settle(target);
+    await checkScreen(target, name, run.id, opts);
     if (dir) {
-      await page.screenshot({ path: resolve(dir, `${String(count).padStart(2, '0')}-${name}.png`), animations: 'disabled' });
+      await target.screenshot({ path: resolve(dir, `${String(count).padStart(2, '0')}-${name}.png`), animations: 'disabled' });
     }
   };
+  const stop = (name: string, opts: AuditOptions = {}) => shoot(page, name, opts);
 
   const noLeak = async (where: string, revealed: number[] = []) => {
     leakChecks += 1;
+    await waitSettled(page);
     const leaks = await findAnswerLeaks(page, LEAK_TARGETS, revealed);
     addMetric({ kind: 'leak', run: run.id, where, leaks });
     expect.soft(leaks, `[${run.id}] ${where}: 정답 노출`).toEqual([]);
@@ -95,9 +128,16 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   await stop('답입력-키패드-처음', { mustFit: true });
   await enterKeypad(page, examA, answersA, 1, 11);
   await stop('답입력-키패드-객관식', { mustFit: true });
-  await enterKeypad(page, examA, answersA, 12, 21);
+  // "지우기"는 한 칸 뒤로 가서 지우고, 무엇을 지웠는지 알린다.
+  await tapKey(page, 'erase');
+  await expect(page.getByText('11번 답을 지웠어요.')).toBeVisible();
+  await expect(page.getByTestId('now-no')).toHaveText('11번');
+  await stop('답입력-키패드-지우기안내', { mustFit: true });
+  await enterKeypad(page, examA, answersA, 11, 21);
   await tapKey(page, 1);
   await tapKey(page, 2);
+  // "다음"을 누르기 전에는 칸에 들어가지 않는다.
+  await expect(page.locator('main [data-cell="22"] .cell__val')).toHaveText('');
   await stop('답입력-키패드-단답형', { mustFit: true });
   await tapKey(page, 3);
   await tapKey(page, 4);
@@ -115,6 +155,7 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   // (4) 입력 확인
   await stop('입력확인');
   await page.locator('main [data-cell="14"]').click();
+  await expect(page.locator('.sheet [data-key="1"]')).toContainText('지금 답');
   await stop('입력확인-답고치기-객관식');
   await tapKey(page.locator('.sheet'), 'erase');
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
@@ -180,7 +221,9 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   await noLeak('계단');
   await page.getByTestId('step-1').getByText('순서를 정한 방법').click();
   await page.getByTestId('step-1').getByTestId('copy-coords').click();
-  await expect(page.getByTestId('step-1').getByText(/좌표를 복사했어요|복사하지 못했어요/)).toBeVisible();
+  // 복사 권한을 준 상태다. 실제로 복사됐는지 내용까지 확인한다.
+  await expect(page.getByTestId('step-1').getByText('좌표를 복사했어요.')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('예시 좌표 12번\n예시 좌표 20번');
   await page.getByTestId('step-1').getByTestId('copy-coords').scrollIntoViewIfNeeded();
   await stop('계단-펼침');
 
@@ -220,8 +263,27 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   const caught15 = await findAnswerLeaks(page, LEAK_TARGETS, [27]);
   expect(caught15.some((l) => l.startsWith('15번')), '검사기가 15번 정답 노출을 잡아내는지').toBe(true);
   addMetric({ kind: 'leak-control', run: run.id, caught27: caught27.length, caught15: caught15.length });
+  await page.getByTestId('show-answer-21').click();
   await page.getByTestId('wrong-15').scrollIntoViewIfNeeded();
   await stop('오답원인-정답확인');
+
+  // (10) 재풀이: 적분. 14번은 처음에 맞혔던 문항, 21번은 정답을 먼저 본 문항이다.
+  await openApp(page, '/steps');
+  await page.getByTestId('step-1').getByTestId('retry-btn').click();
+  await expectHash(page, '/retry/t06');
+  await retryAnswer(page, examA, 14, 2);
+  await expect(page.getByTestId('retry-result')).toContainText('이번에는 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.');
+  await stop('재풀이-맞혔던문항-다름');
+  await page.getByTestId('retry-next').click();
+  await retryAnswer(page, examA, 20, 5);
+  await expect(page.getByTestId('retry-label')).toHaveText('다시 풀어 맞힘');
+  await page.getByTestId('retry-next').click();
+  await retryAnswer(page, examA, 21, 2);
+  await expect(page.getByTestId('retry-result')).toContainText('정답을 확인한 뒤 다시 맞혔어요.');
+  await expect(page.getByTestId('retry-label')).toHaveText('정답 확인 후 다시 맞힘');
+  await stop('재풀이-정답확인후');
+  await page.getByTestId('retry-next').click();
+  await expectHash(page, '/steps');
 
   // (11) 기록
   await page.getByRole('link', { name: '기록', exact: true }).click();
@@ -246,13 +308,13 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   await expectHash(page, '/demo/steps');
   await stop('예시결과-계단');
 
-  // (3) 답 입력, 5행 방식: 예시 시험 B
+  // (3) 답 입력, 5행 방식: 예시 시험 B, "이미 했어요" 경로
   const answersB: Answers = correctAnswers(examB);
   for (const no of [7, 17, 30]) answersB[no] = wrongValue(examB, no);
   answersB[12] = 'skip';
   answersB[21] = 'skip';
   await openApp(page, '/exams');
-  await chooseExam(page, 'sample-b', 'not_yet', 'first');
+  await chooseExam(page, 'sample-b', 'already', 'partial');
   await openApp(page, '/input?input=rows');
   await expect(page.locator('[data-row="1"]')).toBeVisible();
   await stop('답입력-5행-처음', { mustFit: true });
@@ -272,11 +334,14 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   });
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
   await expectHash(page, '/marks');
+  await expect(page.getByTestId('after-grading-note')).toBeVisible();
+  await stop('표시-채점한뒤표시');
   await page.getByRole('button', { name: '없어요' }).click();
   await expectHash(page, '/score');
   await page.getByRole('button', { name: '점수 해부 바로 보기' }).click();
   await expectHash(page, '/anatomy');
   await expect(page.getByTestId('row-guess-empty')).toBeVisible();
+  await expect(page.getByTestId('after-grading-note')).toBeVisible();
   await stop('점수해부-빈상태');
   await page.getByTestId('grade-1').click();
   await expect(page.getByTestId('cut-badge')).toContainText('확정');
@@ -302,33 +367,9 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   await expect(page.getByTestId('history-item')).toHaveCount(3);
   await stop('기록-여러건');
 
-  // 드문 상태: 전부 정답(틀린 문항 없음). 저장소에 기록을 직접 넣어 만든다.
-  await seedStore(page, {
-    version: 1,
-    sessions: [
-      {
-        id: 's-perfect',
-        examId: 'sample-a',
-        createdAt: '2026-11-22T10:00:00.000Z',
-        gradedBefore: 'not_yet',
-        seenBefore: null,
-        answers: correctAnswers(examA),
-        marks: {},
-        marksEditedAfterGrading: false,
-        timeFeel: null,
-        savedAt: null,
-        gradedAt: '2026-11-22T10:05:00.000Z',
-        causes: {},
-        answerViewed: {},
-        targetGrade: '1',
-        retries: {},
-      },
-    ],
-    currentId: 's-perfect',
-    inputMode: 'keypad',
-    testRuns: [],
-    activeRunId: null,
-  });
+  // 드문 상태들. 저장소에 기록을 직접 넣어 만든다.
+  // 전부 정답(틀린 문항 없음)
+  await seedStore(page, storeWith(seededSession('s-perfect', examA, correctAnswers(examA), { targetGrade: '1' })));
   await page.reload();
   await openApp(page, '/anatomy');
   await expect(page.getByTestId('actual')).toHaveText('100점');
@@ -339,6 +380,62 @@ export async function tour(page: Page, run: TourRun): Promise<void> {
   await openApp(page, '/steps');
   await expect(page.getByTestId('steps-empty')).toHaveText('틀린 문항이 없어요. 고칠 계단도 없어요.');
   await stop('계단-빈상태');
+
+  // 컷 범위 안: 12~15번(4점씩)을 틀려 84점, 목표 2등급(81~85)
+  const within = correctAnswers(examA);
+  for (const no of [12, 13, 14, 15]) within[no] = wrongValue(examA, no);
+  await seedStore(page, storeWith(seededSession('s-within', examA, within, { targetGrade: '2' })));
+  await page.reload();
+  await openApp(page, '/anatomy');
+  await expect(page.getByTestId('actual')).toHaveText('84점');
+  await expect(page.getByTestId('cut-actual')).toHaveText('컷 범위 안이에요.');
+  await expect(page.getByText('컷이 확정되면 이 화면이 바뀌어요.')).toBeVisible();
+  await page.getByTestId('cutbox').scrollIntoViewIfNeeded();
+  await stop('점수해부-컷범위안');
+
+  // 낮은 점수: 형식은 같고 평가하는 말이 없다. 1~4번만 맞히고 나머지는 틀리거나 안 풂. 2 + 2 + 2 + 3 = 9점.
+  const low: Record<number, AnswerValue> = {};
+  for (const it of examA.items) low[it.no] = it.no <= 4 ? (it.answer as number) : it.no % 3 === 0 ? 'skip' : wrongValue(examA, it.no);
+  await seedStore(page, storeWith(seededSession('s-low', examA, low, { targetGrade: '3' })));
+  await page.reload();
+  await openApp(page, '/score');
+  await expect(page.getByTestId('score')).toHaveText('9점');
+  await expect(page.getByText('30문항 가운데 4문항을 맞혔어요.')).toBeVisible();
+  await stop('점수-낮은점수');
+  await openApp(page, '/anatomy');
+  await expect(page.getByTestId('cut-actual')).toHaveText('실제 9점 기준 63~67점 남았어요');
+  await stop('점수해부-낮은점수');
+
+  // 등급컷 자료 없음: 등급컷을 뺀 검증용 변형 빌드의 예시 시험 B로 확인한다.
+  {
+    const ctx = await browser.newContext({
+      baseURL: VARIANT_URL,
+      viewport: run.viewport,
+      colorScheme: run.colorScheme,
+      deviceScaleFactor: run.deviceScaleFactor,
+      hasTouch: true,
+      isMobile: true,
+      locale: 'ko-KR',
+      timezoneId: 'Asia/Seoul',
+    });
+    const vp = await ctx.newPage();
+    const outside: string[] = [];
+    ctx.on('request', (req) => {
+      const url = req.url();
+      if (!url.startsWith(VARIANT_URL) && !url.startsWith('data:') && !url.startsWith('blob:')) outside.push(url);
+    });
+    await openApp(vp, '/');
+    await seedStore(vp, storeWith(seededSession('s-nocuts', examB, answersB)));
+    await vp.reload();
+    await openApp(vp, '/anatomy');
+    await expect(vp.getByTestId('actual')).toHaveText('82점');
+    await expect(vp.getByTestId('no-cuts')).toHaveText('등급컷 자료를 기다리고 있어요. 점수와 고칠 것은 지금 볼 수 있어요.');
+    await expect(vp.locator('[data-testid^="grade-"]')).toHaveCount(0);
+    await vp.getByTestId('cutbox').scrollIntoViewIfNeeded();
+    await shoot(vp, '점수해부-컷자료없음');
+    expect(outside, '변형 빌드에서 밖으로 나간 요청').toEqual([]);
+    await ctx.close();
+  }
 
   // (12) 테스트 진행자용: 참가자 한 명을 시작하고 측정 기록을 본다.
   await openApp(page, '/test');

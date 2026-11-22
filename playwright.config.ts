@@ -18,7 +18,8 @@ function browserOptions(): { channel?: string; launchOptions?: { executablePath:
   return { channel: 'chrome' };
 }
 
-const PORT = Number(process.env.SA_PORT ?? 4173);
+export const PORT = Number(process.env.SA_PORT ?? 4173);
+export const VARIANT_URL = `http://localhost:${PORT + 1}`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -40,10 +41,19 @@ export default defineConfig({
     timezoneId: 'Asia/Seoul',
     ...browserOptions(),
   },
-  webServer: {
-    command: `npx vite preview --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: true,
-    timeout: 60_000,
-  },
+  // 4173: 배포하는 빌드(dist). 4174: 검증용 변형 빌드(정답만 다른 시험 A, 등급컷이 없는 시험 B).
+  webServer: [
+    {
+      command: `npx vite preview --port ${PORT} --strictPort`,
+      url: `http://localhost:${PORT}`,
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
+    {
+      command: `npx vite preview --mode variant --port ${PORT + 1} --strictPort`,
+      url: `http://localhost:${PORT + 1}`,
+      reuseExistingServer: true,
+      timeout: 60_000,
+    },
+  ],
 });

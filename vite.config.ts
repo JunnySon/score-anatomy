@@ -1,22 +1,55 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
+import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+
+/**
+ * 검증에만 쓰는 변형 빌드(mode variant)의 시험 데이터를 바꾼다. 배포하는 빌드에는 쓰지 않는다.
+ * - 예시 시험 A: 검산 예시에서 틀리는 6문항의 정답만 다른 값으로 바꾼다(바꾼 뒤에도 그 응답은 틀린 답이다).
+ *   정답만 다른 두 빌드에 같은 조작을 하고 화면을 견주면, "정답 보기" 전에 정답이 새는 곳을 모두 찾을 수 있다.
+ * - 예시 시험 B: 등급컷을 뺀다. "등급컷 자료 없음" 상태의 화면을 캡처하는 데 쓴다.
+ */
+function variantExams(): Plugin {
+  const swap: Record<number, number> = { 11: 5, 15: 2, 20: 1, 21: 3, 27: 731, 29: 608 };
+  return {
+    name: 'score-anatomy-variant-exams',
+    enforce: 'pre',
+    transform(code, id) {
+      const file = id.split('?')[0] ?? id;
+      if (file.endsWith('/src/exams/sample-a.json')) {
+        const exam = JSON.parse(code) as { items: { no: number; answer?: number }[] };
+        for (const it of exam.items) {
+          const v = swap[it.no];
+          if (v !== undefined) it.answer = v;
+        }
+        return { code: JSON.stringify(exam), map: null };
+      }
+      if (file.endsWith('/src/exams/sample-b.json')) {
+        const exam = JSON.parse(code) as { cuts?: unknown };
+        delete exam.cuts;
+        return { code: JSON.stringify(exam), map: null };
+      }
+      return null;
+    },
+  };
+}
 
 // 일반 빌드는 Pretendard dynamic subset을 프로젝트 안에 싣고,
 // 단일 HTML 빌드(mode single)는 시스템 글꼴만 쓴다.
 export default defineConfig(({ mode }) => {
   const single = mode === 'single';
+  const variant = mode === 'variant';
   const fontFile = single ? './src/styles/font-system.css' : './src/styles/font-pretendard.css';
   return {
     base: './',
-    plugins: [react()],
+    plugins: [react(), ...(variant ? [variantExams()] : [])],
     resolve: {
       alias: {
         '#font': fileURLToPath(new URL(fontFile, import.meta.url)),
       },
     },
     build: {
-      outDir: single ? 'dist-single' : 'dist',
+      outDir: single ? 'dist-single' : variant ? 'verify-out/dist-variant' : 'dist',
       assetsInlineLimit: 0,
       sourcemap: false,
       emptyOutDir: true,

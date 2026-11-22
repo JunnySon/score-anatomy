@@ -11,9 +11,11 @@ const groups = [
   { name: '문서', files: [...walkTextFiles(join(ROOT, 'docs')), join(ROOT, 'README.md')].filter((f) => existsSync(f)) },
   { name: '빌드 결과(dist)', files: existsSync(join(ROOT, 'dist')) ? walkTextFiles(join(ROOT, 'dist')) : [] },
   { name: '단일 HTML(dist-single)', files: existsSync(join(ROOT, 'dist-single')) ? walkTextFiles(join(ROOT, 'dist-single')) : [] },
+  // 전달용 파일(아티팩트용 파일, 단일 HTML 사본). 압축 파일은 이진 파일이라 여기서 보지 않는다.
+  { name: '전달용 파일(release)', optional: true, files: existsSync(join(ROOT, 'release')) ? walkTextFiles(join(ROOT, 'release'), new Set()) : [] },
 ];
 
-const result = { groups: [], commits: { count: 0, hits: [] }, missing: [], ok: true };
+const result = { groups: [], commits: { count: 0, hits: [], checked: false }, missing: [], ok: true };
 
 for (const g of groups) {
   // README.md는 문서 묶음에서만 센다.
@@ -24,7 +26,7 @@ for (const g of groups) {
   }
   result.groups.push({ name: g.name, files: files.length, hits });
   if (hits.length > 0) result.ok = false;
-  if (files.length === 0) {
+  if (files.length === 0 && !g.optional) {
     result.missing.push(g.name);
     result.ok = false;
   }
@@ -40,9 +42,12 @@ try {
     const hits = findForbidden(body);
     if (hits.length > 0) result.commits.hits.push({ commit: hash.slice(0, 7), hits });
   }
+  result.commits.checked = true;
   if (result.commits.hits.length > 0) result.ok = false;
 } catch {
+  // 저장소(.git)가 있는데 커밋 메시지를 읽지 못했으면 검사하지 못한 것이므로 통과시키지 않는다.
   result.commits.count = 0;
+  if (existsSync(join(ROOT, '.git'))) result.ok = false;
 }
 
 mkdirSync(OUT, { recursive: true });
@@ -52,6 +57,10 @@ for (const g of result.groups) {
   console.log(`${g.name}: 파일 ${g.files}개, 금지 문자 ${g.hits.length}곳`);
   for (const h of g.hits.slice(0, 20)) console.log(`  ${h.file}:${h.line} ${h.chars.join(' ')}`);
 }
-console.log(`커밋 메시지: ${result.commits.count}개, 금지 문자 ${result.commits.hits.length}곳`);
+console.log(
+  result.commits.checked
+    ? `커밋 메시지: ${result.commits.count}개, 금지 문자 ${result.commits.hits.length}곳`
+    : '커밋 메시지: 읽지 못했어요(git 저장소가 아니거나 git을 실행하지 못함)',
+);
 if (result.missing.length > 0) console.log(`검사할 파일이 없는 묶음: ${result.missing.join(', ')}`);
 process.exit(result.ok ? 0 : 1);

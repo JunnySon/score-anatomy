@@ -50,9 +50,12 @@ for (const mode of ['keypad', 'rows'] as const) {
       await expect(page.getByTestId('now-no')).toHaveText('12번');
       await enterKeypad(page, exam, answers, 12, 21);
       await expect(page.getByTestId('section-name')).toHaveText('단답형 22~30번');
-      // 단답형은 한 자리만 눌렀다고 넘어가지 않는다.
+      // 단답형은 한 자리만 눌렀다고 넘어가지 않는다. "다음"을 누르기 전에는 답으로 들어가지도 않는다.
       await page.locator('[data-key="1"]').click();
       await expect(page.getByTestId('now-no')).toHaveText('22번');
+      await expect(page.getByTestId('entry')).toContainText('1');
+      await expect(page.locator('main [data-cell="22"] .cell__val')).toHaveText('');
+      await expect(page.getByTestId('entered-count')).toHaveText('21문항 입력');
       await page.locator('[data-key="erase"]').click();
       await enterKeypad(page, exam, answers, 22, 30);
       await expectHash(page, '/review');
@@ -88,6 +91,10 @@ for (const mode of ['keypad', 'rows'] as const) {
     for (const no of [11, 15, 20, 21, 27, 29]) await expect(page.getByTestId(`wrong-${no}`)).toBeVisible();
     await expect(page.getByTestId('wrong-27')).toContainText('내 답 146');
     await chooseCauses(page, exampleCauses());
+    // 21번은 정답을 먼저 본다. "정답 확인함"으로 기록된다.
+    await page.getByTestId('show-answer-21').click();
+    await expect(page.getByTestId('answer-21')).toContainText('정답 2');
+    await expect(page.getByTestId('answer-21')).toContainText('정답 확인함');
     await page.getByRole('button', { name: '점수 해부 보기' }).click();
 
     // 점수 해부
@@ -178,18 +185,33 @@ for (const mode of ['keypad', 'rows'] as const) {
     await expect(page.getByTestId('step-2').getByTestId('retry-status')).toContainText('15번: 실수로 표시함, 다시 풀어 맞힘');
     await expect(page.getByTestId('step-2').getByTestId('retry-status')).toContainText('29번: 다시 풀었지만 답이 다름');
 
-    // 재풀이: 적분. 14번은 맞힌 문항이라 정답을 아는 상태로 적는다.
+    // 재풀이: 적분. 14번(찍어서 맞혔다고 표시), 20번(풀이가 안 떠올랐다고 표시), 21번(정답을 먼저 봄).
     await page.getByTestId('step-1').getByTestId('retry-btn').click();
     await expectHash(page, '/retry/t06');
     await retryAnswer(page, exam, 14, 1);
-    await expect(page.getByTestId('retry-label')).toHaveText('정답 확인 후 다시 맞힘');
-    await page.getByTestId('retry-next').click();
-    await retryAnswer(page, exam, 20, 5);
+    await expect(page.getByTestId('retry-result')).toContainText('다시 풀어 맞혔어요.');
     await expect(page.getByTestId('retry-label')).toHaveText('다시 풀어 맞힘');
     await page.getByTestId('retry-next').click();
-    await retryAnswer(page, exam, 21, 2);
-    await expect(page.getByTestId('retry-result')).toContainText('다시 풀어 맞혔어요.');
+    // 20번은 한 번 틀린 뒤에 맞힌다. 몇 번째에 맞혔는지 그대로 적는다.
+    await retryAnswer(page, exam, 20, 4);
+    await expect(page.getByTestId('retry-result')).toContainText('이번에도 답이 달랐어요.');
     await page.getByTestId('retry-next').click();
+    await retryAnswer(page, exam, 21, 2);
+    await expect(page.getByTestId('retry-result')).toContainText('정답을 확인한 뒤 다시 맞혔어요.');
+    await expect(page.getByTestId('retry-label')).toHaveText('정답 확인 후 다시 맞힘');
+    await page.getByTestId('retry-next').click();
+    await expectHash(page, '/steps');
+    await expect(page.getByTestId('step-1').getByTestId('retry-status')).toContainText('14번: 다시 풀어 맞힘');
+    await expect(page.getByTestId('step-1').getByTestId('retry-status')).toContainText('20번: 다시 풀었지만 답이 다름');
+    await expect(page.getByTestId('step-1').getByTestId('retry-status')).toContainText('21번: 정답 확인 후 다시 맞힘');
+    await page.getByTestId('step-1').getByTestId('retry-btn').click();
+    await retryAnswer(page, exam, 14, 1);
+    // 처음에 바로 맞힌 문항은 또 맞혀도 라벨이 그대로다.
+    await expect(page.getByTestId('retry-label')).toHaveText('다시 풀어 맞힘');
+    await page.getByTestId('retry-next').click();
+    await retryAnswer(page, exam, 20, 5);
+    await expect(page.getByTestId('retry-label')).toHaveText('2번째에 맞힘');
+    await page.getByRole('button', { name: '뒤로' }).click();
     await expectHash(page, '/steps');
 
     // 기록에 78점으로 남고, 새로 열어도 그대로다.

@@ -30,13 +30,20 @@ test('키패드 방식: 지우기, 칸 누르기, 안 풂, 전체 보기', async
   await page.locator('[data-cell="1"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('1번');
   await expect(page.locator('[data-cell="1"]')).toHaveAttribute('aria-current', 'true');
-  // 지금 칸에 답이 있으면 그 칸만 지운다.
+  // 첫 칸에서는 뒤로 갈 칸이 없어 "지우기"가 아무것도 지우지 않는다.
   await tapKey(page, 'erase');
   await expect(page.getByTestId('now-no')).toHaveText('1번');
-  await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('');
+  await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('3');
+  // 답이 있는 칸에서 키를 누르면 그 칸의 답이 바뀌고 다음 문항으로 넘어간다.
   await tapKey(page, 4);
   await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('4');
   await expect(page.getByTestId('now-no')).toHaveText('2번');
+  // "지우기"는 지금 칸에 답이 있어도 지시서대로 한 칸 뒤로 가서 지우고, 무엇을 지웠는지 알린다.
+  await page.locator('[data-cell="3"]').click();
+  await tapKey(page, 'erase');
+  await expect(page.getByTestId('now-no')).toHaveText('2번');
+  await expect(page.locator('[data-cell="2"] .cell__val')).toHaveText('');
+  await expect(page.getByText('2번 답을 지웠어요.')).toBeVisible();
 
   // 묶음이 넘어가면 직전 묶음과 현재 묶음 두 줄이 보인다.
   await tapKey(page, 1);
@@ -88,10 +95,12 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   await expect(page.getByTestId('now-no')).toHaveText('22번');
   await expect(page.getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
 
-  // 한 자리만 눌렀다고 넘어가지 않는다. 누른 숫자는 크게 보인다.
+  // 한 자리만 눌렀다고 넘어가지 않는다. 누른 숫자는 크게 보이고, "다음" 전에는 칸에 들어가지 않는다.
   await tapKey(page, 0);
   await expect(page.getByTestId('now-no')).toHaveText('22번');
   await expect(page.getByTestId('entry')).toContainText('0');
+  await expect(page.locator('[data-cell="22"] .cell__val')).toHaveText('');
+  await expect(page.getByTestId('entered-count')).toHaveText('21문항 입력');
   // 0 다음에 숫자를 누르면 앞의 0은 사라진다.
   await tapKey(page, 7);
   await expect(page.getByTestId('entry')).toHaveText(/7$/);
@@ -117,6 +126,29 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   // 0도 답으로 넣을 수 있다.
   await tapKey(page, 0);
   await tapKey(page, 'go');
+  await expect(page.locator('[data-cell="22"] .cell__val')).toHaveText('0');
+
+  // 숫자를 누르다가 "다음" 없이 다른 칸으로 가면 누른 숫자는 들어가지 않고, 그 사실을 알린다.
+  await expect(page.getByTestId('now-no')).toHaveText('23번');
+  await tapKey(page, 9);
+  await tapKey(page, 9);
+  await page.locator('[data-cell="24"]').click();
+  await expect(page.getByTestId('now-no')).toHaveText('24번');
+  await expect(page.locator('[data-cell="23"] .cell__val')).toHaveText('');
+  await expect(page.getByText("23번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
+  // "전체 보기"로 넘어가도 확정하지 않은 숫자는 미입력으로 남는다.
+  await tapKey(page, 7);
+  await page.getByRole('button', { name: '전체 보기' }).click();
+  await expectHash(page, '/review');
+  await expect(page.locator('main [data-cell="24"] .cell__val')).toHaveText('미입력');
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expectHash(page, '/input');
+  // 이미 들어 있는 답은 숫자를 눌러도 "다음" 전에는 바뀌지 않는다.
+  await page.locator('[data-cell="22"]').click();
+  await tapKey(page, 5);
+  await expect(page.getByTestId('entry')).toContainText('5');
+  await expect(page.locator('[data-cell="22"] .cell__val')).toHaveText('0');
+  await page.locator('[data-cell="23"]').click();
   await expect(page.locator('[data-cell="22"] .cell__val')).toHaveText('0');
 
   // 기기 기본 자판을 띄우는 입력 칸이 없다.
@@ -255,11 +287,12 @@ test('표시 화면: 누를 때마다 고민, 찍음, 표시 없음 순으로 �
   await short.click();
   await expect(short).not.toContainText('자신 없음');
 
-  // 표시가 없을 때만 "없어요"가 보인다.
+  // 주 버튼 "채점하기"와 보조 버튼 "없어요"가 함께 있다.
   await expect(page.getByRole('button', { name: '없어요' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '채점하기' })).toBeVisible();
   await cell.click();
-  await expect(page.getByRole('button', { name: '없어요' })).toHaveCount(0);
   await cell.click();
+  await expect(page.getByRole('button', { name: '없어요' })).toBeVisible();
   await page.getByTestId('time-missed').click();
   await expect(page.getByTestId('time-missed')).toHaveAttribute('aria-checked', 'true');
 

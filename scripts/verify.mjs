@@ -37,6 +37,29 @@ function pngCount(dir) {
   return readdirSync(full).filter((f) => f.endsWith('.png') && statSync(join(full, f)).size > 0).length;
 }
 
+// 1번 항목에서 반드시 있어야 하고 통과해야 하는 단위 테스트(7장 검산 예시의 기대값과 추가 경우).
+// 테스트가 지워지거나 이름이 바뀌면 이 항목은 실패한다.
+const REQUIRED_UNIT_TESTS = [
+  '7장 검산 예시 틀린 문항 6개와 배점',
+  '7장 검산 예시 실제 78점, 맞힌 문항 24개',
+  '7장 검산 예시 추측 표시 정답 7점, 찍음 전체 배점 18점',
+  '7장 검산 예시 찍기 운을 평균으로 본 점수 74.6, 화면에는 약 75점',
+  '7장 검산 예시 실수 표시 오답 8점, 그 외 오답 14점',
+  '7장 검산 예시 목표 2등급(컷 81~85): 첫 줄 3~7점, 둘째 줄 6~10점',
+  '7장 검산 예시 목표 1등급(컷 88~92): 10~14점, 13~17점',
+  '7장 검산 예시 목표 3등급(컷 72~76): 컷 범위보다 위',
+  '7장 검산 예시 계단: 적분 12점, 수열 8점, 확률 6점 순으로 3개',
+  '추가 경우 표시 없음: 추정 점수를 보여 주지 않는다',
+  '추가 경우 전부 정답: 100점, 계단 없음',
+  '추가 경우 전부 안 풂: 0점으로 채점하고 미입력과 구분한다',
+  '추가 경우 컷 범위 안인 실제 점수',
+  '추가 경우 컷 범위 안, 컷 범위 위, 컷 범위 아래',
+  '추가 경우 컷 자료 없음',
+  '추가 경우 확정 컷: 범위 대신 한 숫자',
+  '추가 경우 섞인 배열 시험 B: 채점, 확정 컷, 계단',
+  '추가 경우 미입력이 남아 있으면 채점하지 않는다',
+];
+
 // 0. 이전 결과를 지운다.
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
@@ -45,15 +68,18 @@ rmSync(join(ROOT, 'docs/screens'), { recursive: true, force: true });
 // 1. 단위 테스트
 const unitRun = run('1. 단위 테스트', npx, ['vitest', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${join(OUT, 'unit.json')}`]);
 
-// 빌드(타입 검사 포함)와 단일 HTML
+// 빌드(타입 검사 포함), 단일 HTML, 검증용 변형 빌드, 아티팩트용 파일
 const buildRun = run('빌드', npm, ['run', 'build']);
 const singleRun = run('단일 HTML 빌드', npm, ['run', 'build:single']);
+const variantRun = run('검증용 변형 빌드(정답만 다른 시험 A, 등급컷이 없는 시험 B)', npm, ['run', 'build:variant']);
+const artifactRun = run('아티팩트용 파일', process.execPath, [join(ROOT, 'scripts/make-artifact.mjs')]);
+const buildsOk = buildRun.ok && singleRun.ok && variantRun.ok && artifactRun.ok;
 
 // 8. 색 대비 계산
 const contrastRun = run('8. 색 대비 계산', process.execPath, [join(ROOT, 'scripts/check-contrast.mjs')]);
 
-// 2, 3, 4, 5, 6, 7(화면), 9, 10. 브라우저로 화면 검사
-const e2eRun = buildRun.ok && singleRun.ok ? run('2~10. 화면 검사', npx, ['playwright', 'test', '--trace', 'off']) : { ok: false, seconds: 0 };
+// 2, 3, 4, 5, 6, 7(화면), 8(그려진 색), 9, 10. 브라우저로 화면 검사
+const e2eRun = buildsOk ? run('2~10. 화면 검사', npx, ['playwright', 'test', '--trace', 'off']) : { ok: false, seconds: 0 };
 
 // ---------- 결과 모으기 ----------
 const unit = readJson(join(OUT, 'unit.json'));
@@ -65,6 +91,9 @@ const metrics = existsSync(join(OUT, 'metrics.jsonl'))
       .filter(Boolean)
       .map((l) => JSON.parse(l))
   : [];
+
+const unitTests = unit ? unit.testResults.flatMap((f) => f.assertionResults) : [];
+const missingUnit = REQUIRED_UNIT_TESTS.filter((name) => !unitTests.some((t) => t.fullName === name && t.status === 'passed'));
 
 const tests = [];
 function walk(suite, path) {
@@ -87,24 +116,27 @@ const audits = metrics.filter((m) => m.kind === 'audit');
 const net = metrics.filter((m) => m.kind === 'network');
 const leaks = metrics.filter((m) => m.kind === 'leak');
 const leakControls = metrics.filter((m) => m.kind === 'leak-control');
+const leakDiff = metrics.find((m) => m.kind === 'leak-diff') ?? null;
 const flows = metrics.filter((m) => m.kind === 'flow');
 const small = metrics.filter((m) => m.kind === 'small');
 const tours = metrics.filter((m) => m.kind === 'tour');
+const conditions = metrics.filter((m) => m.kind === 'condition');
 const single = metrics.find((m) => m.kind === 'single') ?? null;
+const artifact = metrics.find((m) => m.kind === 'artifact') ?? null;
 
 const sum = (list, f) => list.reduce((s, x) => s + f(x), 0);
 const min = (list, f) => (list.length > 0 ? Math.min(...list.map(f)) : null);
 const max = (list, f) => (list.length > 0 ? Math.max(...list.map(f)) : null);
-const count = (list, f) => sum(list, (x) => f(x).length);
+const count = (list, f) => sum(list, (x) => (f(x) ?? []).length);
 const withTargets = audits.filter((a) => a.targetCount > 0);
 const withGap = audits.filter((a) => a.minGap !== null);
+const withText = audits.filter((a) => a.contrastCount > 0);
+const withEdges = audits.filter((a) => a.edgeCount > 0);
 const smallAudits = audits.filter((a) => a.run === 'light-360x640' || a.run === 'small-keypad' || a.run === 'small-rows');
 const fitAudits = smallAudits.filter((a) => a.mustFit);
 
-const text = readJson(join(OUT, 'text.json'));
-
 // ---------- 항목별 판정 ----------
-const unitOk = unitRun.ok && unit !== null && unit.numFailedTests === 0 && unit.numTotalTests > 0;
+const unitOk = unitRun.ok && unit !== null && unit.numFailedTests === 0 && unit.numTotalTests > 0 && missingUnit.length === 0;
 const flowTests = byFile('flow.spec.ts');
 const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
@@ -113,18 +145,33 @@ const smallOk =
   smallAudits.length > 0 &&
   count(smallAudits, (a) => a.overlaps) === 0 &&
   count(smallAudits, (a) => a.obscured) === 0 &&
+  count(smallAudits, (a) => a.clippedSide) === 0 &&
   count(fitAudits, (a) => a.outside) === 0 &&
   fitAudits.every((a) => !a.scrolls);
-const fontOk = audits.length > 0 && count(audits, (a) => a.smallText) === 0 && min(audits, (a) => a.minFont) >= 13;
+const fontOk =
+  audits.length > 0 && count(audits, (a) => a.smallText) === 0 && count(audits, (a) => a.smallInputs) === 0 && min(audits, (a) => a.minFont) >= 13;
 const targetOk = withTargets.length > 0 && count(audits, (a) => a.smallTargets) === 0 && min(withTargets, (a) => Math.min(a.minTargetW, a.minTargetH)) >= 47.5;
-const netOk = net.length > 0 && count(net, (n) => n.external) === 0 && (single ? single.external === 0 : false);
+const netOk =
+  net.length > 0 &&
+  count(net, (n) => n.external) === 0 &&
+  sum(net, (n) => n.serviceWorkers ?? 0) === 0 &&
+  (single ? single.external === 0 : false);
 const screenTextOk = audits.length > 0 && count(audits, (a) => a.forbidden) === 0 && count(audits, (a) => a.exclamation) === 0 && count(audits, (a) => a.emoji) === 0;
-const renderedContrastOk = audits.length > 0 && count(audits, (a) => a.lowContrast) === 0;
+const renderedContrastOk = audits.length > 0 && count(audits, (a) => a.lowContrast) === 0 && count(audits, (a) => a.lowEdges) === 0;
 const contrastOk = contrastRun.ok && contrast !== null && contrast.ok && renderedContrastOk;
-const leakOk = leaks.length > 0 && count(leaks, (l) => l.leaks) === 0 && leakControls.length > 0 && leakControls.every((c) => c.caught27 > 0 && c.caught15 > 0);
+const leakOk =
+  leaks.length > 0 &&
+  count(leaks, (l) => l.leaks) === 0 &&
+  leakControls.length > 0 &&
+  leakControls.every((c) => c.caught27 > 0 && c.caught15 > 0) &&
+  leakDiff !== null &&
+  leakDiff.compared > 0 &&
+  leakDiff.differences.length === 0 &&
+  leakDiff.controlShort === true &&
+  leakDiff.controlMc === true;
 const shots = { light: pngCount('light'), dark: pngCount('dark'), small: pngCount('small') };
 const expectedShots = tours.find((t) => t.shots > 0)?.shots ?? 0;
-const shotsOk = expectedShots > 0 && shots.light === expectedShots && shots.dark === expectedShots;
+const shotsOk = expectedShots > 0 && shots.light === expectedShots && shots.dark === expectedShots && shots.small === expectedShots;
 
 // ---------- 보고서 ----------
 const pad = (n) => String(n).padStart(2, '0');
@@ -156,7 +203,14 @@ const say = (s = '') => L.push(s);
 function buildReport(textOk, textResult) {
   L.length = 0;
   const items = [
-    ['1', '단위 테스트', unitOk, unit ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개` : '결과 파일 없음'],
+    [
+      '1',
+      '단위 테스트',
+      unitOk,
+      unit
+        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개. 꼭 있어야 하는 검산 예시와 추가 경우 테스트 ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인`
+        : '결과 파일 없음',
+    ],
     [
       '2',
       '화면 흐름(390x844)',
@@ -167,27 +221,32 @@ function buildReport(textOk, textResult) {
       '3',
       '작은 화면(360x640)',
       smallOk,
-      `화면 상태 ${smallAudits.length}개 검사(스크롤 없이 들어와야 하는 답 입력 상태 ${fitAudits.length}개 포함). 겹침 ${count(smallAudits, (a) => a.overlaps)}곳, 가려짐 ${count(smallAudits, (a) => a.obscured)}곳, 답 입력 화면에서 화면 밖 ${count(fitAudits, (a) => a.outside)}곳, 스크롤 생김 ${fitAudits.filter((a) => a.scrolls).length}곳`,
+      `화면 상태 ${smallAudits.length}개 검사(스크롤 없이 들어와야 하는 답 입력 상태 ${fitAudits.length}개 포함). 겹침 ${count(smallAudits, (a) => a.overlaps)}곳, 가려짐 ${count(smallAudits, (a) => a.obscured)}곳, 옆으로 잘림 ${count(smallAudits, (a) => a.clippedSide)}곳, 답 입력 화면에서 화면 밖 ${count(fitAudits, (a) => a.outside)}곳, 스크롤 생김 ${fitAudits.filter((a) => a.scrolls).length}곳`,
     ],
-    ['4', '글자 크기 13px 이상', fontOk, `화면 상태 ${audits.length}개에서 보이는 글자 ${sum(audits, (a) => a.textCount)}개 검사. 가장 작은 글자 ${min(audits, (a) => a.minFont)}px, 13px 미만 ${count(audits, (a) => a.smallText)}개`],
+    [
+      '4',
+      '글자 크기 13px 이상',
+      fontOk,
+      `화면 상태 ${audits.length}개에서 보이는 글자 ${sum(audits, (a) => a.textCount)}개 검사. 가장 작은 글자 ${min(audits, (a) => a.minFont)}px, 13px 미만 ${count(audits, (a) => a.smallText)}개, 16px 미만인 입력 칸 ${count(audits, (a) => a.smallInputs)}개`,
+    ],
     [
       '5',
       '터치 영역 48x48px 이상',
       targetOk,
-      `조작 요소 ${sum(audits, (a) => a.targetCount)}개 검사. 가장 작은 폭 ${min(withTargets, (a) => a.minTargetW)}px, 가장 작은 높이 ${min(withTargets, (a) => a.minTargetH)}px, 48px 미만 ${count(audits, (a) => a.smallTargets)}개. 예외 없음`,
+      `조작 요소 ${sum(audits, (a) => a.targetCount)}개 검사. 가장 작은 폭 ${min(withTargets, (a) => a.minTargetW)}px, 가장 작은 높이 ${min(withTargets, (a) => a.minTargetH)}px, 48px 미만 ${count(audits, (a) => a.smallTargets)}개. 예외 없음(폭 360px 미만은 지원 범위 밖이라 검사 대상이 아님)`,
     ],
     [
       '6',
       '외부 요청 0건',
       netOk,
-      `테스트 ${net.length}개에서 요청 ${sum(net, (n) => n.total)}건 관찰, 자기 주소 밖 ${count(net, (n) => n.external)}건. 단일 HTML은 요청 ${single ? single.requests : '?'}건(파일 자신뿐), 밖으로 ${single ? single.external : '?'}건`,
+      `테스트 ${net.length}개에서 요청 ${sum(net, (n) => n.total)}건 관찰, 자기 주소 밖 ${count(net, (n) => n.external)}건, 서비스 워커 ${sum(net, (n) => n.serviceWorkers ?? 0)}개. 단일 HTML은 요청 ${single ? single.requests : '?'}건(파일 자신뿐), 밖으로 ${single ? single.external : '?'}건`,
     ],
     [
       '7',
       '금지 문자, 느낌표, 이모지',
       textOk && screenTextOk,
       textResult
-        ? `${textResult.groups.map((g) => `${g.name} ${g.files}개에서 ${g.hits.length}곳`).join(', ')}, 커밋 메시지 ${textResult.commits.count}개에서 ${textResult.commits.hits.length}곳. 그려진 화면 상태 ${audits.length}개에서 금지 문자 ${count(audits, (a) => a.forbidden)}, 느낌표 ${count(audits, (a) => a.exclamation)}, 이모지 ${count(audits, (a) => a.emoji)}`
+        ? `${textResult.groups.map((g) => `${g.name} ${g.files}개에서 ${g.hits.length}곳`).join(', ')}, 커밋 메시지 ${textResult.commits.checked ? `${textResult.commits.count}개에서 ${textResult.commits.hits.length}곳` : '읽지 못함'}. 그려진 화면 상태 ${audits.length}개에서 금지 문자 ${count(audits, (a) => a.forbidden)}, 느낌표 ${count(audits, (a) => a.exclamation)}, 이모지 ${count(audits, (a) => a.emoji)}`
         : '결과 파일 없음',
     ],
     [
@@ -195,16 +254,16 @@ function buildReport(textOk, textResult) {
       '색 대비',
       contrastOk,
       contrast
-        ? `색 값 계산: 글자 조합 최저 ${min(contrast.rows.filter((r) => r.min === 4.5), (r) => r.ratio).toFixed(2)}:1(기준 4.5:1), 테두리와 윤곽 최저 ${min(contrast.rows.filter((r) => r.min === 3), (r) => r.ratio).toFixed(2)}:1(기준 3:1), 조합 ${contrast.rows.length}개 가운데 실패 ${contrast.rows.filter((r) => !r.pass).length}개. 그려진 글자 ${sum(audits, (a) => a.contrastCount)}개의 실제 대비 최저 ${min(audits.filter((a) => a.contrastCount > 0), (a) => a.minContrast)}:1, 4.5:1 미만 ${count(audits, (a) => a.lowContrast)}개`
+        ? `색 값 계산: 글자 조합 최저 ${min(contrast.rows.filter((r) => r.min === 4.5), (r) => r.ratio).toFixed(2)}:1(기준 4.5:1), 테두리와 윤곽 최저 ${min(contrast.rows.filter((r) => r.min === 3), (r) => r.ratio).toFixed(2)}:1(기준 3:1), 조합 ${contrast.rows.length}개 가운데 실패 ${contrast.rows.filter((r) => !r.pass).length}개. 그려진 글자 ${sum(audits, (a) => a.contrastCount)}개의 실제 대비 최저 ${min(withText, (a) => a.minContrast)}:1(4.5:1 미만 ${count(audits, (a) => a.lowContrast)}개), 그려진 입력 테두리와 그래프 윤곽 ${sum(audits, (a) => a.edgeCount)}개의 실제 대비 최저 ${min(withEdges, (a) => a.minEdgeContrast)}:1(3:1 미만 ${count(audits, (a) => a.lowEdges)}개)`
         : '결과 파일 없음',
     ],
     [
       '9',
       '정답 노출',
       leakOk,
-      `"정답 보기"를 누르기 전 상태를 ${leaks.length}번 검사, 노출 ${count(leaks, (l) => l.leaks)}건. 대조 검사 ${leakControls.length}번 모두에서 정답을 연 뒤에는 검사기가 노출을 잡아냄`,
+      `정답만 다른 두 빌드의 화면 ${leakDiff ? leakDiff.compared : 0}곳을 통째로 견줌: 다른 곳 ${leakDiff ? leakDiff.differences.length : '?'}곳. 화면 글자와 속성을 읽는 검사 ${leaks.length}번: 노출 ${count(leaks, (l) => l.leaks)}건. 대조 검사에서 "정답 보기"를 누른 뒤에는 두 검사 모두 노출을 잡아냄`,
     ],
-    ['10', '화면 캡처', shotsOk, `밝은 화면 ${shots.light}장, 어두운 화면 ${shots.dark}장(390x844, 2배 해상도), 작은 화면 ${shots.small}장(360x640). 기대한 장수는 화면마다 ${expectedShots}장`],
+    ['10', '화면 캡처', shotsOk, `밝은 화면 ${shots.light}장, 어두운 화면 ${shots.dark}장(390x844, 2배 해상도), 작은 화면 ${shots.small}장(360x640). 기대한 장수는 묶음마다 ${expectedShots}장`],
   ];
   const failed = items.filter((i) => !i[2]);
   const otherFailed = tests.filter((t) => !t.ok);
@@ -227,11 +286,12 @@ function buildReport(textOk, textResult) {
   say('| --- | --- | --- | --- |');
   for (const [no, name, ok, detail] of items) say(`| ${no} | ${name} | ${mark(ok)} | ${detail} |`);
   say();
-  if (failed.length > 0 || otherFailed.length > 0) {
+  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0) {
     say('## 실패한 것');
     say();
     for (const [no, name] of failed) say(`- ${no}번 ${name}`);
     for (const t of otherFailed) say(`- 테스트: ${t.title}`);
+    for (const name of missingUnit) say(`- 없거나 통과하지 못한 단위 테스트: ${name}`);
     say();
   }
 
@@ -247,6 +307,7 @@ function buildReport(textOk, textResult) {
     say();
     say('7장 검산 예시의 기대값(실제 78점, 맞힌 문항 24개, 추측 표시 정답 7점, 찍음 전체 배점 18점, 찍기 운을 평균으로 본 점수 74.6, 실수 표시 오답 8점, 그 외 오답 14점, 등급별 남은 점수, 계단 3개)과');
     say('추가 경우(표시 없음, 전부 정답, 전부 안 풂, 컷 범위 안, 컷 범위 위, 컷 자료 없음, 확정 컷, 섞인 배열 시험 B)는 src/logic/scoring.test.ts 에 있어요.');
+    say(`이 테스트들이 지워지거나 이름이 바뀌어 빠지면 1번 항목이 실패하도록, 꼭 있어야 하는 테스트 ${REQUIRED_UNIT_TESTS.length}개의 이름을 따로 확인해요.`);
     say();
   }
 
@@ -263,29 +324,44 @@ function buildReport(textOk, textResult) {
   say();
   say('화면 상태마다 브라우저가 실제로 그린 결과를 읽어서 검사했어요.');
   say();
-  say('| 검사 묶음 | 화면 상태 | 가장 작은 글자 | 가장 작은 터치 영역 | 요소 사이 최소 간격 | 겹침 | 가려짐 | 진한 색 면적 최대 |');
-  say('| --- | --- | --- | --- | --- | --- | --- | --- |');
+  say('| 검사 묶음 | 화면 상태 | 가장 작은 글자 | 가장 작은 터치 영역 | 요소 사이 최소 간격 | 겹침 | 가려짐 | 옆으로 잘림 | 진한 색 면적 최대 |');
+  say('| --- | --- | --- | --- | --- | --- | --- | --- | --- |');
   const runs = [...new Set(audits.map((a) => a.run))];
   for (const id of runs) {
     const list = audits.filter((a) => a.run === id);
     const wt = list.filter((a) => a.targetCount > 0);
     const wg = list.filter((a) => a.minGap !== null);
     say(
-      `| ${id} | ${list.length}개 | ${min(list, (a) => a.minFont)}px | ${wt.length ? `${min(wt, (a) => a.minTargetW)}x${min(wt, (a) => a.minTargetH)}px` : '없음'} | ${wg.length ? `${min(wg, (a) => a.minGap)}px` : '없음'} | ${count(list, (a) => a.overlaps)} | ${count(list, (a) => a.obscured)} | ${(max(list, (a) => a.accentRatio) * 100).toFixed(1)}% |`,
+      `| ${id} | ${list.length}개 | ${min(list, (a) => a.minFont)}px | ${wt.length ? `${min(wt, (a) => a.minTargetW)}x${min(wt, (a) => a.minTargetH)}px` : '없음'} | ${wg.length ? `${min(wg, (a) => a.minGap)}px` : '없음'} | ${count(list, (a) => a.overlaps)} | ${count(list, (a) => a.obscured)} | ${count(list, (a) => a.clippedSide)} | ${(max(list, (a) => a.accentRatio) * 100).toFixed(1)}% |`,
     );
   }
   say();
+  say('- 가려짐은 조작 요소마다 보이는 부분의 가운데와 네 귀퉁이를 눌러 봐서 그 요소가 눌리는지로 봤어요.');
   say(`- 요소 사이 간격: 같은 스크롤 영역 안에서 온전히 보이는 조작 요소끼리 쟀어요. 8px 미만 ${count(audits, (a) => a.tightGaps)}곳, 전체 최소 ${withGap.length ? min(withGap, (a) => a.minGap) : '없음'}px.`);
-  say(`- 주 숫자(56px)는 화면마다 최대 ${max(audits, (a) => a.heroCount)}개, 주 버튼은 화면마다 최대 ${max(audits, (a) => a.primaryCount)}개였어요.`);
+  say(`- 상자에 잘린 글자 ${count(audits, (a) => a.clippedText)}곳, 칼럼 밖으로 나가 잘린 요소 ${count(audits, (a) => a.clippedSide)}곳.`);
+  say(`- 주 숫자(계산된 크기 40px 이상인 글자)는 화면마다 최대 ${max(audits, (a) => a.heroCount)}개, 주 버튼(포인트색으로 칠한 큰 조작 요소)은 화면마다 최대 ${max(audits, (a) => a.primaryCount)}개였어요.`);
   say(`- 진한 색 면적은 포인트색으로 칠한 면의 넓이를 화면 넓이로 나눈 값이에요. 가장 큰 화면이 ${(max(audits, (a) => a.accentRatio) * 100).toFixed(1)}%였어요(기준 10% 이하).`);
+  say(`- 정답색, 오답색, 경고색을 넓은 면이나 큰 글자에 쓴 곳: ${count(audits, (a) => a.semanticMisuse)}곳.`);
   say(`- 작은 화면 답 입력: 키패드 방식 ${small.find((s) => s.mode === 'keypad')?.checked ?? 0}개 상태, 5행 방식 ${small.find((s) => s.mode === 'rows')?.checked ?? 0}개 상태를 따로 검사했어요.`);
   say();
+  if (conditions.length > 0) {
+    say('지시서 범위 밖의 조건에서도 답 입력 화면을 끝까지 쓸 수 있는지 봤어요(키패드의 모든 키와 안내문이 화면 안에 있고, 지금 칸으로 스크롤되는지).');
+    say();
+    say('| 조건 | 확인한 상태 | 내용이 넘쳐 스크롤이 생긴 높이(최대) |');
+    say('| --- | --- | --- |');
+    for (const name of [...new Set(conditions.map((c) => c.name))]) {
+      const list = conditions.filter((c) => c.name === name);
+      say(`| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px |`);
+    }
+    say();
+  }
 
   say('## 6. 외부 요청');
   say();
-  say(`테스트마다 브라우저가 보낸 요청을 모두 기록했어요. 요청 ${sum(net, (n) => n.total)}건이 전부 앱을 연 주소 안으로 갔고, 밖으로 나간 요청은 ${count(net, (n) => n.external)}건이에요.`);
-  say('글꼴(Pretendard dynamic subset)과 스크립트는 프로젝트 안에 실려 있어요. 서비스 워커는 등록하지 않아요.');
+  say(`테스트마다 브라우저 묶음(탭, 새 창, 워커 포함)에서 나간 요청을 모두 기록했어요. 요청 ${sum(net, (n) => n.total)}건이 전부 앱을 연 주소 안으로 갔고, 밖으로 나간 요청은 ${count(net, (n) => n.external)}건이에요. 등록된 서비스 워커는 ${sum(net, (n) => n.serviceWorkers ?? 0)}개예요.`);
+  say('글꼴(Pretendard dynamic subset)과 스크립트는 프로젝트 안에 실려 있어요.');
   if (single) say(`단일 HTML 파일(${Math.round(single.bytes / 1024)} KB)은 파일 자신 말고는 아무것도 읽지 않았어요(요청 ${single.requests}건).`);
+  if (artifact) say(`아티팩트용 파일(${Math.round(artifact.bytes / 1024)} KB)도 뼈대에 넣어 열었을 때 파일 자신 말고는 요청이 없었어요(밖으로 ${artifact.external}건). 실제 뷰어 안에서는 확인하지 못했어요.`);
   say();
 
   say('## 7. 금지 문자');
@@ -296,8 +372,8 @@ function buildReport(textOk, textResult) {
     say('| 대상 | 검사한 수 | 찾은 곳 |');
     say('| --- | --- | --- |');
     for (const g of textResult.groups) say(`| ${g.name} | 파일 ${g.files}개 | ${g.hits.length} |`);
-    say(`| 커밋 메시지 | ${textResult.commits.count}개 | ${textResult.commits.hits.length} |`);
-    say(`| 화면에 그려진 글자와 접근성 라벨 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.forbidden)} |`);
+    say(`| 커밋 메시지 | ${textResult.commits.checked ? `${textResult.commits.count}개` : '읽지 못함'} | ${textResult.commits.hits.length} |`);
+    say(`| 화면에 그려진 글자, 접힌 글자, 접근성 라벨, 입력 칸 값, 가상 요소 글자 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.forbidden)} |`);
     say(`| 화면의 느낌표 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.exclamation)} |`);
     say(`| 화면의 이모지 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.emoji)} |`);
     say();
@@ -316,12 +392,23 @@ function buildReport(textOk, textResult) {
     for (const r of contrast.rows) say(`| ${r.theme} | ${r.use} | ${r.fg} | ${r.bg} | ${r.ratio.toFixed(2)}:1 | ${r.min}:1 | ${mark(r.pass)} |`);
     say();
   }
-  say(`브라우저가 실제로 그린 글자 ${sum(audits, (a) => a.contrastCount)}개도 계산된 글자색과 바탕색으로 다시 쟀어요. 가장 낮은 대비는 ${min(audits.filter((a) => a.contrastCount > 0), (a) => a.minContrast)}:1, 4.5:1에 못 미친 글자는 ${count(audits, (a) => a.lowContrast)}개예요.`);
+  say(`브라우저가 실제로 그린 글자 ${sum(audits, (a) => a.contrastCount)}개도 계산된 글자색과 바탕색(투명도 포함)으로 다시 쟀어요. 가장 낮은 대비는 ${min(withText, (a) => a.minContrast)}:1, 4.5:1에 못 미친 글자는 ${count(audits, (a) => a.lowContrast)}개예요.`);
+  say(`그려진 입력 테두리와 그래프 윤곽(칸, 키, 고르는 줄, 칩, 막대 구간, 진행 막대 등) ${sum(audits, (a) => a.edgeCount)}개도 테두리색(테두리가 없으면 채운 색)과 바깥 바탕색으로 쟀어요. 가장 낮은 대비는 ${min(withEdges, (a) => a.minEdgeContrast)}:1, 3:1에 못 미친 것은 ${count(audits, (a) => a.lowEdges)}개예요.`);
   say();
 
   say('## 9. 정답 노출');
   say();
-  say('검산 예시에서 틀린 문항 6개(11, 15, 20, 21, 27, 29번)의 정답이 화면 글자, 입력칸 안내문과 값, 접근성 라벨, 그 밖의 속성에 나오는지 봤어요.');
+  say('두 가지 방법으로 봤어요.');
+  say();
+  say('첫째, 차분 검사(e2e/leak.spec.ts). 배포하는 빌드와, 검산 예시에서 틀리는 6문항(11, 15, 20, 21, 27, 29번)의 정답만 다른 값으로 바꾼 검증용 빌드에 똑같은 조작을 했어요.');
+  say('화면마다 보이는 글자, 숨은 글자, 모든 속성, 입력 칸 값, 가상 요소 글자를 통째로 견줘서, 한 글자라도 다르면 정답이 드러난 것으로 봐요.');
+  if (leakDiff) {
+    say(`"정답 보기"를 누르기 전의 화면 ${leakDiff.compared}곳을 견줬고 다른 곳은 ${leakDiff.differences.length}곳이에요.`);
+    say(`대조: "정답 보기"를 누른 뒤에는 두 빌드의 화면이 달라졌어요(단답형 27번 ${leakDiff.controlShort ? '달라짐' : '같음'}, 5지선다 15번 ${leakDiff.controlMc ? '달라짐' : '같음'}). 이 검사가 노출을 실제로 잡아낸다는 뜻이에요.`);
+    for (const d of leakDiff.differences) say(`- 다른 곳: ${d}`);
+  }
+  say();
+  say('둘째, 화면을 읽는 검사(e2e/audit.ts 의 findAnswerLeaks). 화면 글자, 입력칸 안내문과 값, 접근성 라벨, 그 밖의 속성에 틀린 문항의 정답이 나오는지 봤어요.');
   say();
   say('| 검사한 곳 | 횟수 | 노출 |');
   say('| --- | --- | --- |');
@@ -330,7 +417,7 @@ function buildReport(textOk, textResult) {
     say(`| ${where} | ${list.length} | ${count(list, (l) => l.leaks)} |`);
   }
   say();
-  say(`대조 검사: "정답 보기"를 눌러 정답을 연 뒤에는 같은 검사기가 노출을 잡아내는지 ${leakControls.length}번 확인했어요(27번 단답형, 15번 5지선다). 검사기가 실제로 작동한다는 뜻이에요.`);
+  say(`대조 검사: "정답 보기"를 눌러 정답을 연 뒤에는 같은 검사기가 노출을 잡아내는지 ${leakControls.length}번 확인했어요(27번 단답형, 15번 5지선다).`);
   say();
 
   say('## 10. 화면 캡처');
@@ -339,7 +426,7 @@ function buildReport(textOk, textResult) {
   say(`- docs/screens/dark: 어두운 화면 ${shots.dark}장 (390x844, 2배 해상도)`);
   say(`- docs/screens/small: 작은 화면 ${shots.small}장 (360x640)`);
   say();
-  say('캡처를 사람이 열어 보고 고친 내용은 docs/화면검토기록.md 에 적어요.');
+  say('캡처를 사람이 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
   say();
 
   say('## 자동으로 확인하지 못하는 것');
@@ -348,20 +435,21 @@ function buildReport(textOk, textResult) {
   say('- 사람이 답 30개를 넣는 데 걸리는 시간과 남는 오입력. 사용성 테스트에서 재야 해요.');
   say('- 결과 화면을 학생이 바르게 읽는지. 사용성 테스트의 읽기 질문으로 확인해야 해요.');
   say('- 화면 낭독기(VoiceOver, TalkBack)로 실제로 들었을 때의 흐름.');
+  say('- 아티팩트 뷰어 안에서의 동작. 뼈대와 비슷한 틀에 넣어 여는 것까지만 확인했어요.');
   say();
-  return { text: L.join('\n'), ok: failed.length === 0 && otherFailed.length === 0 };
+  return { text: L.join('\n'), ok: failed.length === 0 && otherFailed.length === 0 && missingUnit.length === 0 };
 }
 
 // 7. 금지 문자 파일 검사. 보고서 자신도 검사 대상이므로, 먼저 보고서를 한 번 쓰고 검사한 뒤 결과를 넣어 다시 쓴다.
 mkdirSync(join(ROOT, 'docs'), { recursive: true });
 const reportPath = join(ROOT, 'docs/검증결과.md');
-writeFileSync(reportPath, buildReport(true, text).text + '\n');
+writeFileSync(reportPath, buildReport(true, readJson(join(OUT, 'text.json'))).text + '\n');
 const textRun = run('7. 금지 문자(파일과 커밋 메시지)', process.execPath, [join(ROOT, 'scripts/check-text.mjs')]);
 const textResult = readJson(join(OUT, 'text.json'));
 const report = buildReport(textRun.ok, textResult);
 const selfHits = findForbidden(report.text);
 writeFileSync(reportPath, report.text + '\n');
 
-const success = report.ok && selfHits.length === 0 && unitRun.ok && buildRun.ok && singleRun.ok && e2eRun.ok && textRun.ok && contrastRun.ok;
+const success = report.ok && selfHits.length === 0 && unitRun.ok && buildsOk && e2eRun.ok && textRun.ok && contrastRun.ok;
 console.log(`\n검증 결과를 docs/검증결과.md 에 남겼어요. 전체 ${success ? '통과' : '실패'} (${Math.round((Date.now() - started) / 1000)}초)`);
 process.exit(success ? 0 : 1);

@@ -33,6 +33,14 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await page.getByRole('button', { name: '시험 고르기' }).click();
   await chooseExam(page, 'sample-a');
   await expect(page.locator('[data-row="1"]')).toBeVisible();
+  // 답을 두 개 넣다가 뒤로 가서 같은 시험을 다시 골라도 넣은 답과 측정이 이어진다.
+  await page.locator('[data-row="1"] [data-choice="1"]').click();
+  await page.locator('[data-row="2"] [data-choice="1"]').click();
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expectHash(page, '/exams');
+  await chooseExam(page, 'sample-a');
+  await expect(page.locator('[data-row="1"] [data-choice="1"]')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByTestId('entered-count')).toHaveText('2문항 입력');
   // 일부러 3번을 잘못 넣는다.
   const typed = { ...answers, 3: 5 };
   await enterRows(page, exam, typed);
@@ -53,14 +61,15 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await expect(card).toHaveAttribute('data-participant', 'P07');
   await expect(card).toHaveAttribute('data-mode', 'rows');
   await expect(card.getByTestId('m-input')).toHaveText(/^\d+(\.\d)?초$/);
-  await expect(card.getByTestId('m-input-count')).toHaveText('31번');
+  // 1번과 2번은 처음에 한 번씩 더 눌렀고, 3번은 입력 확인에서 한 번 고쳤다: 30 + 2 + 1 = 33번.
+  await expect(card.getByTestId('m-input-count')).toHaveText('33번');
   await expect(card.getByTestId('m-review-fixed')).toHaveText('1개');
   await expect(card.getByTestId('m-to-score')).toHaveText(/^\d+(\.\d)?초$/);
   const marksText = await card.getByTestId('m-marks').innerText();
   expect(Number(marksText.replace('초', ''))).toBeGreaterThanOrEqual(1);
   await card.getByText('화면 진입 기록').click();
   const screens = await card.getByTestId('run-screens').locator('li').allInnerTexts();
-  expect(screens.map((s) => s.split(' ')[1])).toEqual(['start', 'exams', 'input', 'review', 'marks', 'score']);
+  expect(screens.map((s) => s.split(' ')[1])).toEqual(['start', 'exams', 'input', 'exams', 'input', 'review', 'marks', 'score']);
 
   // 정답지 대조: 개수가 안 맞으면 알려 준다.
   await page.getByLabel('참가자에게 준 답지의 답').fill('1,2,3');
@@ -90,12 +99,14 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   expect(json.runs[0].participant).toBe('P07');
   expect(json.runs[0].inputMode).toBe('rows');
   expect(json.runs[0].examId).toBe('sample-a');
-  expect(json.runs[0].metrics.inputCount).toBe(31);
+  expect(json.runs[0].metrics.inputCount).toBe(33);
   expect(json.runs[0].metrics.reviewFixedCount).toBe(1);
   expect(json.runs[0].metrics.residualErrors).toBe(2);
   expect(json.runs[0].itemInputs['3']).toBe(2);
+  expect(json.runs[0].itemInputs['1']).toBe(2);
+  expect(json.runs[0].itemInputs['30']).toBe(1);
   expect(json.runs[0].finalAnswers).toEqual(key);
-  expect(json.runs[0].screens.length).toBeGreaterThanOrEqual(6);
+  expect(json.runs[0].screens.length).toBeGreaterThanOrEqual(8);
   expect(typeof json.runs[0].inputStartAt).toBe('number');
   expect(typeof json.runs[0].inputDoneAt).toBe('number');
   expect(json.runs[0].inputDoneAt).toBeGreaterThanOrEqual(json.runs[0].inputStartAt);
@@ -128,13 +139,45 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await card.getByText('화면 진입 기록').click();
   expect(await card.getByTestId('run-screens').locator('li').count()).toBe(screens.length);
 
-  // 기록 초기화: 확인 대화상자를 거친다. 참가자의 시험 기록은 남는다.
+  // 다음 참가자를 시작하면 앞 참가자의 기록이 "이어서 보기"로 열리지 않는다.
+  await page.getByLabel('참가자 코드').fill('P08');
+  await page.getByTestId('mode-keypad').click();
+  await page.getByTestId('start-run').click();
+  await expectHash(page, '/');
+  await expect(page.getByRole('button', { name: '시험 고르기' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
+  // 앞 참가자의 시험 기록을 모두 지워도 측정 기록의 남은 오입력은 그대로 남는다.
+  await openApp(page, '/history');
+  await page.getByTestId('history-remove-all').click();
+  await expect(page.getByRole('alertdialog')).toContainText('테스트 측정 기록은 테스트 진행자용 화면에서 따로 지워요.');
+  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
+  await expect(page.getByTestId('history-empty')).toBeVisible();
+  await openApp(page, '/test');
+  await expect(page.getByTestId('run-card')).toHaveCount(2);
+  await expect(page.getByTestId('run-card').first().getByTestId('m-residual')).toHaveText('2개');
+  await page.getByTestId('finish-run').click();
+
+  // 기록 초기화: 확인 대화상자를 거친다.
   await page.getByTestId('reset-runs').click();
   await expect(page.getByRole('alertdialog')).toContainText('테스트 기록을 모두 지울까요?');
   await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
   await expect(page.getByTestId('no-runs')).toBeVisible();
-  await openApp(page, '/history');
-  await expect(page.getByTestId('history-item')).toHaveCount(1);
+});
+
+test('주소 앞쪽의 input 값보다 진행자가 고른 입력 방식이 우선이다', async ({ page }) => {
+  await page.goto('./?input=rows#/test');
+  await page.locator('.app').first().waitFor();
+  await page.getByLabel('참가자 코드').fill('P01');
+  await page.getByTestId('mode-keypad').click();
+  await page.getByTestId('start-run').click();
+  await expectHash(page, '/');
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-a');
+  // 진행자가 고른 키패드 방식으로 열린다.
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
+  await expect(page.locator('[data-row]')).toHaveCount(0);
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'));
+  expect(stored.testRuns[0].inputMode).toBe('keypad');
 });
 
 test('테스트를 시작하지 않으면 측정 기록을 남기지 않는다', async ({ page }) => {

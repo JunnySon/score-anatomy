@@ -147,12 +147,16 @@ export function recordRetry(session: Session, no: number, correct: boolean, answ
 
 export type Stage = 'input' | 'review' | 'saved' | 'graded';
 
-/** 기록이 어디까지 진행됐는지. */
+/**
+ * 기록이 어디까지 진행됐는지.
+ * saved는 정답 공개 전에 답을 저장해 둔 기록이다. 정답이 공개된 뒤에도 채점하기 전까지는 saved로 남는다.
+ * 그래서 다시 열면 안내문("공개되면 여기서 바로 채점돼요")이 말한 표시 화면으로 간다.
+ */
 export function stageOf(session: Session, exam: Exam): Stage {
   const missing = findMissing(exam, session.answers);
   if (missing.length > 0) return 'input';
-  if (!exam.answerReleased) return session.savedAt ? 'saved' : 'review';
-  if (session.gradedAt) return 'graded';
+  if (exam.answerReleased && session.gradedAt) return 'graded';
+  if (session.savedAt) return 'saved';
   return 'review';
 }
 

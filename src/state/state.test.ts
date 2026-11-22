@@ -164,6 +164,21 @@ describe('기록 고치기', () => {
     expect(resumePath(s, examC)).toBe('/marks');
     expect(() => markGraded(s, examC, NOW)).toThrow(GradeError);
   });
+
+  it('저장해 둔 기록은 정답이 공개된 뒤에도 표시 화면으로 이어지고, 채점하면 결과로 간다', () => {
+    // 정답 공개 전에 저장해 둔 기록을, 정답이 공개된 같은 시험(여기서는 시험 A의 모양)으로 다시 연다.
+    let s = newSession('sample-a', 'not_yet', null, NOW);
+    for (const it of examA.items) s = setAnswer(s, it.no, it.answer as number);
+    s = markSaved(s, NOW);
+    expect(stageOf(s, examA)).toBe('saved');
+    expect(resumePath(s, examA)).toBe('/marks');
+    s = markGraded(s, examA, NOW);
+    expect(s.savedAt).toBeNull();
+    expect(stageOf(s, examA)).toBe('graded');
+    expect(resumePath(s, examA)).toBe('/anatomy');
+    // 답을 지워 미입력이 생기면 다시 답 입력부터다.
+    expect(stageOf(setAnswer(markSaved(s, NOW), 3, undefined), examA)).toBe('input');
+  });
 });
 
 class MemoryStorage implements StorageLike {

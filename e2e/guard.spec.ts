@@ -1,5 +1,5 @@
 import { exampleAnswers, exampleMarks } from '../src/logic/example';
-import { chooseExam, enterKeypad, enterRows, expect, expectHash, loadExam, openApp, setMarks, tapKey, test } from './helpers';
+import { chooseExam, enterKeypad, enterRows, expect, expectHash, loadExam, openApp, seedStore, setMarks, tapKey, test } from './helpers';
 
 // 별도 검토에서 찾은 문제들이 다시 생기지 않는지 본다.
 
@@ -191,7 +191,7 @@ test('지금 보던 기록을 지운 뒤 뒤로 가도 다른 시험의 결과�
   await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
 });
 
-test('단답형: 숫자를 끝까지 지우면 들어 있던 답도 지워지고, 확정하지 않은 숫자는 말없이 사라지지 않는다', async ({ page }) => {
+test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사실과 맞고, 확정하지 않은 숫자는 말없이 사라지지 않는다', async ({ page }) => {
   const exam = loadExam('a');
   const answers = exampleAnswers(exam);
   const answerOf = async (no: number) => {
@@ -204,22 +204,33 @@ test('단답형: 숫자를 끝까지 지우면 들어 있던 답도 지워지고
   await enterKeypad(page, exam, answers);
   await expectHash(page, '/review');
 
-  // 키패드 방식 26번(24): 지우기 두 번이면 칸과 저장된 답이 함께 비고, 그 뒤의 안내문이 사실과 맞다.
+  // 키패드 방식 26번(24): 숫자를 다 지워도 "다음"을 누르기 전에는 저장된 답이 그대로다.
   await openApp(page, '/input?input=keypad');
   await page.locator('[data-cell="26"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('26번');
   await expect(page.getByTestId('entry')).toContainText('24');
   await tapKey(page, 'erase');
   await expect(page.getByTestId('entry')).toContainText('2');
-  expect(await answerOf(26)).toBe(24);
   await tapKey(page, 'erase');
-  await expect(page.locator('[data-cell="26"] .cell__val')).toHaveText('');
-  await expect(page.getByTestId('entered-count')).toHaveText('29문항 입력');
-  expect(await answerOf(26)).toBeUndefined();
+  await expect(page.getByTestId('entry')).not.toContainText('2');
+  await expect(page.locator('[data-cell="26"] .cell__val')).toHaveText('24');
+  expect(await answerOf(26)).toBe(24);
+  // 다 지운 채 다른 칸으로 가면 지운 것이 들어가지 않았다고 알리고, 답은 그대로 남는다.
+  await page.locator('[data-cell="27"]').click();
+  await expect(page.getByRole('status')).toHaveText("26번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  expect(await answerOf(26)).toBe(24);
+
+  // 다 지우고 "다음"을 누르면 그때 저장된 답이 지워지고, "비어 있어요"라는 안내문이 사실과 맞다.
+  await page.locator('[data-cell="26"]').click();
+  await tapKey(page, 'erase');
+  await tapKey(page, 'erase');
   await tapKey(page, 'go');
   await expect(page.getByRole('status')).toHaveText("26번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
   await expect(page.getByTestId('now-no')).toHaveText('26번');
-  // 다른 칸을 눌러도 "들어가지 않았어요"라는 말은 나오지 않는다(확정하지 않은 숫자가 없다).
+  await expect(page.locator('[data-cell="26"] .cell__val')).toHaveText('');
+  await expect(page.getByTestId('entered-count')).toHaveText('29문항 입력');
+  expect(await answerOf(26)).toBeUndefined();
+  // 이제 다른 칸을 눌러도 "들어가지 않았어요"라는 말은 나오지 않는다(확정하지 않은 숫자가 없다).
   await page.locator('[data-cell="27"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('27번');
   await expect(page.getByRole('status')).toHaveCount(0);
@@ -254,16 +265,85 @@ test('단답형: 숫자를 끝까지 지우면 들어 있던 답도 지워지고
   await page.getByRole('button', { name: '뒤로' }).click();
   await expectHash(page, '/exams');
 
-  // 입력 확인의 27번(146) 시트: 지우기 세 번이면 저장된 답도 비고, "넣기"의 안내문이 사실과 맞다.
+  // 입력 확인의 27번(146) 시트: 숫자를 다 지우고 "지우기"를 더 눌러도, "넣기" 없이 닫으면 답은 바뀌지 않는다.
   await openApp(page, '/review');
   const sheet = page.locator('.sheet');
-  await page.locator('main [data-cell="27"]').click();
+  const cell27 = page.locator('main [data-cell="27"]');
+  await cell27.click();
+  for (let i = 0; i < 5; i += 1) await tapKey(sheet, 'erase');
+  expect(await answerOf(27)).toBe(146);
+  await page.getByRole('button', { name: '닫기' }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(cell27.locator('.cell__val')).toHaveText('146');
+  // 다 지우고 "넣기"를 누르면 그때 지워지고, 안내문이 사실과 맞다.
+  await cell27.click();
   for (let i = 0; i < 3; i += 1) await tapKey(sheet, 'erase');
-  expect(await answerOf(27)).toBeUndefined();
   await tapKey(sheet, 'go');
   await expect(sheet.getByRole('status')).toHaveText("27번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
+  expect(await answerOf(27)).toBeUndefined();
   await page.getByRole('button', { name: '닫기' }).click();
-  await expect(page.locator('main [data-cell="27"] .cell__val')).toHaveText('미입력');
+  await expect(cell27.locator('.cell__val')).toHaveText('미입력');
+  // 안 풂으로 둔 문항의 시트에서 "지우기"를 눌러도 안 풂은 그대로다.
+  await cell27.click();
+  await tapKey(sheet, 'skip');
+  await expect(cell27.locator('.cell__val')).toHaveText('안 풂');
+  await cell27.click();
+  await tapKey(sheet, 'erase');
+  await page.getByRole('button', { name: '닫기' }).click();
+  await expect(cell27.locator('.cell__val')).toHaveText('안 풂');
+  expect(await answerOf(27)).toBe('skip');
+});
+
+test('기록 화면: 같은 시험의 기록이 여러 건이어도 접근성 이름으로 구분되고, 삭제 확인이 어느 기록인지 말한다', async ({ page }) => {
+  const exam = loadExam('a');
+  await openApp(page, '/');
+  await seedStore(page, {
+    version: 1,
+    sessions: [
+      { id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers: {} },
+      {
+        id: 's2',
+        examId: 'sample-a',
+        createdAt: '2026-11-21T10:00:00.000Z',
+        gradedBefore: 'not_yet',
+        answers: exampleAnswers(exam),
+        gradedAt: '2026-11-21T10:05:00.000Z',
+        firstGradedAt: '2026-11-21T10:05:00.000Z',
+      },
+      // 정답 공개 전에 저장해 둔 기록을 정답이 공개된 뒤에 여는 경우.
+      {
+        id: 's3',
+        examId: 'sample-a',
+        createdAt: '2026-11-20T10:00:00.000Z',
+        gradedBefore: 'not_yet',
+        answers: exampleAnswers(exam),
+        savedAt: '2026-11-20T10:05:00.000Z',
+      },
+    ],
+    currentId: null,
+  });
+  await page.reload();
+  await openApp(page, '/history');
+  await expect(page.getByTestId('history-item')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 22일, 입력 중' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 21일, 78점' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 20일, 채점 전' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 지우기, 2026년 11월 21일, 78점' })).toHaveCount(1);
+  await page.getByRole('button', { name: '예시 시험 A 기록 지우기, 2026년 11월 21일, 78점' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('예시 시험 A, 2026년 11월 21일, 78점 기록이에요. 지우면 되돌릴 수 없어요.');
+  await page.getByRole('alertdialog').getByRole('button', { name: '그만두기' }).click();
+  await expect(page.getByTestId('history-item')).toHaveCount(3);
+
+  // 저장해 둔 기록은 안내문이 말한 대로 표시 화면에서 바로 채점할 수 있다.
+  await page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 20일, 채점 전' }).click();
+  await expectHash(page, '/marks');
+  await expect(page.getByRole('button', { name: '채점하기' })).toBeVisible();
+  await page.getByRole('link', { name: '이번 시험' }).click();
+  await page.getByRole('button', { name: '이어서 보기' }).click();
+  await expectHash(page, '/marks');
+  await page.getByRole('button', { name: '채점하기' }).click();
+  await expectHash(page, '/score');
+  await expect(page.getByTestId('score')).toHaveText('78점');
 });
 
 test('5행 방식: 안 풂으로 둔 문항은 접근성 이름으로도 구분된다', async ({ page }) => {

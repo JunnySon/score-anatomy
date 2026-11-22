@@ -182,15 +182,9 @@ export function AnswerSheet({
             setMsg(r.overflow ? S.common.shortRange : null);
           }}
           onErase={() => {
+            // 누르고 있는 숫자만 한 자리씩 지운다. 저장된 답은 "넣기"나 "안 풂"을 눌러야 바뀐다.
             setMsg(null);
-            if (entry.text !== '') {
-              const next = eraseDigit(entry);
-              setEntry(next);
-              // 숫자를 끝까지 지우면 들어 있던 답도 지운다. 칸에 보이는 것과 저장된 답이 같아야 한다.
-              if (next.text === '' && typeof value === 'number') onSet(undefined);
-            } else if (value !== undefined) {
-              onSet(undefined);
-            }
+            if (entry.text !== '') setEntry(eraseDigit(entry));
           }}
           onSkip={() => {
             onSet('skip');
@@ -199,10 +193,13 @@ export function AnswerSheet({
           onGo={() => {
             const v = entryValue(entry);
             if (v === null) {
+              // 칸에 "안 풂"이 보이는 채로 누르면 그대로 닫는다.
               if (value === 'skip') {
                 onClose();
                 return;
               }
+              // 숫자를 다 지우고 "넣기"를 누르면 들어 있던 답을 지운다(빈 칸을 확정). 그래야 안내문이 사실과 맞다.
+              if (value !== undefined) onSet(undefined);
               setMsg(S.common.emptyItem(item.no));
               return;
             }

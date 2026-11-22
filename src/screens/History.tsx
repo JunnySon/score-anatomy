@@ -22,13 +22,14 @@ function scoreText(session: Session): string {
       return S.history.inProgress;
     }
   }
-  if (!exam.answerReleased && stage === 'saved') return S.common.unreleased;
+  // 저장해 둔 기록: 정답 공개 전이면 "정답 공개 전", 공개된 뒤에는 "채점 전".
+  if (stage === 'saved') return exam.answerReleased ? S.history.readyToGrade : S.common.unreleased;
   return S.history.inProgress;
 }
 
 export function History() {
   const data = useAppData();
-  const [confirm, setConfirm] = useState<{ kind: 'one'; id: string } | { kind: 'all' } | null>(null);
+  const [confirm, setConfirm] = useState<{ kind: 'one'; id: string; title: string; detail: string } | { kind: 'all' } | null>(null);
   const sessions = [...data.sessions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
   const open = (s: Session) => {
@@ -45,7 +46,13 @@ export function History() {
         confirm ? (
           <ConfirmDialog
             title={confirm.kind === 'all' ? S.history.confirmAll : S.history.confirmOne}
-            body={confirm.kind === 'all' && data.testRuns.length > 0 ? S.history.confirmAllBodyWithRuns : S.history.confirmBody}
+            body={
+              confirm.kind === 'one'
+                ? S.history.confirmOneBody(confirm.title, confirm.detail)
+                : data.testRuns.length > 0
+                  ? S.history.confirmAllBodyWithRuns
+                  : S.history.confirmBody
+            }
             yes={S.history.confirmYes}
             no={S.history.confirmNo}
             onNo={() => setConfirm(null)}
@@ -75,23 +82,23 @@ export function History() {
             {sessions.map((s) => {
               const exam = findExam(s.examId);
               const title = exam?.title ?? s.examId;
+              // 같은 시험의 기록이 여러 건이어도 구분되게, 접근성 이름에 날짜와 점수를 함께 넣는다.
+              const detail = `${formatDate(s.createdAt)}, ${scoreText(s)}`;
               return (
                 <li key={s.id} className="hitem" data-testid="history-item">
-                  <button type="button" className="hitem__open" aria-label={S.history.open(title)} onClick={() => open(s)}>
+                  <button type="button" className="hitem__open" aria-label={S.history.open(title, detail)} onClick={() => open(s)}>
                     <span className="inline">
                       <span className="strong">{title}</span>
                       {exam?.isSample ? <Badge>{S.common.sample}</Badge> : null}
                     </span>
-                    <span className="sub">
-                      {formatDate(s.createdAt)}, {scoreText(s)}
-                    </span>
+                    <span className="sub">{detail}</span>
                   </button>
                   <button
                     type="button"
                     className="btn btn--text"
-                    aria-label={S.history.removeOf(title)}
+                    aria-label={S.history.removeOf(title, detail)}
                     data-testid="history-remove"
-                    onClick={() => setConfirm({ kind: 'one', id: s.id })}
+                    onClick={() => setConfirm({ kind: 'one', id: s.id, title, detail })}
                   >
                     {S.history.remove}
                   </button>

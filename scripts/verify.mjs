@@ -141,7 +141,7 @@ const REQUIRED = {
   shots: 64, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 300, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 100, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 54, // 화면 테스트 수의 최소
+  e2eTests: 55, // 화면 테스트 수의 최소
 };
 const auditsEnough = audits.length >= REQUIRED.auditStates;
 const smallEnough = smallAudits.length >= REQUIRED.smallStates;

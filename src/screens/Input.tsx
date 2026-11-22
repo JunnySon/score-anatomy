@@ -164,34 +164,37 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   };
 
   const eraseShort = () => {
-    if (entry.text === '') {
+    if (entry.text !== '') {
+      // 누르고 있는 숫자는 한 자리씩 지운다. 저장된 답은 "다음"을 눌러야 바뀐다.
+      setMsg(null);
+      setDraft({ no: item.no, entry: eraseDigit(entry) });
+    } else {
       eraseBack();
-      return;
     }
-    // 누르고 있는 숫자는 한 자리씩 지운다.
-    setMsg(null);
-    const next = eraseDigit(entry);
-    if (next.text === '' && typeof existing === 'number') {
-      // 숫자를 끝까지 지우면 들어 있던 답도 지운다. 칸에 보이는 것과 저장된 답이 같아야 한다.
-      putAnswer(h, item.no, undefined, 'input');
-      setDraft(null);
-      return;
-    }
-    setDraft({ no: item.no, entry: next });
   };
 
   /** 단답형은 "다음"을 눌러야 확정되어 넘어간다. */
   const nextShort = () => {
-    const v = typing ? entryValue(entry) : null;
+    if (!typing) {
+      // 이미 들어 있는 답(숫자나 안 풂)은 그대로 두고 넘어간다.
+      if (existing !== undefined) advance();
+      else setMsg(S.common.emptyItem(item.no));
+      return;
+    }
+    const v = entryValue(entry);
     if (v !== null) {
       put(v);
-    } else if (existing !== undefined) {
-      // 이미 들어 있는 답(숫자나 안 풂)은 그대로 두고 넘어간다.
-      advance();
-    } else {
-      setDraft(null);
-      setMsg(S.common.emptyItem(item.no));
+      return;
     }
+    // 칸에 "안 풂"이 보이는 채로 누르면 그대로 넘어간다.
+    if (existing === 'skip') {
+      advance();
+      return;
+    }
+    // 숫자를 다 지우고 "다음"을 누르면 들어 있던 답을 지운다(빈 칸을 확정). 그래야 안내문이 사실과 맞다.
+    if (existing !== undefined) putAnswer(h, item.no, undefined, 'input');
+    setDraft(null);
+    setMsg(S.common.emptyItem(item.no));
   };
 
   const pad =
@@ -208,8 +211,8 @@ function InputKeypad({ h }: { h: SessionHandle }) {
       <DigitPad onDigit={onDigit} onErase={eraseShort} onSkip={() => put('skip')} onGo={nextShort} goLabel={S.common.next} />
     );
 
-  // 숫자를 누르다 다 지웠으면, 들어 있는 답(안 풂)이 다시 보인다.
-  const shown = typing && entry.text !== '' ? entry.text : answerText(existing, S.common.skip);
+  // 큰 칸에는 누르고 있는 숫자를 보여 준다. 누르다가 다 지웠으면 빈 칸이고, 안 풂이 들어 있던 문항만 "안 풂"이 다시 보인다.
+  const shown = !typing ? answerText(existing, S.common.skip) : entry.text !== '' ? entry.text : existing === 'skip' ? S.common.skip : '';
 
   return (
     <Screen

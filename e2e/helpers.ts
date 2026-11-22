@@ -24,6 +24,33 @@ function isLocal(url: string): boolean {
   return url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('about:');
 }
 
+/**
+ * 연달아 누르기 보호(src/tapGuard.ts)는 화면이 바뀐 직후 0.5초 동안, 방금 누른 자리에 다시 온 누름을 버린다.
+ * 막고 있는 자리에는 표시(.tap-shield)가 있다. 테스트는 사람보다 훨씬 빨리 눌러서, 다음에 누를 요소가 우연히
+ * 그 자리에 있으면 누름이 버려지고 시각에 따라 결과가 달라진다.
+ * 그래서 locator.click() 은 누를 자리가 막혀 있으면 풀릴 때까지 기다렸다가 누르게 한다(누르는 동작 자체는 그대로다).
+ * 좌표로 직접 누르는 것(page.touchscreen.tap, page.mouse.click)은 기다리지 않는다. 보호 자체를 확인하는 테스트는 그쪽을 쓴다.
+ */
+function patchLocatorClick(page: Page): void {
+  const proto = Object.getPrototypeOf(page.locator('html')) as { click: Locator['click']; __saGuardAware?: boolean };
+  if (proto.__saGuardAware) return;
+  const original = proto.click;
+  proto.click = async function (this: Locator, options?: Parameters<Locator['click']>[0]) {
+    const box = await this.boundingBox();
+    if (box) {
+      const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await this.page().waitForFunction(({ x, y }) => {
+        const mark = document.querySelector('.tap-shield');
+        if (!mark) return true;
+        const r = mark.getBoundingClientRect();
+        return !(x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
+      }, at);
+    }
+    return original.call(this, options);
+  };
+  proto.__saGuardAware = true;
+}
+
 export const test = base.extend({
   page: async ({ page }, use, testInfo) => {
     const all: string[] = [];
@@ -53,6 +80,7 @@ export const test = base.extend({
         return original(...args);
       }) as typeof Notification.requestPermission;
     });
+    patchLocatorClick(page);
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {

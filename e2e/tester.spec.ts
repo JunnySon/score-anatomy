@@ -69,7 +69,8 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   expect(Number(marksText.replace('초', ''))).toBeGreaterThanOrEqual(1);
   await card.getByText('화면 진입 기록').click();
   const screens = await card.getByTestId('run-screens').locator('li').allInnerTexts();
-  expect(screens.map((s) => s.split(' ')[1])).toEqual(['start', 'exams', 'input', 'exams', 'input', 'review', 'marks', 'score']);
+  // 진행자용 화면에 들어온 것도 test 로 적힌다.
+  expect(screens.map((s) => s.split(' ')[1])).toEqual(['start', 'exams', 'input', 'exams', 'input', 'review', 'marks', 'score', 'test']);
 
   // 정답지 대조: 개수가 안 맞으면 알려 준다.
   await page.getByLabel('참가자에게 준 답지의 답').fill('1,2,3');

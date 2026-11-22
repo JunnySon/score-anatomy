@@ -5,8 +5,11 @@ import { chooseExam, enterKeypad, expect, expectHash, loadExam, openApp, seedSto
 
 // 연달아 누르기 보호(src/tapGuard.ts)를 확인한다.
 // 1) 화면이 바뀐 직후에 다른 자리를 빨리 눌러도 누름이 버려지지 않는다.
-// 2) 바텀시트나 대화상자가 닫힌 직후, 또는 아래 버튼이 바뀐 직후에 같은 자리를 다시 눌러도 새로 드러난 버튼이 눌리지 않는다.
-// 누름은 좌표로 직접 보낸다(page.touchscreen.tap). locator.click()은 가림막이 사라질 때까지 기다리므로 여기서는 준비 단계에만 쓴다.
+// 2) 바텀시트나 대화상자가 닫힌 직후, 아래 버튼이나 묶음이 바뀐 직후, 화면이 저절로 스크롤된 직후에
+//    같은 자리를 다시 눌러도 그 자리에 새로 온 버튼이 눌리지 않는다.
+// 3) 단답형 숫자 키는 버리지 않고, 막는 자리에서 시작한 끌기는 그대로 스크롤된다.
+// 누름은 좌표로 직접 보낸다(page.touchscreen.tap, page.mouse). locator 로 누르는 것은 보호가 풀릴 때까지 기다리므로
+// (e2e/helpers.ts) 여기서는 준비 단계에만 쓴다.
 
 interface Box {
   x: number;
@@ -387,5 +390,238 @@ test.describe('화면이 바뀐 직후에 같은 자리를 다시 누르면 받�
     // 그 자리에는 다른 기록이 놓여 있다. 그런데도 열리지 않았다.
     expect(await hitInside(page, yes, '[data-testid="history-item"]')).toBe(true);
     expect((await stored(page)).currentId).toBeNull();
+  });
+});
+
+test.describe('같은 화면 안에서 누른 자리의 내용이 바뀌는 경우', () => {
+  for (const gap of [120, 400]) {
+    test(`키패드 방식: 직전 묶음의 칸을 연달아 눌러도 다섯 문항 앞의 칸까지 넘어가지 않는다 (간격 ${gap}ms)`, async ({ page }) => {
+      const exam = loadExam('a');
+      const answers: Record<number, number> = {};
+      for (const it of exam.items.slice(0, 16)) answers[it.no] = 1;
+      await openApp(page, '/');
+      await seedStore(page, {
+        version: 1,
+        sessions: [{ id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers }],
+        currentId: 's1',
+      });
+      await page.reload();
+      await openApp(page, '/input?input=keypad');
+      await expect(page.getByTestId('now-no')).toHaveText('17번');
+      await waitSettled(page);
+      // 윗줄(11~15번)의 13번 칸. 누르면 묶음이 바뀌어 같은 자리에 8번 칸이 온다.
+      const at = await centerOfLoc(page.locator('[data-cell="13"]'));
+      await page.waitForTimeout(600);
+      await doubleTap(page, at, gap);
+      await page.waitForTimeout(700);
+      await expect(page.getByTestId('now-no')).toHaveText('13번');
+      expect(await hitInside(page, at, '[data-cell="8"]'), '같은 자리에 8번 칸이 와 있어야 함').toBe(true);
+      // 이어 누른 키는 13번에 들어간다.
+      await tapKey(page, 4);
+      const saved = (await stored(page)).sessions[0].answers;
+      expect(saved[13]).toBe(4);
+      expect(saved[8]).toBe(1);
+      // 0.5초가 지난 뒤에는 같은 자리의 칸(8번)도 눌린다.
+      await page.waitForTimeout(600);
+      await tap(page, at);
+      await expect(page.getByTestId('now-no')).toHaveText('8번');
+    });
+  }
+
+  test('키패드 방식: 확정하지 않은 숫자가 있을 때 "전체 보기"를 연달아 눌러도 안내문을 건너뛰지 않는다', async ({ page }) => {
+    const exam = loadExam('a');
+    await openApp(page, '/?input=keypad');
+    await page.getByRole('button', { name: '시험 고르기' }).click();
+    await chooseExam(page, 'sample-a');
+    await enterKeypad(page, exam, exampleAnswers(exam));
+    await expectHash(page, '/review');
+    await openApp(page, '/input?input=keypad');
+    await page.locator('[data-cell="27"]').click();
+    await tapKey(page, 9);
+    await tapKey(page, 9);
+    await waitSettled(page);
+    const showAll = await centerOfLoc(page.getByRole('button', { name: '전체 보기' }));
+    await page.waitForTimeout(600);
+    await doubleTap(page, showAll, 120);
+    await page.waitForTimeout(300);
+    await expectHash(page, '/input');
+    await expect(page.getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+    // 0.5초가 지난 뒤에 누르면 넘어간다.
+    await page.waitForTimeout(600);
+    await tap(page, showAll);
+    await expectHash(page, '/review');
+    await expect(page.locator('main [data-cell="27"] .cell__val')).toHaveText('146');
+  });
+
+  test('키패드 방식: 5지선다에서 단답형으로 넘어간 직후 같은 자리의 숫자 키는 버리지 않는다', async ({ page }) => {
+    const exam = loadExam('a');
+    const answers = exampleAnswers(exam);
+    await openApp(page, '/?input=keypad');
+    await page.getByRole('button', { name: '시험 고르기' }).click();
+    await chooseExam(page, 'sample-a');
+    await enterKeypad(page, exam, answers, 1, 20);
+    await expect(page.getByTestId('now-no')).toHaveText('21번');
+    await waitSettled(page);
+    // 21번(5지선다)의 키 3 자리에는 22번(단답형)의 키 8이 온다.
+    const at = await centerOfLoc(page.locator('[data-key="3"]'));
+    await page.waitForTimeout(600);
+    await doubleTap(page, at, 150);
+    await expect(page.getByTestId('now-no')).toHaveText('22번');
+    expect(await hitInside(page, at, '[data-key="8"]'), '같은 자리에 숫자 키 8이 와 있어야 함').toBe(true);
+    await expect(page.getByTestId('entry')).toContainText('8');
+    await tapKey(page, 5);
+    await tapKey(page, 'go');
+    const saved = (await stored(page)).sessions[0].answers;
+    expect(saved[21]).toBe(3);
+    expect(saved[22]).toBe(85);
+  });
+
+  test('키패드 방식: 단답형의 "다음"을 연달아 눌러도 다음 문항의 "지우기"가 눌리지 않는다', async ({ page }) => {
+    const exam = loadExam('b');
+    const answers = exampleAnswers(loadExam('a'));
+    const filled: Record<number, number> = {};
+    for (const it of exam.items.slice(0, 21)) filled[it.no] = it.kind === 'mc' ? 1 : (answers[22] as number);
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [{ id: 's1', examId: 'sample-b', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', seenBefore: 'first', answers: filled }],
+      currentId: 's1',
+    });
+    await page.reload();
+    await openApp(page, '/input?input=keypad');
+    await expect(page.getByTestId('now-no')).toHaveText('22번');
+    await tapKey(page, 3);
+    await tapKey(page, 1);
+    await tapKey(page, 5);
+    await waitSettled(page);
+    const go = await centerOfLoc(page.locator('[data-key="go"]'));
+    await page.waitForTimeout(600);
+    await doubleTap(page, go, 120);
+    await page.waitForTimeout(700);
+    // 22번(단답형)의 "다음" 자리에는 23번(5지선다)의 "지우기"가 온다. 그런데도 22번 답은 지워지지 않았다.
+    await expect(page.getByTestId('now-no')).toHaveText('23번');
+    expect(await hitInside(page, go, '[data-key="erase"]'), '같은 자리에 "지우기"가 와 있어야 함').toBe(true);
+    expect((await stored(page)).sessions[0].answers[22]).toBe(315);
+  });
+
+  test('누르고 있다가 뗀 누름도 화면이 바뀐 때부터 0.5초 동안 같은 자리를 막는다', async ({ page }) => {
+    const exam = loadExam('a');
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [
+        {
+          id: 's1',
+          examId: 'sample-a',
+          createdAt: '2026-11-22T10:00:00.000Z',
+          gradedBefore: 'not_yet',
+          answers: exampleAnswers(exam),
+          marks: exampleMarks(),
+          gradedAt: '2026-11-22T10:05:00.000Z',
+          firstGradedAt: '2026-11-22T10:05:00.000Z',
+        },
+      ],
+      currentId: 's1',
+    });
+    await page.reload();
+    for (const hold of [300, 450]) {
+      await openApp(page, '/score');
+      await waitSettled(page);
+      const at = await centerOfLoc(page.getByRole('button', { name: '틀린 문항 살펴보기' }));
+      await page.waitForTimeout(600);
+      // 버튼을 누르고 있다가 뗀다. 화면은 뗄 때 바뀐다.
+      await page.mouse.move(at.x, at.y);
+      await page.mouse.down();
+      await page.waitForTimeout(hold);
+      await page.mouse.up();
+      await page.waitForTimeout(200);
+      await page.mouse.click(at.x, at.y);
+      await page.waitForTimeout(700);
+      // 같은 자리에 오답 원인 화면의 주 버튼이 있지만 눌리지 않았다.
+      await expectHash(page, '/causes');
+      expect(await hitInside(page, at, 'button'), `누른 시간 ${hold}ms`).toBe(true);
+    }
+  });
+});
+
+test.describe('작은 화면(360x640)', () => {
+  test.use({ viewport: { width: 360, height: 640 } });
+
+  test('시험 선택: 화면이 저절로 스크롤된 뒤 같은 자리에 온 다른 선택지가 눌리지 않는다', async ({ page }) => {
+    await openApp(page, '/exams');
+    await waitSettled(page);
+    const examB = page.getByTestId('exam-sample-b');
+    const at = await centerOfLoc(examB);
+    await doubleTap(page, at, 120);
+    await page.waitForTimeout(700);
+    await expect(examB).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('exam-sample-a')).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByTestId('exam-sample-c')).toHaveAttribute('aria-checked', 'false');
+    // 화면이 스크롤되어 그 자리에는 이제 다른 것이 놓여 있다. 그런데도 채점 여부는 골라지지 않았다.
+    expect(await hitInside(page, at, '[data-testid="exam-sample-b"]'), '스크롤되어 다른 것이 와 있어야 함').toBe(false);
+    await expect(page.getByTestId('graded-not_yet')).toHaveAttribute('aria-checked', 'false');
+    await expect(page.getByTestId('graded-already')).toHaveAttribute('aria-checked', 'false');
+
+    // "아직 안 했어요"를 연달아 눌러도 그 아래에서 올라온 선택지가 골라지지 않는다.
+    await page.locator('main').evaluate((el) => {
+      el.scrollTop = 160;
+    });
+    await page.waitForTimeout(600);
+    const notYet = await centerOfLoc(page.getByTestId('graded-not_yet'));
+    await doubleTap(page, notYet, 120);
+    await page.waitForTimeout(700);
+    await expect(page.getByTestId('graded-not_yet')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByTestId('graded-already')).toHaveAttribute('aria-checked', 'false');
+    for (const seen of ['first', 'partial', 'solved']) {
+      await expect(page.getByTestId(`seen-${seen}`)).toHaveAttribute('aria-checked', 'false');
+    }
+    // 저장되는 기록도 고른 그대로다.
+    await page.getByTestId('seen-first').click();
+    await page.getByRole('button', { name: '답 넣기', exact: true }).click();
+    await expectHash(page, '/input');
+    const saved = (await stored(page)).sessions[0];
+    expect(saved.examId).toBe('sample-b');
+    expect(saved.gradedBefore).toBe('not_yet');
+  });
+
+  test('화면이 바뀐 직후 같은 자리에서 시작한 끌기는 그대로 스크롤된다', async ({ page }) => {
+    const exam = loadExam('a');
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [
+        {
+          id: 's1',
+          examId: 'sample-a',
+          createdAt: '2026-11-22T10:00:00.000Z',
+          gradedBefore: 'not_yet',
+          answers: exampleAnswers(exam),
+          marks: exampleMarks(),
+          causes: exampleCauses(),
+          gradedAt: '2026-11-22T10:05:00.000Z',
+          firstGradedAt: '2026-11-22T10:05:00.000Z',
+        },
+      ],
+      currentId: null,
+    });
+    await page.reload();
+    await openApp(page, '/history');
+    await waitSettled(page);
+    const at = await centerOfLoc(page.getByTestId('history-item').locator('.hitem__open'));
+    const cdp = await page.context().newCDPSession(page);
+    await page.waitForTimeout(600);
+    // 기록을 눌러 점수 해부로 간 뒤, 0.2초 만에 같은 자리에서 위로 끈다.
+    await tap(page, at);
+    await expectHash(page, '/anatomy');
+    await page.waitForTimeout(200);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+    for (let i = 1; i <= 6; i += 1) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: at.x, y: at.y - i * 15 }] });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(300);
+    const scrolled = await page.locator('main').evaluate((el) => el.scrollTop);
+    expect(scrolled, '본문이 스크롤돼야 함').toBeGreaterThan(30);
+    await expectHash(page, '/anatomy');
   });
 });

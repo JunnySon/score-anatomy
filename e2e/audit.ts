@@ -411,7 +411,7 @@ export async function auditPage(page: Page): Promise<AuditResult> {
   }, { forbidden: FORBIDDEN_CODES, exclamation: EXCLAMATION_CODES, emojiParts: EMOJI_PART_CODES });
 }
 
-/** 전환(160ms)이 끝나고 연달아 누름을 막는 가림막(src/tapGuard.ts, 최대 0.5초)이 사라져 화면이 자리 잡을 때까지 기다린다. */
+/** 전환(160ms)이 끝나고 연달아 누르기 보호(src/tapGuard.ts, 0.5초)가 풀려 화면이 자리 잡을 때까지 기다린다. */
 export async function waitSettled(page: Page): Promise<void> {
   await page.waitForFunction(() => document.querySelector('.tap-shield') === null);
   await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined))));

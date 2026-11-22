@@ -334,6 +334,27 @@ test('기록 화면: 같은 시험의 기록이 여러 건이어도 접근성 �
   await page.getByRole('alertdialog').getByRole('button', { name: '그만두기' }).click();
   await expect(page.getByTestId('history-item')).toHaveCount(3);
 
+  // 시험, 날짜, 점수가 모두 같은 기록이 생기면 넣은 시각으로 구분한다.
+  await page.evaluate(() => {
+    const data = JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}');
+    const twin = { ...data.sessions[1], id: 's4', createdAt: '2026-11-21T11:30:00.000Z' };
+    data.sessions.push(twin);
+    window.localStorage.setItem('score-anatomy', JSON.stringify(data));
+  });
+  await page.reload();
+  await openApp(page, '/history');
+  await expect(page.getByTestId('history-item')).toHaveCount(4);
+  // 테스트의 시간대는 Asia/Seoul 이라 10:00Z 는 19시 0분, 11:30Z 는 20시 30분이다.
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 21일 19시 0분, 78점' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 21일 20시 30분, 78점' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 지우기, 2026년 11월 21일 20시 30분, 78점' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 22일, 입력 중' })).toHaveCount(1);
+  await page.getByRole('button', { name: '예시 시험 A 기록 지우기, 2026년 11월 21일 20시 30분, 78점' }).click();
+  await expect(page.getByRole('alertdialog')).toContainText('예시 시험 A, 2026년 11월 21일 20시 30분, 78점 기록이에요.');
+  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
+  await expect(page.getByTestId('history-item')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 21일, 78점' })).toHaveCount(1);
+
   // 저장해 둔 기록은 안내문이 말한 대로 표시 화면에서 바로 채점할 수 있다.
   await page.getByRole('button', { name: '예시 시험 A 기록 열기, 2026년 11월 20일, 채점 전' }).click();
   await expectHash(page, '/marks');

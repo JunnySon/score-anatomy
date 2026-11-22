@@ -100,10 +100,14 @@ function walk(suite, path) {
   for (const s of suite.suites ?? []) walk(s, s.title && !s.title.endsWith('.ts') ? [...path, s.title] : path);
   for (const spec of suite.specs ?? []) {
     const results = spec.tests.flatMap((t) => t.results);
+    // 통과는 실제로 돌아서 통과한 것만 센다. Playwright 는 건너뛴 테스트도 ok 로 적으므로 spec.ok 를 그대로 쓰지 않는다.
+    const ran = spec.tests.length > 0 && spec.tests.every((t) => t.status === 'expected' && t.results.length > 0 && t.results.every((r) => r.status === 'passed'));
+    const skipped = spec.tests.length === 0 || spec.tests.some((t) => t.status === 'skipped' || t.results.length === 0 || t.results.some((r) => r.status === 'skipped'));
     tests.push({
       file: spec.file,
       title: [...path, spec.title].join(' > '),
-      ok: spec.ok,
+      ok: ran,
+      skipped,
       ms: results.reduce((s, r) => s + (r.duration ?? 0), 0),
     });
   }
@@ -141,11 +145,17 @@ const REQUIRED = {
   shots: 64, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 300, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 100, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 55, // 화면 테스트 수의 최소
+  e2eTests: 70, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
 };
 const auditsEnough = audits.length >= REQUIRED.auditStates;
 const smallEnough = smallAudits.length >= REQUIRED.smallStates;
-const e2eEnough = tests.length >= REQUIRED.e2eTests;
+// 건너뛴 테스트는 수에 넣지 않는다.
+const ranTests = tests.filter((t) => !t.skipped);
+const e2eEnough = ranTests.length >= REQUIRED.e2eTests;
+// 요청 기록은 실제로 돈 화면 테스트마다 하나씩 남는다. 기록이 빠졌거나 칸이 비어 있으면 0건이라고 적지 않는다.
+const isCount = (v) => Number.isInteger(v) && v >= 0;
+const netComplete =
+  net.length === ranTests.length && net.every((n) => isCount(n.total) && Array.isArray(n.external) && isCount(n.serviceWorkers) && isCount(n.permissionAsks));
 
 // ---------- 항목별 판정 ----------
 const unitOk = unitRun.ok && unit !== null && unit.numFailedTests === 0 && unit.numTotalTests > 0 && missingUnit.length === 0;
@@ -165,6 +175,7 @@ const fontOk =
 const targetOk = auditsEnough && withTargets.length > 0 && count(audits, (a) => a.smallTargets) === 0 && min(withTargets, (a) => Math.min(a.minTargetW, a.minTargetH)) >= 47.5;
 const netOk =
   net.length > 0 &&
+  netComplete &&
   e2eEnough &&
   count(net, (n) => n.external) === 0 &&
   sum(net, (n) => n.serviceWorkers ?? 0) === 0 &&
@@ -190,6 +201,19 @@ const tourShots = tours.find((t) => t.shots > 0)?.shots ?? 0;
 const shotsOk = tourShots === expectedShots && shots.light === expectedShots && shots.dark === expectedShots && shots.small === expectedShots;
 
 // ---------- 보고서 ----------
+// 실행 자체가 실패로 끝난 단계. 항목이 모두 통과로 보여도 이 가운데 하나라도 있으면 전체는 실패다.
+const failedSteps = [
+  ['단위 테스트 실행', unitRun.ok],
+  ['빌드', buildRun.ok],
+  ['단일 HTML 빌드', singleRun.ok],
+  ['검증용 변형 빌드', variantRun.ok],
+  ['아티팩트용 파일 만들기', artifactRun.ok],
+  ['색 대비 계산 실행', contrastRun.ok],
+  ['화면 검사 실행', e2eRun.ok],
+]
+  .filter(([, ok]) => !ok)
+  .map(([name]) => name);
+
 const pad = (n) => String(n).padStart(2, '0');
 const now = new Date();
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -255,7 +279,7 @@ function buildReport(textOk, textResult) {
       '6',
       '외부 요청 0건',
       netOk,
-      `테스트 ${net.length}개에서 요청 ${sum(net, (n) => n.total)}건 관찰, 자기 주소 밖 ${count(net, (n) => n.external)}건, 서비스 워커 ${sum(net, (n) => n.serviceWorkers ?? 0)}개. 단일 HTML은 요청 ${single ? single.requests : '?'}건(파일 자신뿐), 밖으로 ${single ? single.external : '?'}건`,
+      `테스트 ${net.length}개에서 요청 ${sum(net, (n) => n.total)}건 관찰, 자기 주소 밖 ${count(net, (n) => n.external)}건, 서비스 워커 ${sum(net, (n) => n.serviceWorkers ?? 0)}개${netComplete ? '' : `. 요청 기록이 빠졌거나 비어 있음(실제로 돈 화면 테스트 ${ranTests.length}개, 기록 ${net.length}개)`}. 단일 HTML은 요청 ${single ? single.requests : '?'}건(파일 자신뿐), 밖으로 ${single ? single.external : '?'}건`,
     ],
     [
       '7',
@@ -286,7 +310,12 @@ function buildReport(textOk, textResult) {
 
   say('# 검증 결과');
   say();
-  say(failed.length === 0 && otherFailed.length === 0 ? '결론: 10장의 자동 검증 10개 항목이 모두 통과했어요.' : `결론: 실패한 항목이 있어요. 항목 ${failed.length}개, 테스트 ${otherFailed.length}개.`);
+  const skippedTests = tests.filter((t) => t.skipped);
+  say(
+    failed.length === 0 && otherFailed.length === 0 && failedSteps.length === 0
+      ? '결론: 10장의 자동 검증 10개 항목이 모두 통과했어요.'
+      : `결론: 실패한 항목이 있어요. 항목 ${failed.length}개, 테스트 ${otherFailed.length}개(건너뛴 것 ${skippedTests.length}개 포함), 실패로 끝난 실행 단계 ${failedSteps.length}개.`,
+  );
   say();
   say('이 문서는 `npm run verify`가 실행할 때마다 새로 써요. 손으로 고치지 않아요.');
   say('수치는 모두 이번 실행에서 실제로 잰 값이에요.');
@@ -302,12 +331,13 @@ function buildReport(textOk, textResult) {
   say('| --- | --- | --- | --- |');
   for (const [no, name, ok, detail] of items) say(`| ${no} | ${name} | ${mark(ok)} | ${detail} |`);
   say();
-  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0) {
+  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0 || failedSteps.length > 0) {
     say('## 실패한 것');
     say();
     for (const [no, name] of failed) say(`- ${no}번 ${name}`);
-    for (const t of otherFailed) say(`- 테스트: ${t.title}`);
+    for (const t of otherFailed) say(`- 테스트${t.skipped ? '(건너뜀)' : ''}: ${t.title}`);
     for (const name of missingUnit) say(`- 없거나 통과하지 못한 단위 테스트: ${name}`);
+    for (const name of failedSteps) say(`- 실패로 끝난 실행 단계: ${name}`);
     say();
   }
 
@@ -331,9 +361,9 @@ function buildReport(textOk, textResult) {
   say();
   say('| 테스트 | 결과 | 걸린 시간 |');
   say('| --- | --- | --- |');
-  for (const t of tests) say(`| ${t.title} | ${mark(t.ok)} | ${(t.ms / 1000).toFixed(1)}초 |`);
+  for (const t of tests) say(`| ${t.title} | ${t.skipped ? '건너뜀' : mark(t.ok)} | ${(t.ms / 1000).toFixed(1)}초 |`);
   say();
-  say(`테스트 ${tests.length}개 가운데 ${tests.filter((t) => t.ok).length}개 통과.`);
+  say(`테스트 ${tests.length}개 가운데 ${tests.filter((t) => t.ok).length}개 통과, 건너뛴 것 ${tests.filter((t) => t.skipped).length}개. 건너뛴 테스트는 통과로 세지 않아요.`);
   say();
 
   say('## 3, 4, 5. 화면 상태별 검사');
@@ -446,7 +476,7 @@ function buildReport(textOk, textResult) {
   say();
   say('만든 쪽이 캡처를 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
   say();
-  say(`판정에 쓰는 최소 기준: 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${tests.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지면 해당 항목이 실패로 적혀요.`);
+  say(`판정에 쓰는 최소 기준: 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지면 해당 항목이 실패로 적혀요.`);
   say();
 
   say('## 자동으로 확인하지 못하는 것');
@@ -457,7 +487,7 @@ function buildReport(textOk, textResult) {
   say('- 화면 낭독기(VoiceOver, TalkBack)로 실제로 들었을 때의 흐름.');
   say('- 아티팩트 뷰어 안에서의 동작. 뼈대와 비슷한 틀에 넣어 여는 것까지만 확인했어요.');
   say();
-  return { text: L.join('\n'), ok: failed.length === 0 && otherFailed.length === 0 && missingUnit.length === 0 };
+  return { text: L.join('\n'), ok: failed.length === 0 && otherFailed.length === 0 && missingUnit.length === 0 && failedSteps.length === 0 };
 }
 
 // 7. 금지 문자 파일 검사. 보고서 자신도 검사 대상이므로, 먼저 보고서를 한 번 쓰고 검사한 뒤 결과를 넣어 다시 쓴다.

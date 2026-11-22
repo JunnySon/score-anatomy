@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { exampleAnswers } from '../src/logic/example';
-import { chooseExam, enterRows, expect, expectHash, loadExam, openApp, tapKey, test } from './helpers';
+import { chooseExam, enterKeypad, enterRows, expect, expectHash, loadExam, openApp, tapKey, test } from './helpers';
 
 // (12) 테스트 진행자용 화면: 측정 기록, 정답지 대조, 내보내기.
 
@@ -118,7 +118,7 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   const [csvDownload] = await Promise.all([page.waitForEvent('download'), page.getByTestId('save-csv').click()]);
   const csv = readFileSync((await csvDownload.path())!, 'utf8').trim().split('\n');
   expect(csv).toHaveLength(2);
-  expect(csv[0]!.startsWith('participant,input_mode,planned_exam,exam,started_at,input_seconds,input_count,review_fixed_count,marks_seconds,select_to_score_seconds,residual_errors')).toBe(true);
+  expect(csv[0]!.startsWith('participant,input_mode,planned_exam,exam,exam_reselects,started_at,input_seconds,input_count,review_fixed_count,marks_seconds,select_to_score_seconds,residual_errors')).toBe(true);
   expect(csv[0]!.endsWith('inputs_q30')).toBe(true);
   expect(csv[1]!.startsWith('P07,rows,sample-a,sample-a,')).toBe(true);
 
@@ -162,6 +162,47 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await expect(page.getByRole('alertdialog')).toContainText('테스트 기록을 모두 지울까요?');
   await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
   await expect(page.getByTestId('no-runs')).toBeVisible();
+});
+
+test('시험 기록을 지운 뒤에 답지를 넣어도 옮겨 둔 최종 답과 대조한다', async ({ page }) => {
+  const exam = loadExam('a');
+  const answers = exampleAnswers(exam);
+  await openApp(page, '/test');
+  await page.getByLabel('참가자 코드').fill('P02');
+  await page.getByTestId('mode-keypad').click();
+  await page.getByTestId('texam-sample-a').click();
+  await page.getByTestId('start-run').click();
+  await expectHash(page, '/');
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-a');
+  // 3번만 답지와 다르게 넣는다.
+  await enterKeypad(page, exam, { ...answers, 3: 5 });
+  await expectHash(page, '/review');
+  await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
+  await page.getByRole('button', { name: '없어요' }).click();
+  await expectHash(page, '/score');
+  await openApp(page, '/test');
+  await page.getByTestId('finish-run').click();
+  await expect(page.getByTestId('active-run')).toHaveCount(0);
+
+  // 답지를 넣기 전에 시험 기록을 모두 지운다.
+  await openApp(page, '/history');
+  await page.getByTestId('history-remove-all').click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
+  await expect(page.getByTestId('history-empty')).toBeVisible();
+
+  await openApp(page, '/test');
+  const card = page.getByTestId('run-card');
+  await expect(card.getByTestId('m-residual')).toHaveText('아직 없음');
+  const key = exam.items.map((it) => answers[it.no]).join(',');
+  await card.getByLabel('참가자에게 준 답지의 답').fill(key);
+  await card.getByTestId('key-compare').click();
+  await expect(card.getByText('이 참가자가 넣은 답이 아직 없어요.')).toHaveCount(0);
+  await expect(card.getByTestId('key-result')).toHaveText('남은 오입력 1개');
+  await expect(card).toContainText('다른 문항: 3번');
+  // 새로 고쳐도 대조 결과가 남는다.
+  await page.reload();
+  await expect(page.getByTestId('run-card').getByTestId('m-residual')).toHaveText('1개');
 });
 
 test('주소 앞쪽의 input 값보다 진행자가 고른 입력 방식이 우선이다', async ({ page }) => {

@@ -135,6 +135,18 @@ const withEdges = audits.filter((a) => a.edgeCount > 0);
 const smallAudits = audits.filter((a) => a.run === 'light-360x640' || a.run === 'small-keypad' || a.run === 'small-rows');
 const fitAudits = smallAudits.filter((a) => a.mustFit);
 
+// 화면 검사가 줄거나 빠졌는데도 통과로 적히는 일을 막으려고, 꼭 있어야 하는 양을 따로 정해 둔다.
+// 화면 코스(e2e/tour.ts)나 테스트를 일부러 바꿨다면 이 값도 함께 고친다.
+const REQUIRED = {
+  shots: 64, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
+  auditStates: 300, // 화면 검사를 거친 화면 상태 수의 최소
+  smallStates: 100, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
+  e2eTests: 54, // 화면 테스트 수의 최소
+};
+const auditsEnough = audits.length >= REQUIRED.auditStates;
+const smallEnough = smallAudits.length >= REQUIRED.smallStates;
+const e2eEnough = tests.length >= REQUIRED.e2eTests;
+
 // ---------- 항목별 판정 ----------
 const unitOk = unitRun.ok && unit !== null && unit.numFailedTests === 0 && unit.numTotalTests > 0 && missingUnit.length === 0;
 const flowTests = byFile('flow.spec.ts');
@@ -142,22 +154,24 @@ const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
 const smallOk =
   allOk(smallTests) &&
-  smallAudits.length > 0 &&
+  smallEnough &&
   count(smallAudits, (a) => a.overlaps) === 0 &&
   count(smallAudits, (a) => a.obscured) === 0 &&
   count(smallAudits, (a) => a.clippedSide) === 0 &&
   count(fitAudits, (a) => a.outside) === 0 &&
   fitAudits.every((a) => !a.scrolls);
 const fontOk =
-  audits.length > 0 && count(audits, (a) => a.smallText) === 0 && count(audits, (a) => a.smallInputs) === 0 && min(audits, (a) => a.minFont) >= 13;
-const targetOk = withTargets.length > 0 && count(audits, (a) => a.smallTargets) === 0 && min(withTargets, (a) => Math.min(a.minTargetW, a.minTargetH)) >= 47.5;
+  auditsEnough && count(audits, (a) => a.smallText) === 0 && count(audits, (a) => a.smallInputs) === 0 && min(audits, (a) => a.minFont) >= 13;
+const targetOk = auditsEnough && withTargets.length > 0 && count(audits, (a) => a.smallTargets) === 0 && min(withTargets, (a) => Math.min(a.minTargetW, a.minTargetH)) >= 47.5;
 const netOk =
   net.length > 0 &&
+  e2eEnough &&
   count(net, (n) => n.external) === 0 &&
   sum(net, (n) => n.serviceWorkers ?? 0) === 0 &&
+  sum(net, (n) => n.permissionAsks ?? 0) === 0 &&
   (single ? single.external === 0 : false);
-const screenTextOk = audits.length > 0 && count(audits, (a) => a.forbidden) === 0 && count(audits, (a) => a.exclamation) === 0 && count(audits, (a) => a.emoji) === 0;
-const renderedContrastOk = audits.length > 0 && count(audits, (a) => a.lowContrast) === 0 && count(audits, (a) => a.lowEdges) === 0;
+const screenTextOk = auditsEnough && count(audits, (a) => a.forbidden) === 0 && count(audits, (a) => a.exclamation) === 0 && count(audits, (a) => a.emoji) === 0;
+const renderedContrastOk = auditsEnough && count(audits, (a) => a.lowContrast) === 0 && count(audits, (a) => a.lowEdges) === 0;
 const contrastOk = contrastRun.ok && contrast !== null && contrast.ok && renderedContrastOk;
 const leakOk =
   leaks.length > 0 &&
@@ -170,8 +184,10 @@ const leakOk =
   leakDiff.controlShort === true &&
   leakDiff.controlMc === true;
 const shots = { light: pngCount('light'), dark: pngCount('dark'), small: pngCount('small') };
-const expectedShots = tours.find((t) => t.shots > 0)?.shots ?? 0;
-const shotsOk = expectedShots > 0 && shots.light === expectedShots && shots.dark === expectedShots && shots.small === expectedShots;
+// 기대 장수는 같은 실행의 기록이 아니라 위에 정해 둔 값이다. 화면 코스가 기록한 장수도 그 값과 같아야 한다.
+const expectedShots = REQUIRED.shots;
+const tourShots = tours.find((t) => t.shots > 0)?.shots ?? 0;
+const shotsOk = tourShots === expectedShots && shots.light === expectedShots && shots.dark === expectedShots && shots.small === expectedShots;
 
 // ---------- 보고서 ----------
 const pad = (n) => String(n).padStart(2, '0');
@@ -358,7 +374,7 @@ function buildReport(textOk, textResult) {
 
   say('## 6. 외부 요청');
   say();
-  say(`테스트마다 브라우저 묶음(탭, 새 창, 워커 포함)에서 나간 요청을 모두 기록했어요. 요청 ${sum(net, (n) => n.total)}건이 전부 앱을 연 주소 안으로 갔고, 밖으로 나간 요청은 ${count(net, (n) => n.external)}건이에요. 등록된 서비스 워커는 ${sum(net, (n) => n.serviceWorkers ?? 0)}개예요.`);
+  say(`테스트마다 브라우저 묶음(탭, 새 창, 워커 포함)에서 나간 요청을 모두 기록했어요. 요청 ${sum(net, (n) => n.total)}건이 전부 앱을 연 주소 안으로 갔고, 밖으로 나간 요청은 ${count(net, (n) => n.external)}건이에요. 등록된 서비스 워커는 ${sum(net, (n) => n.serviceWorkers ?? 0)}개, 알림 권한을 요청한 횟수는 ${sum(net, (n) => n.permissionAsks ?? 0)}번이에요.`);
   say('글꼴(Pretendard dynamic subset)과 스크립트는 프로젝트 안에 실려 있어요.');
   if (single) say(`단일 HTML 파일(${Math.round(single.bytes / 1024)} KB)은 파일 자신 말고는 아무것도 읽지 않았어요(요청 ${single.requests}건).`);
   if (artifact) say(`아티팩트용 파일(${Math.round(artifact.bytes / 1024)} KB)도 뼈대에 넣어 열었을 때 파일 자신 말고는 요청이 없었어요(밖으로 ${artifact.external}건). 실제 뷰어 안에서는 확인하지 못했어요.`);
@@ -376,6 +392,8 @@ function buildReport(textOk, textResult) {
     say(`| 화면에 그려진 글자, 접힌 글자, 접근성 라벨, 입력 칸 값, 가상 요소 글자 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.forbidden)} |`);
     say(`| 화면의 느낌표 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.exclamation)} |`);
     say(`| 화면의 이모지 | 화면 상태 ${audits.length}개 | ${count(audits, (a) => a.emoji)} |`);
+    say();
+    say('커밋 메시지는 이 검증을 돌린 때까지의 커밋만 셌어요. 이 문서를 담은 커밋과 그 뒤의 커밋은 여기에 들어가지 않아요(node scripts/check-text.mjs 로 다시 확인할 수 있어요).');
     say();
     for (const g of textResult.groups) for (const h of g.hits) say(`- ${h.file} ${h.line}번째 줄: ${h.chars.join(', ')}`);
   }
@@ -426,7 +444,9 @@ function buildReport(textOk, textResult) {
   say(`- docs/screens/dark: 어두운 화면 ${shots.dark}장 (390x844, 2배 해상도)`);
   say(`- docs/screens/small: 작은 화면 ${shots.small}장 (360x640)`);
   say();
-  say('캡처를 사람이 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
+  say('만든 쪽이 캡처를 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
+  say();
+  say(`판정에 쓰는 최소 기준: 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${tests.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지면 해당 항목이 실패로 적혀요.`);
   say();
 
   say('## 자동으로 확인하지 못하는 것');

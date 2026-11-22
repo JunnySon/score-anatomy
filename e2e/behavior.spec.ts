@@ -136,8 +136,11 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   await expect(page.getByTestId('now-no')).toHaveText('24번');
   await expect(page.locator('[data-cell="23"] .cell__val')).toHaveText('');
   await expect(page.getByText("23번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
-  // "전체 보기"로 넘어가도 확정하지 않은 숫자는 미입력으로 남는다.
+  // "전체 보기"를 눌러도 확정하지 않은 숫자는 들어가지 않는다. 먼저 그 사실을 알리고, 다시 누르면 넘어간다.
   await tapKey(page, 7);
+  await page.getByRole('button', { name: '전체 보기' }).click();
+  await expect(page.getByText("24번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
+  await expectHash(page, '/input');
   await page.getByRole('button', { name: '전체 보기' }).click();
   await expectHash(page, '/review');
   await expect(page.locator('main [data-cell="24"] .cell__val')).toHaveText('미입력');
@@ -428,7 +431,8 @@ test('기기 설정을 따른다: 어두운 화면, 움직임 줄이기, 확대 
   const workers = await page.evaluate(async () => ('serviceWorker' in navigator ? (await navigator.serviceWorker.getRegistrations()).length : 0));
   expect(workers).toBe(0);
 
-  // 알림 권한을 요청하지 않는다.
+  // 알림 권한을 요청하지 않는다. 권한 값만 보면 요청했어도 알 수 없어서,
+  // 요청 함수가 불린 횟수는 모든 테스트에서 따로 센다(e2e/helpers.ts 의 page 준비 부분).
   const permission = await page.evaluate(() => ('Notification' in window ? Notification.permission : 'default'));
   expect(permission).not.toBe('granted');
 

@@ -40,6 +40,19 @@ export const test = base.extend({
       if (o !== origin) external.push(url);
     });
     page.on('websocket', (ws) => external.push(ws.url()));
+    // 알림 권한 요청 횟수를 센다(절대 원칙 1). 권한 값은 요청해도 바뀌지 않을 수 있어서 요청 함수 호출을 직접 센다.
+    let permissionAsks = 0;
+    await context.exposeBinding('__saPermissionAsked', () => {
+      permissionAsks += 1;
+    });
+    await context.addInitScript(() => {
+      if (!('Notification' in window)) return;
+      const original = Notification.requestPermission.bind(Notification);
+      Notification.requestPermission = ((...args: Parameters<typeof Notification.requestPermission>) => {
+        (window as unknown as { __saPermissionAsked?: () => void }).__saPermissionAsked?.();
+        return original(...args);
+      }) as typeof Notification.requestPermission;
+    });
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => {
@@ -47,9 +60,10 @@ export const test = base.extend({
     });
     await use(page);
     const workers = context.serviceWorkers().length;
-    addMetric({ kind: 'network', test: testInfo.titlePath.slice(1).join(' > '), total: all.length, external, serviceWorkers: workers });
+    addMetric({ kind: 'network', test: testInfo.titlePath.slice(1).join(' > '), total: all.length, external, serviceWorkers: workers, permissionAsks });
     expect(external, '자기 주소 밖으로 나간 요청').toEqual([]);
     expect(workers, '등록된 서비스 워커').toBe(0);
+    expect(permissionAsks, '알림 권한을 요청한 횟수').toBe(0);
     expect(errors, '브라우저 콘솔 오류').toEqual([]);
   },
 });

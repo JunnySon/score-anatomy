@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { checkScreen } from './audit';
@@ -74,7 +74,8 @@ test('아티팩트용 파일: 뼈대 안에서 열리고, 주소를 건드리지
 
   const others = requests.filter((u) => u !== url && !u.startsWith('data:') && !u.startsWith('blob:'));
   expect(others, '파일 자신 말고 다른 요청이 없어야 함').toEqual([]);
-  addMetric({ kind: 'artifact', bytes: content.length, requests: requests.length, external: others.length });
+  // 크기는 글자 수가 아니라 파일의 바이트 수로 잰다.
+  addMetric({ kind: 'artifact', bytes: statSync(FILE).size, requests: requests.length, external: others.length });
 });
 
 test('아티팩트용 파일: 보는 사람이 고른 테마(data-theme)를 기기 설정보다 먼저 따른다', async ({ page }) => {

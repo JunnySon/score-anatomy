@@ -175,7 +175,110 @@ test('지금 보던 기록을 지운 뒤 뒤로 가도 다른 시험의 결과�
   await page.goBack();
   // 지운 기록의 점수 해부 주소로 돌아가도 다른 시험이 열리지 않고 시작 화면으로 간다.
   await expectHash(page, '/');
+  // 지난 기록이 남아 있으므로 "이어서 보기"가 있고(지시서 8장 (1)), 눌러야 그 기록이 열린다.
+  await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(1);
+  const before = await page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'));
+  expect(before.currentId).toBeNull();
+  await page.getByRole('button', { name: '이어서 보기' }).click();
+  await expectHash(page, '/input');
+  await expect(page.getByRole('heading', { name: '예시 시험 B' })).toBeVisible();
+  // 기록을 모두 지우면 "이어서 보기"도 없다.
+  await openApp(page, '/history');
+  await page.getByTestId('history-remove-all').click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
+  await openApp(page, '/');
+  await expect(page.getByRole('button', { name: '시험 고르기' })).toBeVisible();
   await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
+});
+
+test('단답형: 숫자를 끝까지 지우면 들어 있던 답도 지워지고, 확정하지 않은 숫자는 말없이 사라지지 않는다', async ({ page }) => {
+  const exam = loadExam('a');
+  const answers = exampleAnswers(exam);
+  const answerOf = async (no: number) => {
+    const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'));
+    return stored.sessions[0].answers[no];
+  };
+  await openApp(page, '/?input=keypad');
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-a');
+  await enterKeypad(page, exam, answers);
+  await expectHash(page, '/review');
+
+  // 키패드 방식 26번(24): 지우기 두 번이면 칸과 저장된 답이 함께 비고, 그 뒤의 안내문이 사실과 맞다.
+  await openApp(page, '/input?input=keypad');
+  await page.locator('[data-cell="26"]').click();
+  await expect(page.getByTestId('now-no')).toHaveText('26번');
+  await expect(page.getByTestId('entry')).toContainText('24');
+  await tapKey(page, 'erase');
+  await expect(page.getByTestId('entry')).toContainText('2');
+  expect(await answerOf(26)).toBe(24);
+  await tapKey(page, 'erase');
+  await expect(page.locator('[data-cell="26"] .cell__val')).toHaveText('');
+  await expect(page.getByTestId('entered-count')).toHaveText('29문항 입력');
+  expect(await answerOf(26)).toBeUndefined();
+  await tapKey(page, 'go');
+  await expect(page.getByRole('status')).toHaveText("26번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
+  await expect(page.getByTestId('now-no')).toHaveText('26번');
+  // 다른 칸을 눌러도 "들어가지 않았어요"라는 말은 나오지 않는다(확정하지 않은 숫자가 없다).
+  await page.locator('[data-cell="27"]').click();
+  await expect(page.getByTestId('now-no')).toHaveText('27번');
+  await expect(page.getByRole('status')).toHaveCount(0);
+  await page.locator('[data-cell="26"]').click();
+  await tapKey(page, 2);
+  await tapKey(page, 4);
+  await tapKey(page, 'go');
+  expect(await answerOf(26)).toBe(24);
+
+  // 27번(146)에 99를 누르고 "다음" 없이 "전체 보기"를 누르면, 버린 숫자를 알리고 머문다. 다시 누르면 넘어간다.
+  await expect(page.getByTestId('now-no')).toHaveText('27번');
+  await tapKey(page, 9);
+  await tapKey(page, 9);
+  await page.getByRole('button', { name: '전체 보기' }).click();
+  await expectHash(page, '/input');
+  await expect(page.getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('entry')).toContainText('146');
+  expect(await answerOf(27)).toBe(146);
+  await page.getByRole('button', { name: '전체 보기' }).click();
+  await expectHash(page, '/review');
+  await expect(page.locator('main [data-cell="27"] .cell__val')).toHaveText('146');
+
+  // 위쪽 뒤로 가기도 같다.
+  await openApp(page, '/input?input=keypad');
+  await page.locator('[data-cell="29"]').click();
+  await tapKey(page, 1);
+  await tapKey(page, 1);
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expectHash(page, '/input');
+  await expect(page.getByRole('status')).toHaveText("29번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  expect(await answerOf(29)).toBe(275);
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expectHash(page, '/exams');
+
+  // 입력 확인의 27번(146) 시트: 지우기 세 번이면 저장된 답도 비고, "넣기"의 안내문이 사실과 맞다.
+  await openApp(page, '/review');
+  const sheet = page.locator('.sheet');
+  await page.locator('main [data-cell="27"]').click();
+  for (let i = 0; i < 3; i += 1) await tapKey(sheet, 'erase');
+  expect(await answerOf(27)).toBeUndefined();
+  await tapKey(sheet, 'go');
+  await expect(sheet.getByRole('status')).toHaveText("27번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
+  await page.getByRole('button', { name: '닫기' }).click();
+  await expect(page.locator('main [data-cell="27"] .cell__val')).toHaveText('미입력');
+});
+
+test('5행 방식: 안 풂으로 둔 문항은 접근성 이름으로도 구분된다', async ({ page }) => {
+  await openApp(page, '/?input=rows');
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-b', 'not_yet', 'first');
+  await page.locator('[data-row="2"] [data-row-no]').click();
+  await page.locator('.sheet [data-menu="skip"]').click();
+  await expect(page.locator('[data-row="2"] [data-row-no]')).toHaveAccessibleName('2번, 넣은 답 안 풂, 안 풂 또는 입력 지우기');
+  await expect(page.locator('[data-row="3"] [data-row-no]')).toHaveAccessibleName('3번, 안 풂 또는 입력 지우기');
+  for (let i = 0; i < 3; i += 1) await page.getByTestId('rows-next').click();
+  await page.locator('[data-row="16"] [data-row-no]').click();
+  await page.locator('.sheet [data-menu="skip"]').click();
+  await expect(page.locator('[data-row="16"] [data-short]')).toHaveAccessibleName('16번 답 안 풂, 눌러서 고치기');
+  await expect(page.locator('[data-row="17"] [data-short]')).toHaveAccessibleName('17번 답 넣기');
 });
 
 test('저장된 값이 속까지 망가져 있어도 흰 화면이 되지 않는다', async ({ page }) => {

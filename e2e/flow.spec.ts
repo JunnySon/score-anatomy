@@ -210,7 +210,9 @@ for (const mode of ['keypad', 'rows'] as const) {
     await expect(page.getByTestId('retry-label')).toHaveText('다시 풀어 맞힘');
     await page.getByTestId('retry-next').click();
     await retryAnswer(page, exam, 20, 5);
-    await expect(page.getByTestId('retry-label')).toHaveText('2번째에 맞힘');
+    // 한 번 틀린 뒤에 맞혀도 라벨은 지시서의 세 가지 가운데 하나다.
+    await expect(page.getByTestId('retry-result')).toContainText('다시 풀어 맞혔어요.');
+    await expect(page.getByTestId('retry-label')).toHaveText('다시 풀어 맞힘');
     await page.getByRole('button', { name: '뒤로' }).click();
     await expectHash(page, '/steps');
 

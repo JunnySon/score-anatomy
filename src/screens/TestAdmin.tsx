@@ -3,7 +3,7 @@ import { Chip, ConfirmDialog, Message, Screen, TopBar } from '../components/ui';
 import { EXAMS, findExam } from '../exams';
 import { navigate } from '../router';
 import { finishTestRun, resetTestRuns, setRunAnswerKey, startTestRun, useAppData } from '../state/hooks';
-import { exportCsv, exportJson, finalAnswersOf, PARTICIPANT_PATTERN, parseAnswerKey, runMetrics, type RunExportRow } from '../state/testlog';
+import { exportCsv, exportJson, finalAnswersOf, parseAnswerKey, PARTICIPANT_PATTERN, type RunExportRow, runMetrics, startOf } from '../state/testlog';
 import { S } from '../strings';
 import type { InputMode, TestRun } from '../types';
 
@@ -77,7 +77,7 @@ function RunCard({ row }: { row: RunExportRow }) {
       ) : null}
       <dl className="kv mt3 sub">
         <dt>{S.test.metric.started}</dt>
-        <dd>{fmtTime(run.startedAt)}</dd>
+        <dd data-testid="m-started">{startOf(run) === null ? S.test.notYet : fmtTime(run.startedAt)}</dd>
         <dt>{S.test.metric.input}</dt>
         <dd data-testid="m-input">{sec(m.inputSeconds)}</dd>
         <dt>{S.test.metric.inputCount}</dt>

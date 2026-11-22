@@ -128,7 +128,14 @@ export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | 
   if (run) {
     // 테스트 중: 지금 보는 기록이 이번 참가자의 것이면 그 기록, 아니면 측정에 묶인 기록.
     if (current && isMine(run, current.session)) return current;
-    return pick(d.sessions.find((s) => s.id === run.sessionId));
+    const bound = pick(d.sessions.find((s) => s.id === run.sessionId));
+    if (bound) return bound;
+    // 묶인 기록이 없으면(지워졌거나 아직 묶이지 않음) 이번 참가자가 만든 기록 가운데 가장 최근 것.
+    for (const s of d.sessions) {
+      const mine = isMine(run, s) ? pick(s) : null;
+      if (mine) return mine;
+    }
+    return null;
   }
   if (current) return current;
   // 새 기록은 목록 맨 앞에 넣으므로, 앞에서부터 처음 만나는 기록이 가장 최근 것이다.

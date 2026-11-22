@@ -908,16 +908,18 @@ a {
   color: var(--text-sub);
   cursor: default;
 }
-/* 단답형 번호는 한 줄에 네 칸씩 같은 폭으로 둔다. "자신 없음"이 붙어도 칸의 크기와 자리가 바뀌지 않는다.
-   (내용에 맞춰 폭이 늘면 뒤 번호가 밀려서, 같은 자리를 다시 눌렀을 때 옆 번호가 눌린다.) */
+/* 단답형 번호는 같은 폭의 칸으로 둔다(기본 글자 크기에서는 한 줄에 네 칸). "자신 없음"이 붙어도 칸의 크기와 자리가 바뀌지 않는다.
+   내용에 맞춰 폭이나 높이가 늘면 뒤 번호가 밀려서, 같은 자리를 다시 눌렀을 때 옆 번호가 눌린다.
+   - 칸의 최소 폭을 rem 으로 잡아서, 글자를 키우면 한 줄의 칸 수가 줄고 "자신 없음"은 늘 한 줄에 들어간다.
+   - 번호 줄과 "자신 없음" 줄의 높이를 늘 잡아 두어서, 붙고 떨어질 때 칸의 높이가 그대로다. */
 .short-marks {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--short-mark), 1fr));
   gap: var(--s2);
 }
 .short-mark {
   min-width: var(--touch);
-  min-height: var(--touch);
+  min-height: max(var(--touch), calc(var(--lh-body) + var(--lh-cap) + 4px));
   padding: 0 var(--s1);
   border: 1px solid var(--outline);
   border-radius: var(--r-chip);
@@ -936,6 +938,7 @@ a {
   font-size: var(--fs-cap);
   line-height: var(--lh-cap);
   font-weight: 400;
+  white-space: nowrap;
 }
 
 /* 점수 해부: 100점 막대. 색이 아니라 무늬로 가른다(채움, 빗금, 윤곽만, 점선 윤곽). */

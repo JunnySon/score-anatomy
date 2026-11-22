@@ -250,6 +250,11 @@ export function runMetrics(run: TestRun, session: Session | null, exam: Exam | n
 }
 
 /** 시각을 글자로 적는다. 날짜로 쓸 수 없는 값(저장 값이 망가진 경우)은 비워 둔다. */
+/** 측정의 시작 시각. 저장 값이 망가져 읽지 못했으면(0으로 읽힘) null. */
+export function startOf(run: TestRun): number | null {
+  return run.startedAt > 0 ? run.startedAt : null;
+}
+
 function iso(ms: number | null): string {
   if (ms === null) return '';
   const d = new Date(ms);
@@ -276,7 +281,7 @@ export function exportJson(rows: RunExportRow[], exportedAt: number): string {
       exportedAt: iso(exportedAt),
       runs: rows.map(({ run, session, exam }) => ({
         ...run,
-        startedAtIso: iso(run.startedAt),
+        startedAtIso: iso(startOf(run)),
         metrics: runMetrics(run, session, exam),
         finalAnswers: finalAnswersOf(run, session, exam),
       })),
@@ -314,7 +319,7 @@ export function exportCsv(rows: RunExportRow[]): string {
       run.plannedExamId,
       run.examId,
       run.examReselects,
-      iso(run.startedAt),
+      iso(startOf(run)),
       m.inputSeconds,
       m.inputCount,
       m.reviewFixedCount,

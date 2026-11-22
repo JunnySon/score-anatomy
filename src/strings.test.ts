@@ -222,10 +222,20 @@ describe('문구 도우미', () => {
     expect(rangePoints(4, 4)).toBe('4점');
   });
 
-  it('날짜', () => {
-    expect(formatDate('2026-11-22T03:00:00.000Z')).toMatch(/^2026년 11월 2[23]일$/);
+  it('날짜와 시각은 이 기기의 시간대로 적는다', () => {
+    // 기대값을 실행하는 기기의 시간대로 계산한다(시간대가 달라도, 30분 단위 시간대여도 같은 테스트가 통과해야 한다).
+    for (const iso of ['2026-11-22T03:05:09.000Z', '2026-11-22T23:59:59.000Z', '2026-01-01T00:00:00.000Z', '2026-06-30T12:30:45.000Z']) {
+      const d = new Date(iso);
+      expect(formatDate(iso)).toBe(`${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`);
+      expect(formatTime(iso)).toBe(`${d.getHours()}시 ${d.getMinutes()}분`);
+      expect(formatTime(iso, true)).toBe(`${d.getHours()}시 ${d.getMinutes()}분 ${d.getSeconds()}초`);
+    }
+    // 모양: 연월일, 시와 분(24시 기준), 초는 달라고 할 때만.
+    expect(formatDate('2026-11-22T03:05:09.000Z')).toMatch(/^2026년 11월 2[123]일$/);
+    expect(formatTime('2026-11-22T03:05:09.000Z')).toMatch(/^\d{1,2}시 \d{1,2}분$/);
+    expect(formatTime('2026-11-22T03:05:09.000Z', true)).toMatch(/^\d{1,2}시 \d{1,2}분 9초$/);
     expect(formatDate('엉뚱한 값')).toBe('');
-    expect(formatTime('2026-11-22T03:05:00.000Z')).toMatch(/^\d{1,2}시 5분$/);
     expect(formatTime('엉뚱한 값')).toBe('');
+    expect(formatTime('엉뚱한 값', true)).toBe('');
   });
 });

@@ -83,12 +83,13 @@ export function History() {
               const exam = findExam(s.examId);
               const title = exam?.title ?? s.examId;
               // 같은 시험의 기록이 여러 건이어도 구분되게, 접근성 이름에 날짜와 점수를 함께 넣는다.
-              // 시험, 날짜, 점수가 모두 같은 기록이 또 있으면 넣은 시각(시, 분)도 적는다.
+              // 시험, 날짜, 점수가 모두 같은 기록이 또 있으면 넣은 시각(시, 분)도 적고, 분까지 같으면 초도 적는다.
               const plain = `${formatDate(s.createdAt)}, ${scoreText(s)}`;
-              const twin = sessions.some(
+              const twins = sessions.filter(
                 (o) => o.id !== s.id && o.examId === s.examId && `${formatDate(o.createdAt)}, ${scoreText(o)}` === plain,
               );
-              const detail = twin ? `${formatDate(s.createdAt)} ${formatTime(s.createdAt)}, ${scoreText(s)}` : plain;
+              const sameMinute = twins.some((o) => formatTime(o.createdAt) === formatTime(s.createdAt));
+              const detail = twins.length > 0 ? `${formatDate(s.createdAt)} ${formatTime(s.createdAt, sameMinute)}, ${scoreText(s)}` : plain;
               return (
                 <li key={s.id} className="hitem" data-testid="history-item">
                   <button type="button" className="hitem__open" aria-label={S.history.open(title, detail)} onClick={() => open(s)}>

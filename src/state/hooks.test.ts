@@ -124,6 +124,46 @@ describe('이어서 보기', () => {
   });
 });
 
+describe('테스트 중의 이어서 보기', () => {
+  it('측정에 묶인 기록을 지워도 이번 참가자가 만든 다른 기록을 이어 볼 수 있다', () => {
+    // 앞 참가자의 기록 한 건이 기기에 남아 있다.
+    startSession('sample-a', 'not_yet', null);
+    const prev = current()!.id;
+    tick(1000);
+    startTestRun('P03', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    const a = current()!.id;
+    expect(a).not.toBe(prev);
+    enter(answersA, [1, 2, 3]);
+    tick(1000);
+    startSession('sample-b', 'not_yet', 'first');
+    const b = current()!.id;
+    expect(activeRun(store.get())!.sessionId).toBe(b);
+    // 지금 보던(측정에 묶인) 예시 시험 B 기록을 지운다.
+    deleteSession(b);
+    expect(store.get().currentId).toBeNull();
+    expect(resumeCandidate(store.get())!.session.id).toBe(a);
+    // 이번 참가자의 기록이 하나도 남지 않으면 앞 참가자의 기록은 열지 않는다.
+    deleteSession(a);
+    expect(store.get().sessions.map((s) => s.id)).toEqual([prev]);
+    expect(resumeCandidate(store.get())).toBeNull();
+  });
+
+  it('이번 참가자의 기록이 여러 건 남아 있으면 가장 최근에 만든 것을 연다', () => {
+    startTestRun('P04', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    tick(1000);
+    startSession('sample-c', 'not_yet', null);
+    const c = current()!.id;
+    tick(1000);
+    startSession('sample-b', 'not_yet', 'first');
+    deleteSession(current()!.id);
+    expect(resumeCandidate(store.get())!.session.id).toBe(c);
+  });
+});
+
 describe('테스트 측정과 시험 기록', () => {
   it('테스트를 시작하면 앞 사람의 기록이 현재 기록으로 남지 않는다', () => {
     startSession('sample-a', 'not_yet', null);

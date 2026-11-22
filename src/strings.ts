@@ -29,11 +29,12 @@ export function formatDate(iso: string): string {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
-/** 시와 분(24시 기준). 같은 날 같은 점수의 기록을 구분할 때만 쓴다. */
-export function formatTime(iso: string): string {
+/** 시와 분(24시 기준). 같은 날 같은 점수의 기록을 구분할 때만 쓴다. withSeconds 가 true면 초까지 적는다. */
+export function formatTime(iso: string, withSeconds = false): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return `${d.getHours()}시 ${d.getMinutes()}분`;
+  const base = `${d.getHours()}시 ${d.getMinutes()}분`;
+  return withSeconds ? `${base} ${d.getSeconds()}초` : base;
 }
 
 export const S = {

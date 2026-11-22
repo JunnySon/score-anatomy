@@ -1,5 +1,4 @@
 import { isValidAnswerNumber } from '../exams/validate';
-import { findMissing } from '../logic/scoring';
 import type { Answers, AnswerValue, AppData, Exam, InputMode, Session, TestRun } from '../types';
 import { newId } from './store';
 
@@ -28,6 +27,7 @@ export function newRun(participant: string, inputMode: InputMode, plannedExamId:
     marksMs: 0,
     firstScoreAt: null,
     answerKeyText: '',
+    finalAnswers: null,
   };
 }
 
@@ -87,16 +87,23 @@ export interface KeyParse {
   got: number;
 }
 
-/** 진행자가 붙여 넣은 답지를 읽는다. 쉼표로 구분하고, 안 푼 문항은 x로 적는다. */
+/** 답지에서 값을 가르는 문자: 쉼표, 전각 쉼표(U+FF0C), 모점(U+3001), 공백과 줄바꿈. */
+const KEY_SEPARATOR = new RegExp(`[,${String.fromCodePoint(0xff0c, 0x3001)}\\s]+`);
+
+/**
+ * 진행자가 붙여 넣은 답지를 읽는다. 쉼표(또는 공백, 줄바꿈)로 구분하고, 안 푼 문항은 x로 적는다.
+ * 앞뒤에 남은 쉼표는 무시한다.
+ */
 export function parseAnswerKey(exam: Exam, text: string): KeyParse {
-  const trimmed = text.trim();
-  const tokens = trimmed === '' ? [] : trimmed.split(/[,\n\t]+/).map((t) => t.trim());
+  // "안 풂"은 가운데 공백이 있어서 먼저 x로 바꿔 둔다.
+  const normalized = text.replace(/안\s*풂/g, 'x');
+  const tokens = normalized.split(KEY_SEPARATOR).filter((t) => t !== '');
   if (tokens.length !== exam.items.length) return { ok: false, values: [], errorIndex: 0, got: tokens.length };
   const values: AnswerValue[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
     const t = tokens[i]!;
     const item = exam.items[i]!;
-    if (/^(x|안\s?풂)$/i.test(t)) {
+    if (/^x$/i.test(t)) {
       values.push('skip');
       continue;
     }
@@ -114,6 +121,23 @@ export function diffAnswerKey(exam: Exam, key: AnswerValue[], answers: Answers):
     if (answers[it.no] !== key[i]) out.push(it.no);
   });
   return out;
+}
+
+/** 참가자가 지금까지 넣은 답을 문항 순서대로 옮긴다. 미입력은 null. */
+export function answersInOrder(exam: Exam, answers: Answers): (AnswerValue | null)[] {
+  return exam.items.map((it) => answers[it.no] ?? null);
+}
+
+/** 시험 기록이 지워지거나 참가자가 끝날 때, 최종 제출한 답을 측정 기록에 옮겨 둔다. */
+export function withFinalAnswers(run: TestRun, session: Session | null, exam: Exam | null): TestRun {
+  if (!session || !exam || run.sessionId !== session.id) return run;
+  return { ...run, finalAnswers: answersInOrder(exam, session.answers) };
+}
+
+/** 측정 기록의 최종 답. 시험 기록이 남아 있으면 그 답을, 없으면 옮겨 둔 사본을 쓴다. */
+export function finalAnswersOf(run: TestRun, session: Session | null, exam: Exam | null): (AnswerValue | null)[] | null {
+  if (session && exam) return answersInOrder(exam, session.answers);
+  return run.finalAnswers;
 }
 
 export interface RunMetrics {
@@ -135,10 +159,11 @@ function seconds(from: number | null, to: number | null): number | null {
 export function runMetrics(run: TestRun, session: Session | null, exam: Exam | null): RunMetrics {
   let residualErrors: number | null = null;
   let residualNos: number[] = [];
-  if (exam && session && run.answerKeyText.trim() !== '') {
+  const final = finalAnswersOf(run, session, exam);
+  if (exam && final && run.answerKeyText.trim() !== '') {
     const parsed = parseAnswerKey(exam, run.answerKeyText);
     if (parsed.ok) {
-      residualNos = diffAnswerKey(exam, parsed.values, session.answers);
+      residualNos = exam.items.filter((_, i) => final[i] !== parsed.values[i]).map((it) => it.no);
       residualErrors = residualNos.length;
     }
   }
@@ -150,7 +175,7 @@ export function runMetrics(run: TestRun, session: Session | null, exam: Exam | n
     selectToScoreSeconds: seconds(run.examSelectAt, run.firstScoreAt),
     residualErrors,
     residualNos,
-    enteredCount: exam && session ? exam.items.length - findMissing(exam, session.answers).length : null,
+    enteredCount: final ? final.filter((v) => v !== null).length : null,
   };
 }
 
@@ -180,7 +205,7 @@ export function exportJson(rows: RunExportRow[], exportedAt: number): string {
         ...run,
         startedAtIso: iso(run.startedAt),
         metrics: runMetrics(run, session, exam),
-        finalAnswers: session && exam ? exam.items.map((it) => session.answers[it.no] ?? null) : null,
+        finalAnswers: finalAnswersOf(run, session, exam),
       })),
     },
     null,

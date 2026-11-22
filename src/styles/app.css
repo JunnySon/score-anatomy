@@ -22,6 +22,9 @@ body {
   line-height: var(--lh-body);
   font-weight: 400;
   font-variant-numeric: tabular-nums;
+  /* 한글은 낱말 중간에서 줄이 바뀌지 않게 한다. 아주 긴 낱말만 예외로 끊는다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: none;
 }
@@ -197,7 +200,6 @@ a {
 .top__title {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -235,14 +237,21 @@ a {
 .body--fit {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   padding-bottom: var(--s2);
+}
+.body--fit > * {
+  flex: none;
 }
 
 .dock {
   flex: none;
   background: var(--bg);
   padding-bottom: env(safe-area-inset-bottom);
+}
+/* 화면이 바뀐 직후 잠깐은 누름을 받지 않는다(같은 자리를 연달아 눌러 다음 화면까지 넘어가는 일을 막는다). */
+.dock--guard,
+.layer--guard {
+  pointer-events: none;
 }
 .actions {
   border-top: 1px solid var(--line);
@@ -370,7 +379,6 @@ a {
   color: var(--text-sub);
   font-size: var(--fs-cap);
   line-height: var(--lh-cap);
-  font-weight: 600;
   white-space: nowrap;
   vertical-align: middle;
 }
@@ -393,7 +401,6 @@ a {
   gap: var(--s1);
   font-size: var(--fs-cap);
   line-height: var(--lh-cap);
-  font-weight: 600;
   white-space: nowrap;
 }
 .tag--bad {
@@ -423,7 +430,7 @@ a {
   border-left: 3px solid var(--warn);
   background: var(--surface);
   padding: var(--s2) var(--s3);
-  border-radius: 4px;
+  border-radius: var(--r-chip);
 }
 .msg--plain {
   border-left-color: var(--outline);
@@ -641,7 +648,7 @@ a {
   flex: none;
   display: grid;
   gap: var(--s2);
-  padding: var(--s2) max(var(--s3), env(safe-area-inset-right)) var(--s2) max(var(--s3), env(safe-area-inset-left));
+  padding: var(--s2) max(var(--gutter), env(safe-area-inset-right)) var(--s2) max(var(--gutter), env(safe-area-inset-left));
   border-top: 1px solid var(--line);
   background: var(--surface);
 }
@@ -649,6 +656,17 @@ a {
   border-top: 0;
   background: transparent;
   padding-inline: 0;
+}
+.pad-msg {
+  padding: var(--s2) max(var(--gutter), env(safe-area-inset-right)) 0 max(var(--gutter), env(safe-area-inset-left));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.pad-msg .msg {
+  background: var(--bg);
+}
+.pad-msg + .pad {
+  border-top: 0;
 }
 .pad__mc {
   display: grid;
@@ -684,8 +702,14 @@ a {
 }
 .key--num {
   height: var(--key-h);
+  flex-direction: column;
   font-size: var(--fs-num);
   line-height: var(--lh-num);
+}
+.key--num small {
+  font-size: var(--fs-cap);
+  line-height: var(--lh-cap);
+  font-weight: 400;
 }
 .key--fn {
   height: 52px;
@@ -795,6 +819,23 @@ a {
 .row__short-val {
   font-weight: 600;
 }
+/* 지원 범위(360px)보다 좁은 화면에서는 간격과 터치 영역을 조금 줄여 화면 밖으로 나가지 않게 한다. */
+@media (max-width: 359px) {
+  .body--rows {
+    padding-left: var(--s3);
+    padding-right: var(--s3);
+  }
+  .row,
+  .row__choices {
+    gap: var(--s1);
+  }
+  .row__choices {
+    grid-auto-columns: minmax(0, 1fr);
+  }
+  .radio {
+    min-width: 0;
+  }
+}
 
 /* 입력 확인과 표시 격자 */
 .grid5 {
@@ -822,7 +863,7 @@ a {
   min-height: var(--lh-cap);
   font-size: var(--fs-cap);
   line-height: var(--lh-cap);
-  font-weight: 600;
+  font-weight: 400;
 }
 /* 고민: 윤곽 무늬 */
 .mark-cell--doubt {
@@ -869,7 +910,7 @@ a {
 .short-mark small {
   font-size: var(--fs-cap);
   line-height: var(--lh-cap);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 /* 점수 해부: 100점 막대. 색이 아니라 무늬로 가른다(채움, 빗금, 윤곽만, 점선 윤곽). */
@@ -920,6 +961,12 @@ a {
   line-height: var(--lh-cap);
   color: var(--text-sub);
   white-space: nowrap;
+}
+.ticks--stacked {
+  height: 46px;
+}
+.ticks--stacked .tick-label--total {
+  top: 26px;
 }
 .swatch {
   flex: none;
@@ -1024,7 +1071,6 @@ details[open] > summary::after {
 }
 .sheet__title {
   flex: 1;
-  font-weight: 600;
 }
 .sheet__body {
   padding: var(--s1) var(--gutter) var(--s4);
@@ -1119,7 +1165,7 @@ textarea.field__input {
 }
 .kv dd {
   margin: 0;
-  font-weight: 600;
+  color: var(--text);
   text-align: right;
 }
 

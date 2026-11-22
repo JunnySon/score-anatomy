@@ -42,6 +42,11 @@ export function Score({ h, grade }: { h: SessionHandle; grade: Grade }) {
           {S.common.afterGradingNote}
         </p>
       ) : null}
+      {session.answersEditedAfterGrading.length > 0 ? (
+        <p className="cap mt2" data-testid="edited-note">
+          {S.common.editedAfterGrading(session.answersEditedAfterGrading)}
+        </p>
+      ) : null}
     </Screen>
   );
 }

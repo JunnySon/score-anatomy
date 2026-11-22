@@ -45,14 +45,15 @@ export const S = {
     put: '넣기',
     points: (n: number) => `${n}점`,
     itemNo: (n: number) => `${n}번`,
-    approx: (n: number) => `약 ${n}점`,
-    itemCount: (n: number) => `${n}문항`,
     correctOf: (total: number, correct: number) => `${total}문항 가운데 ${correct}문항을 맞혔어요.`,
     afterGradingNote: '채점한 뒤에 표시한 기록이에요',
     gradeFailed: '채점하지 못했어요. 답은 그대로 있어요.',
     shortRange: '답은 0부터 999까지예요.',
     emptyItem: (no: number) => `${no}번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.`,
-    selected: '고름',
+    editedAfterGrading: (nos: number[]) => `채점한 뒤에 답을 고친 문항: ${listNos(nos)}`,
+    crashTitle: '화면을 그리지 못했어요.',
+    crashBody: '넣은 기록은 그대로 있어요. 처음 화면으로 돌아가 주세요.',
+    crashBack: '처음 화면으로',
   },
 
   tabs: {
@@ -73,7 +74,6 @@ export const S = {
 
   exams: {
     title: '어떤 시험을 넣을까요?',
-    listLabel: '시험 목록',
     gradedQ: '채점은 아직인가요?',
     gradedOptions: { not_yet: '아직 안 했어요', already: '이미 했어요' } as Record<GradedBefore, string>,
     seenQ: '이 시험지, 전에 풀어 본 적 있나요?',
@@ -94,6 +94,8 @@ export const S = {
     nowLabel: '지금 넣을 문항',
     entryLabel: '넣은 답',
     hint: '다섯 문항마다 시험지와 맞춰 보세요. 칸을 누르면 그 문항으로 가요.',
+    erased: (no: number) => `${no}번 답을 지웠어요.`,
+    notCommitted: (no: number) => `${no}번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.`,
     prevGroupLabel: '직전 묶음',
     currentGroupLabel: '현재 묶음',
     keypadLabel: '답 키패드',
@@ -116,7 +118,6 @@ export const S = {
   },
 
   review: {
-    top: '입력 확인',
     title: '넣은 답을 확인해 주세요',
     hint: '시험지와 5개씩 맞춰 보세요.',
     missing: '미입력',
@@ -124,11 +125,11 @@ export const S = {
     cellFilled: (no: number, answer: string) => `${no}번, 넣은 답 ${answer}, 눌러서 고치기`,
     cellMissing: (no: number) => `${no}번, 미입력, 눌러서 넣기`,
     sheetTitle: (no: number) => `${no}번 답 고치기`,
+    currentAnswer: '지금 답',
     go: '맞아요, 다음으로',
   },
 
   marks: {
-    top: '표시',
     title: '풀이 없이 고른 문항이 있나요?',
     body: '있으면 눌러 주세요. 점수는 그대로예요.',
     help: '시험지에 세모나 물음표를 쳐 둔 문항을 보면 쉬워요.',
@@ -179,19 +180,26 @@ export const S = {
 
   anatomy: {
     top: '점수 해부',
-    barLabel: (total: number, plain: number, guess: number, slip: number, other: number) =>
-      `${total}점 막대. 표시 없이 맞힌 점수 ${plain}점, 추측했다고 표시한 정답 ${guess}점, 실수라고 표시한 오답 ${slip}점, 그 외 오답 ${other}점.`,
+    barLabel: (total: number, plain: number, guess: number, slip: number, other: number) => {
+      // 값이 없는 구간은 말하지 않는다(0점이라고 쓰지 않는다).
+      const parts: string[] = [];
+      if (plain > 0) parts.push(`표시 없이 맞힌 점수 ${plain}점`);
+      if (guess > 0) parts.push(`추측했다고 표시한 정답 ${guess}점`);
+      if (slip > 0) parts.push(`실수라고 표시한 오답 ${slip}점`);
+      if (other > 0) parts.push(slip > 0 ? `그 외 오답 ${other}점` : `오답 ${other}점`);
+      return `${total}점 막대. ${parts.join(', ')}.`;
+    },
     rowGuess: '추측했다고 표시한 정답',
     rowGuessSub: (actual: number) => `${actual}점 안에 들어 있어요`,
-    rowGuessNone: '찍었다고 표시한 문항은 맞히지 못했어요',
+    rowGuessNone: '찍었다고 표시한 문항에서 나온 점수는 없어요.',
     rowSlip: '실수라고 표시한 오답',
     rowSlipSub: (actual: number) => `${actual}점에는 들어 있지 않아요`,
     rowSlipNone: '실수라고 표시한 오답이 없어요',
     sentenceGuess: (actual: number, guess: number) => `${actual}점 가운데 ${guess}점은 찍었다고 표시한 문항에서 나왔어요.`,
-    sentenceGuessNone: '찍었다고 표시한 문항에서 나온 점수는 없어요.',
     sentenceSlip: (wrong: number, slip: number) => `틀린 ${wrong}점 가운데 ${slip}점은 실수라고 표시했어요.`,
     emptyMarks: (actual: number) => `표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
     emptyGuess: (actual: number) => `찍었다고 표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
+    emptyGuessOnly: (actual: number) => `찍었다고 표시한 문항이 없어요. ${actual}점 그대로예요.`,
     causesUnmarked: '아직 원인을 표시하지 않았어요',
     causesPartly: (n: number) => `원인을 표시하지 않은 문항이 ${n}개 있어요`,
     toCauses: '오답 원인 표시하기',
@@ -215,6 +223,9 @@ export const S = {
     actualAboveConfirmed: '컷보다 위예요.',
     luckBelow: (rounded: number, from: number, to: number) =>
       `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 ${rangePoints(from, to)}이에요`,
+    // 첫 줄이 "남았어요"가 아닐 때는 둘째 줄만 읽어도 뜻이 통하게 적는다.
+    luckBelowAlone: (rounded: number, from: number, to: number) =>
+      `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 ${rangePoints(from, to)} 남았어요`,
     luckWithin: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷 범위 안이에요`,
     luckAbove: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷 범위보다 위예요`,
     luckEqualConfirmed: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷과 같은 점수예요`,
@@ -258,7 +269,6 @@ export const S = {
     empty: '틀린 문항이 없어요. 고칠 계단도 없어요.',
     retryStatusTitle: '다시 푼 기록',
     retryStatus: (no: number, label: string) => `${no}번: ${label}`,
-    toAnatomy: '점수 해부로 돌아가기',
   },
 
   retry: {
@@ -271,6 +281,8 @@ export const S = {
     correct: '다시 풀어 맞혔어요.',
     correctKnown: '정답을 확인한 뒤 다시 맞혔어요.',
     wrong: '이번에도 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.',
+    // 처음에 맞혔던 문항(찍어서 맞혔다고 표시한 문항)을 다시 풀어 틀린 경우.
+    wrongAfterCorrect: '이번에는 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.',
     labelCorrect: '다시 풀어 맞힘',
     labelCorrectSlip: '실수로 표시함, 다시 풀어 맞힘',
     labelCorrectKnown: '정답 확인 후 다시 맞힘',
@@ -293,6 +305,7 @@ export const S = {
     confirmOne: '이 기록을 지울까요?',
     confirmAll: '이 기기의 기록을 모두 지울까요?',
     confirmBody: '지우면 되돌릴 수 없어요.',
+    confirmAllBodyWithRuns: '지우면 되돌릴 수 없어요. 테스트 측정 기록은 테스트 진행자용 화면에서 따로 지워요.',
     confirmYes: '지우기',
     confirmNo: '그만두기',
     empty: '아직 넣은 시험이 없어요. 시험을 하나 넣으면 여기에 쌓여요.',
@@ -354,7 +367,8 @@ export const S = {
     copyCsv: 'CSV 복사',
     copied: '복사했어요.',
     copyFailed: '복사하지 못했어요. 파일 저장을 써 주세요.',
-    saved: '파일로 저장했어요.',
+    saved: '파일 저장을 요청했어요. 파일이 생기지 않으면 복사를 써 주세요.',
+    saveFailed: '파일로 저장하지 못했어요. 복사를 써 주세요.',
     noNetwork: '기록은 파일이나 복사로만 꺼낼 수 있어요. 어디로도 전송하지 않아요.',
     reset: '기록 초기화',
     resetConfirm: '테스트 기록을 모두 지울까요?',

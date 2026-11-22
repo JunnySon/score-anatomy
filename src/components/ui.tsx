@@ -1,8 +1,50 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { href, navigate } from '../router';
 import { S } from '../strings';
 
 // 화면 공통 부품: 화면 틀, 위쪽 줄, 하단 탭, 배지, 바텀시트, 삭제 확인 대화상자.
+
+/**
+ * 화면이 실제로 그려졌을 때 불리는 알림. 테스트 측정의 화면 진입 기록에 쓴다.
+ * 다른 화면으로 되돌려 보내는 주소는 화면을 그리지 않으므로 기록되지 않는다.
+ */
+export const ScreenShownContext = createContext<(() => void) | null>(null);
+
+/** 화면이나 떠 있는 층이 막 나타난 뒤 누름을 받지 않는 시간(ms). */
+export const TAP_GUARD_MS = 500;
+
+/**
+ * 같은 자리를 연달아 눌렀을 때 다음 화면의 버튼까지 눌리는 일을 막는다.
+ * 화면(또는 key)이 바뀐 직후 잠깐은 false를 돌려주고, 그동안 그 영역은 누름을 받지 않는다.
+ * 막고 있는 동안 그 영역을 또 누르면 시간을 다시 센다. 연타가 멈춘 뒤에야 누름을 받는다.
+ */
+function useTapGuard(key: string, areaRef: React.RefObject<HTMLElement | null>): boolean {
+  const [armedKey, setArmedKey] = useState<string | null>(null);
+  useEffect(() => {
+    let timer = 0;
+    const onDown = (e: PointerEvent) => {
+      const el = areaRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) start();
+    };
+    const arm = () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      setArmedKey(key);
+    };
+    const start = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(arm, TAP_GUARD_MS);
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    start();
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('pointerdown', onDown, true);
+    };
+  }, [key, areaRef]);
+  return armedKey === key;
+}
 
 export function IconBack() {
   return (
@@ -98,16 +140,23 @@ interface ScreenProps {
   /** 바텀시트나 삭제 확인 대화상자. */
   layer?: ReactNode;
   bodyClass?: string;
+  /** 같은 화면 안에서 아래 고정 영역의 내용이 바뀔 때 다시 잠깐 누름을 막고 싶으면 값을 바꾼다. */
+  guardKey?: string;
 }
 
-export function Screen({ top, children, actions, footer, tabs, layer, bodyClass }: ScreenProps) {
+export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey }: ScreenProps) {
   const bodyRef = useRef<HTMLElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const armed = useTapGuard(guardKey ?? '', dockRef);
+  const onShown = useContext(ScreenShownContext);
   useEffect(() => {
+    onShown?.();
     // 화면이 바뀌면 맨 위로 올리고, 보조 기기가 새 화면을 읽도록 초점을 옮긴다.
     const el = bodyRef.current;
     if (!el) return;
     el.scrollTop = 0;
     el.focus({ preventScroll: true });
+    // 화면이 처음 그려질 때 한 번만 한다.
   }, []);
   return (
     <div className={`app${top ? '' : ' app--notop'}`}>
@@ -116,7 +165,7 @@ export function Screen({ top, children, actions, footer, tabs, layer, bodyClass 
         {children}
       </main>
       {actions || footer || tabs ? (
-        <div className="dock">
+        <div className={`dock${armed ? '' : ' dock--guard'}`} ref={dockRef}>
           {footer}
           {actions ? <div className="actions">{actions}</div> : null}
           {tabs ? <TabBar active={tabs} /> : null}
@@ -154,13 +203,14 @@ export function BottomSheet({ title, onClose, children }: { title: string; onClo
   const layerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const armed = useTapGuard('sheet', layerRef);
   useModalLayer(layerRef, panelRef, onClose);
   return (
-    <div className="layer" ref={layerRef}>
+    <div className={`layer${armed ? '' : ' layer--guard'}`} ref={layerRef}>
       <div className="scrim" aria-hidden="true" onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={panelRef}>
         <div className="sheet__head">
-          <h2 className="sheet__title" id={titleId}>
+          <h2 className="sheet__title title" id={titleId}>
             {title}
           </h2>
           <button type="button" className="icon-btn" aria-label={S.common.close} onClick={onClose}>
@@ -192,12 +242,13 @@ export function ConfirmDialog({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const bodyId = useId();
+  const armed = useTapGuard('dialog', layerRef);
   useModalLayer(layerRef, panelRef, onNo);
   return (
-    <div className="layer layer--center" ref={layerRef}>
+    <div className={`layer layer--center${armed ? '' : ' layer--guard'}`} ref={layerRef}>
       <div className="scrim" aria-hidden="true" onClick={onNo} />
       <div className="dialog" role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={bodyId} tabIndex={-1} ref={panelRef}>
-        <h2 className="strong" id={titleId}>
+        <h2 className="title" id={titleId}>
           {title}
         </h2>
         <p className="sub mt2" id={bodyId}>

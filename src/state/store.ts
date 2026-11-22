@@ -21,9 +21,42 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/** 문항 번호를 열쇠로 하는 기록에서 모양이 맞는 값만 남긴다. */
+function cleanRecord<T>(raw: unknown, ok: (v: unknown) => v is T): Record<number, T> {
+  const out: Record<number, T> = {};
+  if (!isObject(raw)) return out;
+  for (const [k, v] of Object.entries(raw)) {
+    const no = Number(k);
+    if (Number.isInteger(no) && no > 0 && ok(v)) out[no] = v;
+  }
+  return out;
+}
+
+const isAnswer = (v: unknown): v is Session['answers'][number] => v === 'skip' || (typeof v === 'number' && Number.isInteger(v));
+const isMark = (v: unknown): v is Session['marks'][number] => v === 'doubt' || v === 'guess' || v === 'unsure';
+const isCause = (v: unknown): v is Session['causes'][number] => v === 'slip' || v === 'blank' || v === 'unknown';
+const isTrue = (v: unknown): v is true => v === true;
+const isRetryLike = (v: unknown): v is Record<string, unknown> =>
+  isObject(v) && typeof v.correct === 'boolean' && typeof v.attempts === 'number' && typeof v.answerKnown === 'boolean' && typeof v.at === 'string';
+
+function cleanRetries(raw: unknown): Session['retries'] {
+  const out: Session['retries'] = {};
+  for (const [k, v] of Object.entries(cleanRecord(raw, isRetryLike))) {
+    out[Number(k)] = {
+      correct: v.correct as boolean,
+      attempts: v.attempts as number,
+      firstCorrectAttempt: typeof v.firstCorrectAttempt === 'number' ? v.firstCorrectAttempt : v.correct === true ? (v.attempts as number) : null,
+      answerKnown: v.answerKnown as boolean,
+      at: v.at as string,
+    };
+  }
+  return out;
+}
+
 function cleanSession(raw: unknown): Session | null {
   if (!isObject(raw)) return null;
   if (typeof raw.id !== 'string' || typeof raw.examId !== 'string') return null;
+  const gradedAt = typeof raw.gradedAt === 'string' ? raw.gradedAt : null;
   return {
     id: raw.id,
     examId: raw.examId,
@@ -31,16 +64,20 @@ function cleanSession(raw: unknown): Session | null {
     gradedBefore: raw.gradedBefore === 'already' || raw.gradedBefore === 'not_yet' ? raw.gradedBefore : null,
     seenBefore:
       raw.seenBefore === 'first' || raw.seenBefore === 'partial' || raw.seenBefore === 'solved' ? raw.seenBefore : null,
-    answers: isObject(raw.answers) ? (raw.answers as Session['answers']) : {},
-    marks: isObject(raw.marks) ? (raw.marks as Session['marks']) : {},
+    answers: cleanRecord(raw.answers, isAnswer),
+    marks: cleanRecord(raw.marks, isMark),
     marksEditedAfterGrading: raw.marksEditedAfterGrading === true,
     timeFeel: raw.timeFeel === 'enough' || raw.timeFeel === 'tight' || raw.timeFeel === 'missed' ? raw.timeFeel : null,
     savedAt: typeof raw.savedAt === 'string' ? raw.savedAt : null,
-    gradedAt: typeof raw.gradedAt === 'string' ? raw.gradedAt : null,
-    causes: isObject(raw.causes) ? (raw.causes as Session['causes']) : {},
-    answerViewed: isObject(raw.answerViewed) ? (raw.answerViewed as Session['answerViewed']) : {},
+    gradedAt,
+    firstGradedAt: typeof raw.firstGradedAt === 'string' ? raw.firstGradedAt : gradedAt,
+    answersEditedAfterGrading: Array.isArray(raw.answersEditedAfterGrading)
+      ? raw.answersEditedAfterGrading.filter((n): n is number => typeof n === 'number' && Number.isInteger(n))
+      : [],
+    causes: cleanRecord(raw.causes, isCause),
+    answerViewed: cleanRecord(raw.answerViewed, isTrue),
     targetGrade: typeof raw.targetGrade === 'string' ? raw.targetGrade : null,
-    retries: isObject(raw.retries) ? (raw.retries as Session['retries']) : {},
+    retries: cleanRetries(raw.retries),
   };
 }
 
@@ -48,6 +85,13 @@ function cleanRun(raw: unknown): TestRun | null {
   if (!isObject(raw)) return null;
   if (typeof raw.id !== 'string' || typeof raw.participant !== 'string') return null;
   const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const counts: Record<number, number> = {};
+  if (isObject(raw.itemInputs)) {
+    for (const [k, v] of Object.entries(raw.itemInputs)) {
+      const no = Number(k);
+      if (Number.isInteger(no) && no > 0 && typeof v === 'number' && Number.isFinite(v)) counts[no] = v;
+    }
+  }
   return {
     id: raw.id,
     participant: raw.participant,
@@ -65,11 +109,12 @@ function cleanRun(raw: unknown): TestRun | null {
     firstInputAt: num(raw.firstInputAt),
     inputDoneAt: num(raw.inputDoneAt),
     reviewConfirmAt: num(raw.reviewConfirmAt),
-    itemInputs: isObject(raw.itemInputs) ? (raw.itemInputs as Record<number, number>) : {},
+    itemInputs: counts,
     reviewFixed: Array.isArray(raw.reviewFixed) ? raw.reviewFixed.filter((n): n is number => typeof n === 'number') : [],
     marksMs: num(raw.marksMs) ?? 0,
     firstScoreAt: num(raw.firstScoreAt),
     answerKeyText: typeof raw.answerKeyText === 'string' ? raw.answerKeyText : '',
+    finalAnswers: Array.isArray(raw.finalAnswers) ? raw.finalAnswers.map((v) => (isAnswer(v) ? v : null)) : null,
   };
 }
 

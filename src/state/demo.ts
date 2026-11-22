@@ -22,6 +22,8 @@ export function buildDemoSession(): Session | null {
     timeFeel: null,
     savedAt: null,
     gradedAt: '2026-11-22T09:00:00.000Z',
+    firstGradedAt: '2026-11-22T09:00:00.000Z',
+    answersEditedAfterGrading: [],
     causes: exampleCauses(),
     answerViewed: {},
     targetGrade: null,

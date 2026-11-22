@@ -4,6 +4,7 @@ import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import { GradeError } from '../logic/scoring';
 import type { Exam, Session, TestRun } from '../types';
 import {
+  clearMarks,
   cycleMark,
   isMarkedAfterGrading,
   markGraded,
@@ -100,6 +101,43 @@ describe('기록 고치기', () => {
     expect(isMarkedAfterGrading(already)).toBe(true);
   });
 
+  it('채점한 뒤에 답을 고치면 다시 채점해야 하고, 고친 문항을 적어 둔다', () => {
+    let s = markGraded(filled(), examA, NOW);
+    expect(s.firstGradedAt).toBe(NOW);
+    s = setAnswer(s, 11, 2);
+    expect(s.gradedAt).toBeNull();
+    expect(s.firstGradedAt).toBe(NOW);
+    expect(s.answersEditedAfterGrading).toEqual([11]);
+    expect(stageOf(s, examA)).toBe('review');
+    expect(resumePath(s, examA)).toBe('/review');
+    s = setAnswer(setAnswer(s, 3, 1), 11, 4);
+    expect(s.answersEditedAfterGrading).toEqual([3, 11]);
+    // 같은 값을 다시 넣는 것은 고친 것이 아니다.
+    const same = markGraded(filled(), examA, NOW);
+    expect(setAnswer(same, 1, 3)).toBe(same);
+    // 다시 채점해도 처음 채점한 시각은 그대로다.
+    const LATER = '2026-11-22T11:00:00.000Z';
+    s = markGraded(s, examA, LATER);
+    expect(s.gradedAt).toBe(LATER);
+    expect(s.firstGradedAt).toBe(NOW);
+    expect(stageOf(s, examA)).toBe('graded');
+    // 답을 고쳐서 채점 시각이 비어 있는 동안 표시를 바꿔도 채점한 뒤 표시로 적는다.
+    let t = setAnswer(markGraded(filled(), examA, NOW), 1, 4);
+    expect(isMarkedAfterGrading(t)).toBe(false);
+    t = cycleMark(t, 9);
+    expect(isMarkedAfterGrading(t)).toBe(true);
+  });
+
+  it('"없어요"는 표시를 모두 지운다. 채점한 뒤에 지웠으면 그것도 적어 둔다', () => {
+    let s = cycleMark(cycleMark(filled(), 9), 14);
+    expect(clearMarks(s).marks).toEqual({});
+    expect(clearMarks(s).marksEditedAfterGrading).toBe(false);
+    const none = filled();
+    expect(clearMarks(none)).toBe(none);
+    s = markGraded(s, examA, NOW);
+    expect(clearMarks(s).marksEditedAfterGrading).toBe(true);
+  });
+
   it('원인, 정답 확인, 재풀이 기록', () => {
     let s = markGraded(filled(), examA, NOW);
     s = setCause(s, 15, 'slip');
@@ -107,8 +145,12 @@ describe('기록 고치기', () => {
     s = viewAnswer(s, 27);
     expect(s.answerViewed[27]).toBe(true);
     s = recordRetry(s, 15, false, false, NOW);
+    expect(s.retries[15]).toEqual({ correct: false, attempts: 1, firstCorrectAttempt: null, answerKnown: false, at: NOW });
     s = recordRetry(s, 15, true, false, NOW);
-    expect(s.retries[15]).toEqual({ correct: true, attempts: 2, answerKnown: false, at: NOW });
+    expect(s.retries[15]).toEqual({ correct: true, attempts: 2, firstCorrectAttempt: 2, answerKnown: false, at: NOW });
+    // 처음에 바로 맞힌 문항은 다시 맞혀도 처음 맞힌 차례가 1로 남는다.
+    s = recordRetry(recordRetry(s, 20, true, false, NOW), 20, true, false, NOW);
+    expect(s.retries[20]).toEqual({ correct: true, attempts: 2, firstCorrectAttempt: 1, answerKnown: false, at: NOW });
     s = recordRetry(s, 27, true, true, NOW);
     expect(s.retries[27]!.answerKnown).toBe(true);
   });
@@ -187,6 +229,44 @@ describe('저장소', () => {
     expect(ok!.inputMode).toBe('rows');
     expect(ok!.testRuns).toEqual([]);
   });
+
+  it('기록 속의 모양이 맞지 않는 값은 버린다', () => {
+    const ok = parseStored(
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            id: 'a',
+            examId: 'sample-a',
+            answers: { 1: 3, 2: 'skip', 3: 'x', 4: 1.5, 5: null, abc: 2 },
+            marks: { 1: 'guess', 2: 'nope' },
+            causes: { 11: 'slip', 15: 'because' },
+            answerViewed: { 27: true, 29: 'yes' },
+            retries: { 15: null, 20: { correct: true, attempts: 2, answerKnown: false, at: 'x' }, 21: { correct: 'y' } },
+            targetGrade: 'constructor',
+            gradedAt: '2026-11-22T10:00:00.000Z',
+          },
+        ],
+        currentId: 'a',
+        testRuns: [{ id: 'r', participant: 'P01', itemInputs: { 1: 2, 2: 'x' }, screens: [{ screen: 'input', at: 1 }, { name: 'old', at: 2 }], finalAnswers: [1, 'skip', 'bad'] }],
+      }),
+    )!;
+    const s = ok.sessions[0]!;
+    expect(s.answers).toEqual({ 1: 3, 2: 'skip' });
+    expect(s.marks).toEqual({ 1: 'guess' });
+    expect(s.causes).toEqual({ 11: 'slip' });
+    expect(s.answerViewed).toEqual({ 27: true });
+    expect(Object.keys(s.retries)).toEqual(['20']);
+    // 예전 형식에는 처음 맞힌 차례가 없다. 맞힌 기록이면 그때의 시도 수로 채운다.
+    expect(s.retries[20]!.firstCorrectAttempt).toBe(2);
+    // 예전 형식에는 처음 채점한 시각이 없다. 채점 시각으로 채운다.
+    expect(s.firstGradedAt).toBe('2026-11-22T10:00:00.000Z');
+    expect(s.answersEditedAfterGrading).toEqual([]);
+    const r = ok.testRuns[0]!;
+    expect(r.itemInputs).toEqual({ 1: 2 });
+    expect(r.screens).toEqual([{ screen: 'input', at: 1 }]);
+    expect(r.finalAnswers).toEqual([1, 'skip', null]);
+  });
 });
 
 describe('사용성 테스트 측정 기록', () => {
@@ -243,6 +323,14 @@ describe('사용성 테스트 측정 기록', () => {
     expect(parsed2.ok).toBe(true);
     expect(parsed2.values[3]).toBe('skip');
     expect(diffAnswerKey(examA, parsed2.values, answers)).toEqual([4]);
+    // 끝에 남은 쉼표, 공백 구분, 전각 쉼표, "안 풂"도 읽는다.
+    expect(parseAnswerKey(examA, `${text},`).ok).toBe(true);
+    expect(parseAnswerKey(examA, ` ,${text}`).ok).toBe(true);
+    expect(parseAnswerKey(examA, examA.items.map((it) => answers[it.no]).join(' ')).ok).toBe(true);
+    expect(parseAnswerKey(examA, examA.items.map((it) => answers[it.no]).join(String.fromCodePoint(0xff0c))).ok).toBe(true);
+    const withWords = parseAnswerKey(examA, examA.items.map((it) => (it.no === 4 ? '안 풂' : answers[it.no])).join(', '));
+    expect(withWords.ok).toBe(true);
+    expect(withWords.values[3]).toBe('skip');
     // 개수가 안 맞거나 범위를 벗어나면 읽지 않는다.
     expect(parseAnswerKey(examA, '1,2,3')).toMatchObject({ ok: false, errorIndex: 0, got: 3 });
     expect(parseAnswerKey(examA, '')).toMatchObject({ ok: false, got: 0 });

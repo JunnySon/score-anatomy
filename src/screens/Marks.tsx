@@ -3,7 +3,7 @@ import { Badge, Chip, Message, Screen, TopBar } from '../components/ui';
 import { GradeError } from '../logic/scoring';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { answerText, cycleMark, isMarkedAfterGrading, markGraded, markSaved, setTimeFeel, toggleUnsure } from '../state/session';
+import { answerText, clearMarks, cycleMark, isMarkedAfterGrading, markGraded, markSaved, setTimeFeel, toggleUnsure } from '../state/session';
 import { S } from '../strings';
 import type { TimeFeel } from '../types';
 
@@ -14,14 +14,14 @@ export function Marks({ h }: { h: SessionHandle }) {
   const [msg, setMsg] = useState<string | null>(null);
   const mcItems = exam.items.filter((it) => it.kind === 'mc');
   const shortItems = exam.items.filter((it) => it.kind === 'short');
-  const hasMarks = Object.keys(session.marks).length > 0;
   const released = exam.answerReleased;
   const saved = !released && session.savedAt !== null;
 
-  const grade = (clearMarks: boolean) => {
+  /** withoutMarks가 true면 표시를 모두 지우고 채점한다("없어요": 표시 없이 채점). */
+  const grade = (withoutMarks: boolean) => {
     try {
       const nowIso = new Date().toISOString();
-      h.update((s) => markGraded(clearMarks ? { ...s, marks: {} } : s, exam, nowIso));
+      h.update((s) => markGraded(withoutMarks ? clearMarks(s) : s, exam, nowIso));
       navigate(h.path('/score'));
     } catch (e) {
       if (e instanceof GradeError && e.reason === 'missing') navigate(h.path('/review'));
@@ -52,11 +52,9 @@ export function Marks({ h }: { h: SessionHandle }) {
       <>
         {msg ? <Message>{msg}</Message> : null}
         <div className="actions__row">
-          {!hasMarks ? (
-            <button type="button" className="btn btn--secondary grow" onClick={() => grade(true)}>
-              {S.marks.none2}
-            </button>
-          ) : null}
+          <button type="button" className="btn btn--secondary grow" onClick={() => grade(true)}>
+            {S.marks.none2}
+          </button>
           <button type="button" className="btn btn--primary grow2" onClick={() => grade(false)}>
             {S.marks.grade}
           </button>
@@ -66,7 +64,7 @@ export function Marks({ h }: { h: SessionHandle }) {
   }
 
   return (
-    <Screen top={<TopBar back={h.path('/review')} title={exam.title} />} actions={actions}>
+    <Screen top={<TopBar back={h.path('/review')} title={exam.title} />} actions={actions} tabs="current">
       <div className="inline">
         <h2 className="title">{S.marks.title}</h2>
         {!released ? <Badge>{S.common.unreleased}</Badge> : null}
@@ -116,7 +114,7 @@ export function Marks({ h }: { h: SessionHandle }) {
 
       {shortItems.length > 0 ? (
         <section className="mt6" aria-labelledby="short-marks-title">
-          <h3 className="strong" id="short-marks-title">
+          <h3 className="title" id="short-marks-title">
             {S.marks.shortTitle}
           </h3>
           <p className="sub">{S.marks.shortHint}</p>
@@ -149,7 +147,7 @@ export function Marks({ h }: { h: SessionHandle }) {
       ) : null}
 
       <section className="mt6" aria-labelledby="time-q">
-        <h3 className="strong" id="time-q">
+        <h3 className="title" id="time-q">
           {S.marks.timeQ}
         </h3>
         <div className="chips mt2" role="radiogroup" aria-labelledby="time-q">

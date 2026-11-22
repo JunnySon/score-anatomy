@@ -1,4 +1,4 @@
-import { choicesOf, isValidAnswerNumber } from '../exams/validate';
+import { isValidAnswerNumber } from '../exams/validate';
 import type { Answers, AnswerValue, Cause, Causes, Exam, ExamItem, ItemKind, Mark, Marks } from '../types';
 
 // 계산 규칙(작업 지시서 7장).
@@ -138,22 +138,19 @@ export interface Anatomy {
   plainCorrectPoints: number;
 }
 
+/** 찍어서 맞힐 평균 비율. 지시서 7장의 식 그대로 0.2(5지선다)를 쓴다. */
+export const GUESS_RATE = 0.2;
+
 function round6(x: number): number {
   return Math.round(x * 1e6) / 1e6;
 }
 
-export function analyze(exam: Exam, grade: Grade): Anatomy {
-  const byNo = new Map(exam.items.map((it) => [it.no, it]));
+export function analyze(_exam: Exam, grade: Grade): Anatomy {
   const guessItems = grade.items.filter((it) => it.guess);
   const guessCorrectPoints = guessItems.filter((it) => it.correct).reduce((s, it) => s + it.points, 0);
   const guessTotalPoints = guessItems.reduce((s, it) => s + it.points, 0);
-  // 찍어서 맞힐 평균 배점. 5지선다면 배점의 0.2배다(보기 수의 역수).
-  const guessExpected = guessItems.reduce((s, it) => {
-    const item = byNo.get(it.no);
-    const choices = item ? choicesOf(item) : 5;
-    return s + it.points / (choices || 5);
-  }, 0);
-  const luckAverage = round6(grade.actual - guessCorrectPoints + guessExpected);
+  // 찍기 운을 평균으로 본 점수 = 실제 점수 - 추측 표시 정답 점수 + 0.2 x 찍음 전체 배점
+  const luckAverage = round6(grade.actual - guessCorrectPoints + GUESS_RATE * guessTotalPoints);
   const luckAverageRounded = Math.round(luckAverage);
   const wrongPoints = grade.wrong.reduce((s, it) => s + it.points, 0);
   const slipPoints = grade.wrong.filter((it) => it.cause === 'slip').reduce((s, it) => s + it.points, 0);

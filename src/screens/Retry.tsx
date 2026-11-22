@@ -22,7 +22,7 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   const [index, setIndex] = useState(0);
   const [pick, setPick] = useState<number | null>(null);
   const [entry, setEntry] = useState<DigitEntry>({ text: '', fresh: false });
-  const [result, setResult] = useState<RetryRecord | null>(null);
+  const [checked, setChecked] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const stepsPath = h.path('/steps');
 
@@ -37,9 +37,10 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   const no = nos[Math.min(index, nos.length - 1)]!;
   const item = exam.items.find((it) => it.no === no)!;
   const itemResult = grade.items.find((it) => it.no === no)!;
-  // 정답 보기를 눌렀거나, 이미 채점한 경로이거나, 맞힌 문항이면 정답을 아는 상태로 본다.
-  const answerKnown = session.answerViewed[no] === true || session.gradedBefore === 'already' || itemResult.correct;
+  // 정답을 먼저 봤거나(정답 보기) "이미 했어요" 경로면 정답을 아는 상태로 적는다(지시서 8장 (10)).
+  const answerKnown = session.answerViewed[no] === true || session.gradedBefore === 'already';
   const isLast = index >= nos.length - 1;
+  const result: RetryRecord | null = checked ? (session.retries[no] ?? null) : null;
 
   const check = () => {
     const value = item.kind === 'mc' ? pick : entryValue(entry);
@@ -49,15 +50,8 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
     }
     setMsg(null);
     const correct = value === item.answer;
-    const prev = session.retries[no];
-    const rec: RetryRecord = {
-      correct,
-      attempts: (prev?.attempts ?? 0) + 1,
-      answerKnown: answerKnown || (prev?.answerKnown ?? false),
-      at: new Date().toISOString(),
-    };
-    h.update((s) => recordRetry(s, no, correct, answerKnown, rec.at));
-    setResult(rec);
+    h.update((s) => recordRetry(s, no, correct, answerKnown, new Date().toISOString()));
+    setChecked(true);
   };
 
   const next = () => {
@@ -68,11 +62,11 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
     setIndex(index + 1);
     setPick(null);
     setEntry({ text: '', fresh: false });
-    setResult(null);
+    setChecked(false);
     setMsg(null);
   };
 
-  let footer;
+  let pad = null;
   let actions;
   if (result) {
     actions = (
@@ -81,7 +75,7 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       </button>
     );
   } else if (item.kind === 'mc') {
-    footer = (
+    pad = (
       <McPad
         choices={choicesOf(item)}
         selected={pick}
@@ -96,7 +90,7 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       />
     );
   } else {
-    footer = (
+    pad = (
       <DigitPad
         goLabel={S.retry.check}
         onDigit={(d) => {
@@ -116,10 +110,31 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   const shown = item.kind === 'mc' ? (pick === null ? '' : String(pick)) : entry.text;
 
   return (
-    <Screen top={<TopBar back={stepsPath} title={S.retry.top(step.name)} />} footer={footer} actions={actions} tabs={result ? 'current' : undefined}>
-      <p className="sub" data-testid="retry-progress">
-        {S.retry.progress(index + 1, nos.length)}
-      </p>
+    <Screen
+      top={<TopBar back={stepsPath} title={S.retry.top(step.name)} />}
+      // 결과가 뜨거나 다음 문항으로 넘어갈 때 같은 자리를 연달아 눌러 건너뛰지 않게 한다.
+      guardKey={`${index}-${result ? 'result' : 'entry'}`}
+      footer={
+        pad ? (
+          <>
+            {msg ? (
+              <div className="pad-msg">
+                <Message>{msg}</Message>
+              </div>
+            ) : null}
+            {pad}
+          </>
+        ) : undefined
+      }
+      actions={actions}
+      tabs={result ? 'current' : undefined}
+    >
+      <div className="inline">
+        <p className="sub" data-testid="retry-progress">
+          {S.retry.progress(index + 1, nos.length)}
+        </p>
+        {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
+      </div>
       <div className="now">
         <div className="now__main" aria-live="polite">
           <span className="cap">{S.retry.nowLabel}</span>
@@ -133,15 +148,9 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
         <EntryBox text={shown} label={S.retry.entryLabel} />
       </div>
 
-      {msg ? (
-        <div className="mt3">
-          <Message>{msg}</Message>
-        </div>
-      ) : null}
-
       {result ? (
         <div className="card mt4" role="status" data-testid="retry-result" data-correct={result.correct ? 'true' : 'false'}>
-          <p className="strong">{retrySentence(result)}</p>
+          <p>{retrySentence(result, itemResult.correct)}</p>
           <p className="inline mt2">
             <span className="sub">{S.retry.recordLabel}</span>
             <span className={`tag ${result.correct ? 'tag--ok' : 'tag--bad'}`} data-testid="retry-label">

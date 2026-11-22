@@ -37,8 +37,9 @@ export function gradeKeys(exam: Exam): string[] {
 
 export function cutView(exam: Exam, anatomy: Anatomy, grade: string | null): CutView | null {
   if (!exam.cuts || grade === null) return null;
+  if (!Object.prototype.hasOwnProperty.call(exam.cuts.grades, grade)) return null;
   const range = exam.cuts.grades[grade];
-  if (!range) return null;
+  if (!Array.isArray(range) || typeof range[0] !== 'number' || typeof range[1] !== 'number') return null;
   const [lo, hi] = range;
   return {
     grade,

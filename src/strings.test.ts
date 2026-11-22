@@ -103,7 +103,7 @@ describe('화면 문구', () => {
   });
 
   it('추정값에는 "약"을 붙이고 소수점을 쓰지 않는다', () => {
-    expect(S.common.approx(75)).toBe('약 75점');
+    expect(S.anatomy.luckSummary(75)).toBe('약 75점 설명 보기');
     expect(S.anatomy.luckBelow(75, 6, 10)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 6~10점이에요');
   });
 

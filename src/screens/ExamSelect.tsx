@@ -79,7 +79,7 @@ export function ExamSelect() {
 
       {exam ? (
         <div ref={questionRef}>
-          <h2 className="strong mt6" id="graded-q">
+          <h2 className="title mt6" id="graded-q">
             {S.exams.gradedQ}
           </h2>
           <div className="opts mt2" role="radiogroup" aria-labelledby="graded-q">
@@ -99,7 +99,7 @@ export function ExamSelect() {
           </div>
           {exam.isPast ? (
             <>
-              <h2 className="strong mt6" id="seen-q">
+              <h2 className="title mt6" id="seen-q">
                 {S.exams.seenQ}
               </h2>
               <div className="opts mt2" role="radiogroup" aria-labelledby="seen-q">

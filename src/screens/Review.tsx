@@ -34,6 +34,7 @@ export function Review({ h }: { h: SessionHandle }) {
   return (
     <Screen
       top={<TopBar back={h.path('/input')} title={exam.title} />}
+      tabs="current"
       layer={
         editItem ? (
           <AnswerSheet

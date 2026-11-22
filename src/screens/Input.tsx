@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type Ref } from 'react';
 import { AnswerSheet, DigitPad, EntryBox, McPad } from '../components/pads';
 import { Badge, BottomSheet, Message, Progress, Screen, TopBar } from '../components/ui';
 import { choicesOf } from '../exams/validate';
-import { eraseDigit, initEntry, pressDigit } from '../logic/entry';
+import { entryValue, eraseDigit, initEntry, pressDigit, type DigitEntry } from '../logic/entry';
 import { countEntered } from '../logic/scoring';
 import { GROUP_SIZE, groupCount, groupIndexOf, sectionOf } from '../logic/sections';
 import { navigate } from '../router';
-import { logAnswerCommit, putAnswer, type SessionHandle } from '../state/hooks';
+import { putAnswer, type SessionHandle } from '../state/hooks';
 import { answerText, firstMissingIndex } from '../state/session';
 import { S } from '../strings';
 import type { AnswerValue, ExamItem, InputMode } from '../types';
@@ -36,16 +36,19 @@ function Cell({
   value,
   current,
   onSelect,
+  buttonRef,
 }: {
   item: ExamItem;
   value: AnswerValue | undefined;
   current: boolean;
   onSelect: () => void;
+  buttonRef?: Ref<HTMLButtonElement>;
 }) {
   const text = answerText(value, S.common.skip);
   return (
     <button
       type="button"
+      ref={buttonRef}
       className="cell"
       data-cell={item.no}
       aria-current={current ? 'true' : undefined}
@@ -76,12 +79,10 @@ function InputKeypad({ h }: { h: SessionHandle }) {
     const i = firstMissingIndex(exam, session);
     return i < 0 ? last : i;
   });
-  // 이미 넣어 둔 단답형 답에 막 도착한 상태인지. 이때 숫자를 누르면 새로 쓴다.
-  const [freshNo, setFreshNo] = useState<number | null>(() => {
-    const it = items[cursor];
-    return it && typeof session.answers[it.no] === 'number' ? it.no : null;
-  });
+  // 단답형에서 누르고 있는 숫자. "다음"을 눌러야 답으로 들어간다.
+  const [draft, setDraft] = useState<{ no: number; entry: DigitEntry } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const currentRef = useRef<HTMLButtonElement | null>(null);
 
   const item = items[Math.min(cursor, last)]!;
   const existing = session.answers[item.no];
@@ -90,28 +91,42 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   const g = groupIndexOf(cursor);
   const currentGroup = items.slice(g * GROUP_SIZE, (g + 1) * GROUP_SIZE);
   const prevGroup = g > 0 ? items.slice((g - 1) * GROUP_SIZE, g * GROUP_SIZE) : [];
+  const typing = draft !== null && draft.no === item.no;
+  const entry: DigitEntry = typing ? draft.entry : initEntry(existing);
 
-  const goTo = (index: number) => {
-    const it = items[index];
-    if (!it) return;
+  // 글자를 키웠거나 화면이 낮아서 내용이 넘치면 지금 칸이 보이게 스크롤한다.
+  useEffect(() => {
+    currentRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [cursor, msg]);
+
+  const moveTo = (index: number, message: string | null) => {
+    if (!items[index]) return;
     setCursor(index);
-    setMsg(null);
-    setFreshNo(typeof session.answers[it.no] === 'number' ? it.no : null);
+    setDraft(null);
+    setMsg(message);
+  };
+
+  /** 칸을 눌러 그 문항으로 간다. 확정하지 않은 숫자는 버리고 알린다. */
+  const goTo = (index: number) => {
+    if (index === cursor) return;
+    moveTo(index, typing ? S.input.notCommitted(item.no) : null);
   };
 
   const advance = () => {
-    setMsg(null);
     if (cursor >= last) navigate(h.path('/review'));
-    else goTo(cursor + 1);
+    else moveTo(cursor + 1, null);
   };
 
-  /** 한 칸 뒤로 가서 지운다. */
+  /** "지우기"는 한 칸 뒤로 가서 지운다(지시서 8장 (3)). 무엇을 지웠는지 알린다. */
   const eraseBack = () => {
-    if (cursor <= 0) return;
+    if (cursor <= 0) {
+      setMsg(null);
+      return;
+    }
     const prev = items[cursor - 1]!;
+    const had = session.answers[prev.no] !== undefined;
     putAnswer(h, prev.no, undefined, 'input');
-    setCursor(cursor - 1);
-    setFreshNo(null);
+    moveTo(cursor - 1, had ? S.input.erased(prev.no) : null);
   };
 
   const put = (v: AnswerValue) => {
@@ -119,47 +134,41 @@ function InputKeypad({ h }: { h: SessionHandle }) {
     advance();
   };
 
-  const eraseMc = () => {
-    setMsg(null);
-    // 지금 칸에 답이 있으면 그 칸을 지우고, 비어 있으면 한 칸 뒤로 가서 지운다.
-    if (existing !== undefined) putAnswer(h, item.no, undefined, 'input');
-    else eraseBack();
-  };
-
-  const entry = { ...initEntry(existing), fresh: freshNo === item.no };
-
   const onDigit = (d: number) => {
     const r = pressDigit(entry, d);
-    setFreshNo(null);
     if (r.overflow) {
       setMsg(S.common.shortRange);
       return;
     }
     setMsg(null);
-    // 누른 숫자는 바로 칸에 반영한다. 넘어가는 것은 "다음"을 눌렀을 때뿐이다.
-    putAnswer(h, item.no, Number(r.entry.text), 'input', false);
+    setDraft({ no: item.no, entry: r.entry });
   };
 
   const eraseShort = () => {
-    setMsg(null);
-    setFreshNo(null);
-    if (typeof existing === 'number') {
-      const next = eraseDigit(entry).text;
-      putAnswer(h, item.no, next === '' ? undefined : Number(next), 'input', false);
-    } else if (existing === 'skip') {
-      putAnswer(h, item.no, undefined, 'input', false);
+    if (entry.text !== '') {
+      // 누르고 있는 숫자는 한 자리씩 지운다.
+      setMsg(null);
+      setDraft({ no: item.no, entry: eraseDigit(entry) });
     } else {
       eraseBack();
     }
   };
 
+  /** 단답형은 "다음"을 눌러야 확정되어 넘어간다. */
   const nextShort = () => {
-    if (existing === undefined) {
+    if (typing) {
+      const v = entryValue(entry);
+      if (v === null) {
+        setMsg(S.common.emptyItem(item.no));
+        return;
+      }
+      put(v);
+    } else if (existing !== undefined) {
+      // 이미 들어 있는 답은 그대로 두고 넘어간다.
+      advance();
+    } else {
       setMsg(S.common.emptyItem(item.no));
-      return;
     }
-    logAnswerCommit(h, item.no);
-    advance();
   };
 
   const pad =
@@ -169,20 +178,33 @@ function InputKeypad({ h }: { h: SessionHandle }) {
         onPick={(n) => put(n)}
         fn={[
           { key: 'skip', label: S.common.skip, onPress: () => put('skip') },
-          { key: 'erase', label: S.common.erase, onPress: eraseMc },
+          { key: 'erase', label: S.common.erase, onPress: eraseBack },
         ]}
       />
     ) : (
       <DigitPad onDigit={onDigit} onErase={eraseShort} onSkip={() => put('skip')} onGo={nextShort} goLabel={S.common.next} />
     );
 
+  const shown = typing ? entry.text : answerText(existing, S.common.skip);
+
   return (
-    <Screen top={<InputTop h={h} />} footer={pad} bodyClass="body--fit">
+    <Screen
+      top={<InputTop h={h} />}
+      bodyClass="body--fit"
+      footer={
+        <>
+          {msg ? (
+            <div className="pad-msg">
+              <Message>{msg}</Message>
+            </div>
+          ) : null}
+          {pad}
+        </>
+      }
+    >
       <div className="input-head">
         <div className="input-head__row">
-          <span className="strong" data-testid="section-name">
-            {section ? S.input.section(section.kind, section.from, section.to) : ''}
-          </span>
+          <span data-testid="section-name">{section ? S.input.section(section.kind, section.from, section.to) : ''}</span>
           <span className="sub" data-testid="entered-count">
             {S.input.entered(entered)}
           </span>
@@ -200,7 +222,7 @@ function InputKeypad({ h }: { h: SessionHandle }) {
         <span className="now__badge">
           <Badge>{S.common.points(item.points)}</Badge>
         </span>
-        {item.kind === 'short' ? <EntryBox text={answerText(existing, S.common.skip)} label={S.input.entryLabel} /> : null}
+        {item.kind === 'short' ? <EntryBox text={shown} label={S.input.entryLabel} /> : null}
       </div>
 
       <div className="groups">
@@ -212,18 +234,21 @@ function InputKeypad({ h }: { h: SessionHandle }) {
         </div>
         <div className="cells" role="group" aria-label={S.input.currentGroupLabel}>
           {currentGroup.map((it) => (
-            <Cell key={it.no} item={it} value={session.answers[it.no]} current={it.no === item.no} onSelect={() => goTo(items.indexOf(it))} />
+            <Cell
+              key={it.no}
+              item={it}
+              value={session.answers[it.no]}
+              current={it.no === item.no}
+              onSelect={() => goTo(items.indexOf(it))}
+              buttonRef={it.no === item.no ? currentRef : undefined}
+            />
           ))}
           <GhostCells count={GROUP_SIZE - currentGroup.length} />
         </div>
       </div>
 
-      <p className="sub hint">{S.input.hint}</p>
-      {msg ? (
-        <div className="mt2">
-          <Message>{msg}</Message>
-        </div>
-      ) : null}
+      {/* 안내문이 떠 있는 동안에는 자리를 내준다. 안내문은 키패드 바로 위에 늘 보인다. */}
+      {msg ? null : <p className="sub hint">{S.input.hint}</p>}
     </Screen>
   );
 }
@@ -322,7 +347,7 @@ function InputRows({ h }: { h: SessionHandle }) {
     >
       <div className="input-head">
         <div className="input-head__row">
-          <span className="strong" data-testid="page-range">
+          <span data-testid="page-range">
             {first && lastItem ? S.input.pageRange(first.no, lastItem.no) : ''}
           </span>
           <span className="sub" data-testid="entered-count">

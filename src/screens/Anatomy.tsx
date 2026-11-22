@@ -35,7 +35,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
         sourceOpen && cv ? (
           <BottomSheet title={S.anatomy.sourceTitle} onClose={() => setSourceOpen(false)}>
             <div className="stack gap2" data-testid="cut-source">
-              {exam.isSample ? <p className="strong">{S.anatomy.sourceSample}</p> : null}
+              {exam.isSample ? <p>{S.anatomy.sourceSample}</p> : null}
               <p>{S.anatomy.source(cv.source)}</p>
               <p>{S.anatomy.asOf(cv.asOf)}</p>
               <p className="sub">{cv.confirmed ? S.anatomy.sourceConfirmed : S.anatomy.sourceEstimate}</p>
@@ -63,16 +63,25 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
       </div>
 
       <div className="mt2" data-testid="rows">
-        {an.hasGuessMark ? (
+        {an.guessCorrectPoints > 0 ? (
           <div className="arow" data-testid="row-guess">
             <span className="swatch seg--hatch" aria-hidden="true" />
             <span>{S.anatomy.rowGuess}</span>
             <span className="num">{S.common.points(an.guessCorrectPoints)}</span>
-            <span className="sub arow__sub">{an.guessCorrectPoints > 0 ? S.anatomy.rowGuessSub(an.actual) : S.anatomy.rowGuessNone}</span>
+            <span className="sub arow__sub">{S.anatomy.rowGuessSub(an.actual)}</span>
           </div>
+        ) : an.hasGuessMark ? (
+          <p className="arow arow--text" data-testid="row-guess-none">
+            {S.anatomy.rowGuessNone}
+          </p>
         ) : (
           <p className="arow arow--text" data-testid="row-guess-empty">
-            {an.hasAnyMark ? S.anatomy.emptyGuess(an.actual) : S.anatomy.emptyMarks(an.actual)}
+            {/* 원인을 표시한 행이 아래에 있으면 "나눠 볼 것이 없어요"라고 하지 않고 찍음 표시가 없다는 사실만 적는다. */}
+            {an.causeMarkedCount > 0
+              ? S.anatomy.emptyGuessOnly(an.actual)
+              : an.hasAnyMark
+                ? S.anatomy.emptyGuess(an.actual)
+                : S.anatomy.emptyMarks(an.actual)}
           </p>
         )}
 
@@ -115,13 +124,18 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
           {S.common.afterGradingNote}
         </p>
       ) : null}
+      {session.answersEditedAfterGrading.length > 0 ? (
+        <p className="cap mt2" data-testid="edited-note">
+          {S.common.editedAfterGrading(session.answersEditedAfterGrading)}
+        </p>
+      ) : null}
 
       <section className="box mt6" aria-label={S.anatomy.cutBoxLabel} data-testid="cutbox">
         {keys.length === 0 ? (
           <p data-testid="no-cuts">{S.anatomy.noCuts}</p>
         ) : (
           <>
-            <p className={cv ? 'sub' : 'strong'} id="target-q">
+            <p className={cv ? 'sub' : undefined} id="target-q">
               {cv ? S.anatomy.targetLabel : S.anatomy.targetQ}
             </p>
             <div className="chips mt2" role="radiogroup" aria-labelledby="target-q">
@@ -134,7 +148,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
             {cv && line1 ? (
               <div className="mt3" aria-live="polite">
                 <div className="cut-head">
-                  <p className="strong" data-testid="cut-title">
+                  <p data-testid="cut-title">
                     {S.anatomy.cutTitle(cv.grade, cv.lo, cv.hi)}
                   </p>
                   <button

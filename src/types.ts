@@ -61,8 +61,11 @@ export type SeenBefore = 'first' | 'partial' | 'solved';
 export type TimeFeel = 'enough' | 'tight' | 'missed';
 
 export interface RetryRecord {
+  /** 가장 최근에 다시 푼 결과. */
   correct: boolean;
   attempts: number;
+  /** 처음 맞힌 것이 몇 번째 시도였는지. 아직 맞힌 적이 없으면 null. */
+  firstCorrectAttempt: number | null;
   /** 다시 풀기 전에 정답을 알 수 있었는지. 정답 보기를 눌렀거나, 이미 채점한 경로이거나, 맞힌 문항이었던 경우. */
   answerKnown: boolean;
   at: string;
@@ -81,7 +84,12 @@ export interface Session {
   timeFeel: TimeFeel | null;
   /** 정답 공개 전 시험의 답을 저장한 시각. */
   savedAt: string | null;
+  /** 지금 답으로 채점한 시각. 채점한 뒤 답을 고치면 비워서 다시 채점하게 한다. */
   gradedAt: string | null;
+  /** 처음 채점한 시각. 한 번 정해지면 바뀌지 않는다. */
+  firstGradedAt: string | null;
+  /** 처음 채점한 뒤에 답을 고친 문항 번호. */
+  answersEditedAfterGrading: number[];
   causes: Causes;
   answerViewed: Record<number, true>;
   targetGrade: string | null;
@@ -109,6 +117,8 @@ export interface TestRun {
   marksMs: number;
   firstScoreAt: number | null;
   answerKeyText: string;
+  /** 참가자가 최종 제출한 답의 사본. 시험 기록을 지워도 남은 오입력을 셀 수 있게 따로 둔다. 미입력은 null. */
+  finalAnswers: (AnswerValue | null)[] | null;
 }
 
 export interface AppData {

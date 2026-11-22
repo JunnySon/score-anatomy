@@ -17,12 +17,15 @@ export interface FnKey {
 export function McPad({
   choices,
   selected,
+  selectedLabel,
   onPick,
   fn,
   inSheet,
 }: {
   choices: number;
   selected?: number | null;
+  /** 고른 키에 숫자와 함께 적는 글자(색과 테두리만으로 구분하지 않게). */
+  selectedLabel?: string;
   onPick: (n: number) => void;
   fn: FnKey[];
   inSheet?: boolean;
@@ -40,7 +43,8 @@ export function McPad({
             aria-pressed={selected === undefined ? undefined : selected === n}
             onClick={() => onPick(n)}
           >
-            {n}
+            <span>{n}</span>
+            {selectedLabel && selected === n ? <small>{selectedLabel}</small> : null}
           </button>
         ))}
       </div>
@@ -135,6 +139,7 @@ export function AnswerSheet({
           inSheet
           choices={choicesOf(item)}
           selected={typeof value === 'number' ? value : null}
+          selectedLabel={S.review.currentAnswer}
           onPick={(n) => {
             onSet(n);
             onClose();

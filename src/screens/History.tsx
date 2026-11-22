@@ -45,7 +45,7 @@ export function History() {
         confirm ? (
           <ConfirmDialog
             title={confirm.kind === 'all' ? S.history.confirmAll : S.history.confirmOne}
-            body={S.history.confirmBody}
+            body={confirm.kind === 'all' && data.testRuns.length > 0 ? S.history.confirmAllBodyWithRuns : S.history.confirmBody}
             yes={S.history.confirmYes}
             no={S.history.confirmNo}
             onNo={() => setConfirm(null)}

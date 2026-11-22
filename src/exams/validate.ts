@@ -61,7 +61,9 @@ export function validateExam(raw: unknown): string[] {
       errors.push(`${where}: answer가 범위를 벗어났어요.`);
     }
   }
-  if (e.cuts !== undefined) {
+  if (e.cuts !== undefined && e.cuts !== null && (typeof e.cuts !== 'object' || Array.isArray(e.cuts))) {
+    errors.push('cuts는 객체여야 해요. 자료가 없으면 칸을 빼요.');
+  } else if (e.cuts !== undefined && e.cuts !== null) {
     const c = e.cuts;
     if (typeof c.source !== 'string' || c.source === '') errors.push('cuts.source가 비어 있어요.');
     if (typeof c.asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(c.asOf)) errors.push('cuts.asOf는 2026-11-22 같은 날짜여야 해요.');
@@ -80,7 +82,13 @@ export function validateExam(raw: unknown): string[] {
   return errors;
 }
 
-/** 검사를 통과한 시험만 돌려준다. 통과하지 못하면 null. */
+/** 검사를 통과한 시험만 돌려준다. 통과하지 못하면 null. cuts가 null이면 없는 것으로 본다. */
 export function parseExam(raw: unknown): Exam | null {
-  return validateExam(raw).length === 0 ? (raw as Exam) : null;
+  if (validateExam(raw).length > 0) return null;
+  const exam = raw as Exam & { cuts?: Exam['cuts'] | null };
+  if (exam.cuts === null) {
+    const { cuts: _none, ...rest } = exam;
+    return rest as Exam;
+  }
+  return exam as Exam;
 }

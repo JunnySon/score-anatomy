@@ -44,7 +44,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
   return (
     <li className="card" data-testid={`step-${index + 1}`} data-type={step.typeId} aria-labelledby={titleId}>
       <div className="input-head__row">
-        <h3 className="strong" id={titleId}>
+        <h3 className="title" id={titleId}>
           {index + 1}. {step.name}
         </h3>
         <span className="sub nowrap" data-testid="step-points">

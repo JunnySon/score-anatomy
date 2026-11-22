@@ -67,7 +67,7 @@ function RunCard({ row }: { row: RunExportRow }) {
 
   return (
     <li className="card" data-testid="run-card" data-participant={run.participant} data-mode={run.inputMode}>
-      <h3 className="strong">{S.test.runTitle(run.participant, S.test.modes[run.inputMode], exam?.title ?? keyExam?.title ?? '')}</h3>
+      <h3>{S.test.runTitle(run.participant, S.test.modes[run.inputMode], exam?.title ?? keyExam?.title ?? '')}</h3>
       {run.examId !== null && run.examId !== run.plannedExamId ? <p className="sub">{S.test.plannedMismatch}</p> : null}
       <dl className="kv mt3 sub">
         <dt>{S.test.metric.started}</dt>
@@ -99,7 +99,7 @@ function RunCard({ row }: { row: RunExportRow }) {
 
       {keyExam ? (
         <div className="field mt3">
-          <label className="strong" htmlFor={keyId}>
+          <label htmlFor={keyId}>
             {S.test.keyTitle}
           </label>
           <span className="sub">{S.test.keyHint(keyExam.items.length)}</span>
@@ -118,7 +118,7 @@ function RunCard({ row }: { row: RunExportRow }) {
           </button>
           {keyMsg ? <Message>{keyMsg}</Message> : null}
           {m.residualErrors !== null ? (
-            <p className="strong" data-testid="key-result">
+            <p data-testid="key-result">
               {S.test.keyResult(m.residualErrors)}
             </p>
           ) : null}
@@ -164,6 +164,14 @@ export function TestAdmin() {
   return (
     <Screen
       top={<TopBar back="/history" title={S.test.title} />}
+      actions={
+        <>
+          {formMsg ? <Message>{formMsg}</Message> : null}
+          <button type="button" className="btn btn--primary" data-testid="start-run" onClick={start}>
+            {S.test.start}
+          </button>
+        </>
+      }
       layer={
         confirmReset ? (
           <ConfirmDialog
@@ -187,7 +195,7 @@ export function TestAdmin() {
           <h2 className="sub" id="active-title">
             {S.test.activeTitle}
           </h2>
-          <p className="strong">{S.test.active(active.participant, S.test.modes[active.inputMode])}</p>
+          <p>{S.test.active(active.participant, S.test.modes[active.inputMode])}</p>
           <button type="button" className="btn btn--secondary btn--block mt3" data-testid="finish-run" onClick={finishTestRun}>
             {S.test.finish}
           </button>
@@ -199,7 +207,7 @@ export function TestAdmin() {
           {S.test.newTitle}
         </h2>
         <div className="field mt3">
-          <label className="strong" htmlFor="participant">
+          <label htmlFor="participant">
             {S.test.participant}
           </label>
           <span className="sub" id="participant-hint">
@@ -223,7 +231,7 @@ export function TestAdmin() {
           />
         </div>
 
-        <h3 className="strong mt4" id="mode-q">
+        <h3 className="mt4" id="mode-q">
           {S.test.mode}
         </h3>
         <div className="chips mt2" role="radiogroup" aria-labelledby="mode-q">
@@ -234,7 +242,7 @@ export function TestAdmin() {
           ))}
         </div>
 
-        <h3 className="strong mt4" id="texam-q">
+        <h3 className="mt4" id="texam-q">
           {S.test.exam}
         </h3>
         <div className="chips mt2" role="radiogroup" aria-labelledby="texam-q">
@@ -245,14 +253,6 @@ export function TestAdmin() {
           ))}
         </div>
 
-        {formMsg ? (
-          <div className="mt3">
-            <Message>{formMsg}</Message>
-          </div>
-        ) : null}
-        <button type="button" className="btn btn--primary mt4" data-testid="start-run" onClick={start}>
-          {S.test.start}
-        </button>
       </section>
 
       <section className="mt8" aria-labelledby="runs-title">
@@ -283,7 +283,7 @@ export function TestAdmin() {
               type="button"
               className="btn btn--secondary grow"
               data-testid="save-json"
-              onClick={() => setExportMsg(downloadText(`score-anatomy-test-${stamp()}.json`, exportJson(rows, Date.now()), 'application/json') ? S.test.saved : S.test.copyFailed)}
+              onClick={() => setExportMsg(downloadText(`score-anatomy-test-${stamp()}.json`, exportJson(rows, Date.now()), 'application/json') ? S.test.saved : S.test.saveFailed)}
             >
               {S.test.saveJson}
             </button>
@@ -291,7 +291,7 @@ export function TestAdmin() {
               type="button"
               className="btn btn--secondary grow"
               data-testid="save-csv"
-              onClick={() => setExportMsg(downloadText(`score-anatomy-test-${stamp()}.csv`, exportCsv(rows), 'text/csv') ? S.test.saved : S.test.copyFailed)}
+              onClick={() => setExportMsg(downloadText(`score-anatomy-test-${stamp()}.csv`, exportCsv(rows), 'text/csv') ? S.test.saved : S.test.saveFailed)}
             >
               {S.test.saveCsv}
             </button>

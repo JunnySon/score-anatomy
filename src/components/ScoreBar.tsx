@@ -13,8 +13,10 @@ export function ScoreBar({ an, mini }: { an: Anatomy; mini?: boolean }) {
     ['dashed', an.otherWrongPoints],
   ];
   const p = pct(an.actual);
+  // 실제 점수 눈금 숫자는 눈금선에 붙여 둔다. 점수가 높아 100 숫자와 겹치게 되면 두 줄로 나눈다.
+  const stacked = p > 85;
   let labelStyle: React.CSSProperties;
-  if (p > 85) labelStyle = { right: `max(${100 - p}%, 44px)` };
+  if (stacked) labelStyle = { right: `${100 - p}%` };
   else if (p < 8) labelStyle = { left: 0 };
   else labelStyle = { left: `${p}%`, transform: 'translateX(-50%)' };
   return (
@@ -32,7 +34,7 @@ export function ScoreBar({ an, mini }: { an: Anatomy; mini?: boolean }) {
           ))}
       </div>
       {mini ? null : (
-        <div className="ticks" aria-hidden="true">
+        <div className={`ticks${stacked && an.actual < an.total ? ' ticks--stacked' : ''}`} aria-hidden="true">
           {an.actual < an.total ? (
             <>
               <span className="tick-mark" style={{ left: `min(${p}%, calc(100% - 1px))` }} />
@@ -42,7 +44,7 @@ export function ScoreBar({ an, mini }: { an: Anatomy; mini?: boolean }) {
             </>
           ) : null}
           <span className="tick-mark" style={{ right: 0 }} />
-          <span className="tick-label" style={{ right: 0 }} data-testid="tick-total">
+          <span className="tick-label tick-label--total" style={{ right: 0 }} data-testid="tick-total">
             {an.total}
           </span>
         </div>

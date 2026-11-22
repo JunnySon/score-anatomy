@@ -30,7 +30,10 @@ export function Causes({ h, grade }: { h: SessionHandle; grade: Grade }) {
         </div>
       }
     >
-      <h2 className="title">{S.causes.title}</h2>
+      <div className="inline">
+        <h2 className="title">{S.causes.title}</h2>
+        {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
+      </div>
       {wrong.length === 0 ? (
         <p className="mt4">{S.causes.empty}</p>
       ) : (
@@ -43,7 +46,7 @@ export function Causes({ h, grade }: { h: SessionHandle; grade: Grade }) {
               return (
                 <li key={w.no} className="card" data-testid={`wrong-${w.no}`}>
                   <div className="inline">
-                    <h3 className="strong">{S.common.itemNo(w.no)}</h3>
+                    <h3 className="title">{S.common.itemNo(w.no)}</h3>
                     <Badge>{S.common.points(w.points)}</Badge>
                     <span className="tag tag--bad">
                       <IconCross />
@@ -60,7 +63,7 @@ export function Causes({ h, grade }: { h: SessionHandle; grade: Grade }) {
                   </div>
                   {viewed && item && typeof item.answer === 'number' ? (
                     <p className="inline mt3" data-testid={`answer-${w.no}`} style={{ minHeight: 'var(--touch)' }}>
-                      <span className="strong">{S.causes.answer(item.answer)}</span>
+                      <span>{S.causes.answer(item.answer)}</span>
                       <Badge>{S.causes.viewed}</Badge>
                     </p>
                   ) : (

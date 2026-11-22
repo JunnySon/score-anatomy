@@ -9,9 +9,7 @@ import type { Step } from './steps';
 /** 점수 해부 화면의 문장. 표시가 없는 부분은 말하지 않는다. */
 export function anatomySentences(an: Anatomy): string[] {
   const out: string[] = [];
-  if (an.hasGuessMark) {
-    out.push(an.guessCorrectPoints > 0 ? S.anatomy.sentenceGuess(an.actual, an.guessCorrectPoints) : S.anatomy.sentenceGuessNone);
-  }
+  if (an.guessCorrectPoints > 0) out.push(S.anatomy.sentenceGuess(an.actual, an.guessCorrectPoints));
   if (an.slipPoints > 0) out.push(S.anatomy.sentenceSlip(an.wrongPoints, an.slipPoints));
   return out;
 }
@@ -36,7 +34,10 @@ export function actualLine(cv: CutView, actual: number): ActualLine {
 export function luckLine(cv: CutView, rounded: number): string | null {
   const gap = cv.luckGap;
   if (!gap) return null;
-  if (gap.pos === 'below') return S.anatomy.luckBelow(rounded, gap.from, gap.to);
+  if (gap.pos === 'below') {
+    // 첫 줄도 남은 점수면 지시서의 문장 그대로, 아니면 "남았어요"를 붙여 혼자서도 읽히게 한다.
+    return cv.actualGap.pos === 'below' ? S.anatomy.luckBelow(rounded, gap.from, gap.to) : S.anatomy.luckBelowAlone(rounded, gap.from, gap.to);
+  }
   if (cv.confirmed) return gap.pos === 'within' ? S.anatomy.luckEqualConfirmed(rounded) : S.anatomy.luckAboveConfirmed(rounded);
   return gap.pos === 'within' ? S.anatomy.luckWithin(rounded) : S.anatomy.luckAbove(rounded);
 }
@@ -55,16 +56,25 @@ export function stepReasons(step: Step): string[] {
   return out;
 }
 
-/** 재풀이 기록 라벨. 같은 문항을 다시 맞힌 것만으로 처음 틀린 이유를 단정하지 않는다. */
+/**
+ * 재풀이 기록 라벨(지시서 8장 (10)).
+ * 맞혔고 정답을 본 적이 없으면 "다시 풀어 맞힘"(원인이 실수였으면 "실수로 표시함, 다시 풀어 맞힘"),
+ * 정답을 먼저 봤거나 "이미 했어요" 경로면 "정답 확인 후 다시 맞힘".
+ * 지시서에 없는 경우(다시 풀다 틀린 뒤에 맞힘)는 "N번째에 맞힘"으로 사실만 적는다.
+ * 같은 문항을 다시 맞힌 것만으로 처음 틀린 이유를 단정하지 않는다.
+ */
 export function retryLabel(rec: RetryRecord, cause: Cause | null): string {
   if (!rec.correct) return S.retry.labelWrong;
   if (rec.answerKnown) return S.retry.labelCorrectKnown;
-  if (rec.attempts > 1) return S.retry.labelCorrectLater(rec.attempts);
+  // 다시 풀다 틀린 적이 있으면 몇 번째에 맞혔는지 그대로 적는다(절대 원칙 4: 단정하지 않는다).
+  // 5지선다는 틀린 보기를 지워 가며 맞힐 수 있어서 "다시 풀어 맞힘"이라고 하면 과장이 된다.
+  if (rec.firstCorrectAttempt !== null && rec.firstCorrectAttempt > 1) return S.retry.labelCorrectLater(rec.firstCorrectAttempt);
   if (cause === 'slip') return S.retry.labelCorrectSlip;
   return S.retry.labelCorrect;
 }
 
-export function retrySentence(rec: RetryRecord): string {
-  if (!rec.correct) return S.retry.wrong;
+/** 재풀이 결과 문장. wasCorrect는 처음 채점에서 맞혔던 문항인지(찍어서 맞혔다고 표시한 문항). */
+export function retrySentence(rec: RetryRecord, wasCorrect = false): string {
+  if (!rec.correct) return wasCorrect ? S.retry.wrongAfterCorrect : S.retry.wrong;
   return rec.answerKnown ? S.retry.correctKnown : S.retry.correct;
 }

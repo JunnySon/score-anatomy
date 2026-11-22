@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { EXAMS, findExam } from '../exams';
-import { validateExam } from '../exams/validate';
+import { parseExam, validateExam } from '../exams/validate';
 import type { Answers, Exam, Marks } from '../types';
 import { cutView, gapFor, gradeKeys } from './cuts';
 import { exampleResponses } from './example';
@@ -320,6 +320,29 @@ describe('추가 경우', () => {
     expect(gradeKeys(examA)).toEqual(['1', '2', '3']);
     expect(cutView(examA, an, null)).toBeNull();
     expect(cutView(examA, an, '7')).toBeNull();
+    // 저장된 값이 망가져 엉뚱한 이름이 들어와도 죽지 않는다.
+    expect(cutView(examA, an, 'constructor')).toBeNull();
+    expect(cutView(examA, an, 'toString')).toBeNull();
+    expect(cutView(examA, an, '')).toBeNull();
+  });
+
+  it('cuts가 null이면 자료 없음으로 본다', () => {
+    const raw = { ...JSON.parse(JSON.stringify(examA)), cuts: null };
+    expect(validateExam(raw)).toEqual([]);
+    const parsed = parseExam(raw)!;
+    expect(parsed.cuts).toBeUndefined();
+    expect(gradeKeys(parsed)).toEqual([]);
+    expect(validateExam({ ...raw, cuts: 'x' }).length).toBeGreaterThan(0);
+  });
+
+  it('찍기 운 평균은 지시서의 식 그대로 0.2배를 쓴다', () => {
+    // 보기 수 값이 달라도 식은 바뀌지 않는다: 실제 - 추측 표시 정답 + 0.2 x 찍음 전체 배점
+    const six: Exam = { ...examA, items: examA.items.map((it) => (it.kind === 'mc' ? { ...it, choices: 6 } : it)) };
+    const answers = allCorrect(six);
+    answers[1] = wrongValue(six, 1);
+    const an = analyze(six, gradeExam(six, { answers, marks: { 1: 'guess' }, causes: {} }));
+    expect(an.actual).toBe(98);
+    expect(an.luckAverage).toBe(98.4);
   });
 
   it('확정 컷: 범위 대신 한 숫자', () => {

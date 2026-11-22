@@ -58,7 +58,7 @@ export function Start({ resumeTo }: { resumeTo: string | null }) {
       {preview ? (
         <section className="card mt6" aria-labelledby="preview-title" data-testid="preview">
           <div className="inline">
-            <h2 className="strong" id="preview-title">
+            <h2 className="title" id="preview-title">
               {S.start.previewTitle}
             </h2>
             <Badge>{S.common.sample}</Badge>

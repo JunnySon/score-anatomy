@@ -6,7 +6,7 @@ import { href, navigate } from '../router';
 import { deleteAllSessions, deleteSession, openSession, useAppData } from '../state/hooks';
 import { resumePath, stageOf } from '../state/session';
 import { store } from '../state/store';
-import { formatDate, S } from '../strings';
+import { formatDate, formatTime, S } from '../strings';
 import type { Session } from '../types';
 
 // (11) 기록 화면. 기록은 이 기기에만 있고, 여기서 지울 수 있다.
@@ -83,7 +83,12 @@ export function History() {
               const exam = findExam(s.examId);
               const title = exam?.title ?? s.examId;
               // 같은 시험의 기록이 여러 건이어도 구분되게, 접근성 이름에 날짜와 점수를 함께 넣는다.
-              const detail = `${formatDate(s.createdAt)}, ${scoreText(s)}`;
+              // 시험, 날짜, 점수가 모두 같은 기록이 또 있으면 넣은 시각(시, 분)도 적는다.
+              const plain = `${formatDate(s.createdAt)}, ${scoreText(s)}`;
+              const twin = sessions.some(
+                (o) => o.id !== s.id && o.examId === s.examId && `${formatDate(o.createdAt)}, ${scoreText(o)}` === plain,
+              );
+              const detail = twin ? `${formatDate(s.createdAt)} ${formatTime(s.createdAt)}, ${scoreText(s)}` : plain;
               return (
                 <li key={s.id} className="hitem" data-testid="history-item">
                   <button type="button" className="hitem__open" aria-label={S.history.open(title, detail)} onClick={() => open(s)}>

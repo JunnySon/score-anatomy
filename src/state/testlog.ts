@@ -1,10 +1,38 @@
 import { isValidAnswerNumber } from '../exams/validate';
-import type { Answers, AnswerValue, AppData, Exam, InputMode, Session, TestRun } from '../types';
+import type { Answers, AnswerValue, AppData, Exam, InputMode, RunPart, Session, TestRun } from '../types';
 import { newId } from './store';
 
 // 사용성 테스트 측정 기록. 진행자가 테스트를 시작했을 때만 남기고, 이 기기 밖으로 보내지 않는다.
 
 export const PARTICIPANT_PATTERN = /^P\d{2}$/;
+
+export function emptyPart(): RunPart {
+  return {
+    inputStartAt: null,
+    firstInputAt: null,
+    inputDoneAt: null,
+    reviewConfirmAt: null,
+    itemInputs: {},
+    reviewFixed: [],
+    marksMs: 0,
+    firstScoreAt: null,
+    finalAnswers: null,
+  };
+}
+
+function partOf(run: TestRun): RunPart {
+  return {
+    inputStartAt: run.inputStartAt,
+    firstInputAt: run.firstInputAt,
+    inputDoneAt: run.inputDoneAt,
+    reviewConfirmAt: run.reviewConfirmAt,
+    itemInputs: run.itemInputs,
+    reviewFixed: run.reviewFixed,
+    marksMs: run.marksMs,
+    firstScoreAt: run.firstScoreAt,
+    finalAnswers: run.finalAnswers,
+  };
+}
 
 export function newRun(participant: string, inputMode: InputMode, plannedExamId: string, now: number): TestRun {
   return {
@@ -18,43 +46,39 @@ export function newRun(participant: string, inputMode: InputMode, plannedExamId:
     examId: null,
     screens: [],
     examSelectAt: null,
-    inputStartAt: null,
-    firstInputAt: null,
-    inputDoneAt: null,
-    reviewConfirmAt: null,
-    itemInputs: {},
-    reviewFixed: [],
-    marksMs: 0,
-    firstScoreAt: null,
+    ...emptyPart(),
     examReselects: 0,
+    parts: {},
     answerKeyText: '',
-    finalAnswers: null,
   };
 }
 
 /**
- * 측정 기록을 시험 기록에 묶는다. 다른 기록에 묶여 있었으면(참가자가 답을 넣다가 시험을 다시 고름)
- * 앞 기록에서 잰 입력 측정을 비우고 다시 고른 횟수를 센다. 앞 시험에서 누른 횟수가 섞이지 않게 하려는 것이다.
+ * 측정 기록을 시험 기록에 묶는다. 다른 기록에 묶여 있었으면(참가자가 다른 시험 기록으로 옮겨 감)
+ * 앞 기록에서 재던 값을 parts 에 넣어 두고, 새로 묶는 기록의 값을 꺼내 쓴다(처음이면 빈 값).
+ * 그래서 앞 시험에서 누른 횟수가 섞이지 않고, 원래 기록으로 돌아오면 재던 값이 이어진다.
  * 화면 진입 기록과 시험 선택 화면에 처음 들어온 시각은 그대로 둔다.
  */
 export function bindRun(run: TestRun, sessionId: string, examId: string): TestRun {
   if (run.sessionId === sessionId && run.examId === examId) return run;
   if (run.sessionId === null) return { ...run, sessionId, examId };
-  return {
-    ...run,
-    sessionId,
-    examId,
-    inputStartAt: null,
-    firstInputAt: null,
-    inputDoneAt: null,
-    reviewConfirmAt: null,
-    itemInputs: {},
-    reviewFixed: [],
-    marksMs: 0,
-    firstScoreAt: null,
-    finalAnswers: null,
-    examReselects: run.examReselects + 1,
-  };
+  const parts: Record<string, RunPart> = { ...run.parts, [run.sessionId]: partOf(run) };
+  const back = parts[sessionId] ?? emptyPart();
+  delete parts[sessionId];
+  return { ...run, ...back, sessionId, examId, parts, examReselects: run.examReselects + 1 };
+}
+
+/**
+ * 채점까지 마친 측정인지. 마친 측정은 다른 기록에 다시 묶지 않는다.
+ * 묶인 기록이 지워졌어도 첫 점수 시각이 남아 있으면 마친 것으로 본다.
+ */
+export function isRunDone(run: TestRun, bound: Session | null): boolean {
+  return run.firstScoreAt !== null || (bound !== null && bound.firstGradedAt !== null);
+}
+
+/** 이번 참가자가 만든 기록인지: 측정에 묶인 기록이거나, 측정을 시작한 뒤에 만든 기록. */
+export function isMine(run: TestRun, session: Session): boolean {
+  return session.id === run.sessionId || Date.parse(session.createdAt) > run.startedAt;
 }
 
 /** 기록 한 건을 보여 주는 화면들. 측정에 묶인 기록이 아닌 기록에서 열리면 이름 앞에 OTHER_PREFIX를 붙여 적는다. */
@@ -225,8 +249,11 @@ export function runMetrics(run: TestRun, session: Session | null, exam: Exam | n
   };
 }
 
+/** 시각을 글자로 적는다. 날짜로 쓸 수 없는 값(저장 값이 망가진 경우)은 비워 둔다. */
 function iso(ms: number | null): string {
-  return ms === null ? '' : new Date(ms).toISOString();
+  if (ms === null) return '';
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 }
 
 function csvCell(v: string | number | null): string {

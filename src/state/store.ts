@@ -1,4 +1,4 @@
-import type { AppData, InputMode, Session, TestRun } from '../types';
+import type { AppData, InputMode, RunPart, Session, TestRun } from '../types';
 
 // 상태 저장소. 기록은 이 기기의 localStorage에만 둔다.
 // 읽기와 쓰기를 try/catch로 감싸고, 저장이 안 돼도 화면은 메모리 상태로 동작한다.
@@ -81,10 +81,13 @@ function cleanSession(raw: unknown): Session | null {
   };
 }
 
-function cleanRun(raw: unknown): TestRun | null {
-  if (!isObject(raw)) return null;
-  if (typeof raw.id !== 'string' || typeof raw.participant !== 'string') return null;
-  const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** 날짜로 쓸 수 있는 시각만 받는다(절댓값 8.64e15 이하). */
+function cleanTime(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 8.64e15 ? v : null;
+}
+
+/** 측정 기록 가운데 시험 기록 한 건에 딸린 값을 읽는다. 모양이 맞는 값만 남긴다. */
+function cleanPart(raw: Record<string, unknown>): RunPart {
   const counts: Record<number, number> = {};
   if (isObject(raw.itemInputs)) {
     for (const [k, v] of Object.entries(raw.itemInputs)) {
@@ -93,29 +96,44 @@ function cleanRun(raw: unknown): TestRun | null {
     }
   }
   return {
+    inputStartAt: cleanTime(raw.inputStartAt),
+    firstInputAt: cleanTime(raw.firstInputAt),
+    inputDoneAt: cleanTime(raw.inputDoneAt),
+    reviewConfirmAt: cleanTime(raw.reviewConfirmAt),
+    itemInputs: counts,
+    reviewFixed: Array.isArray(raw.reviewFixed) ? raw.reviewFixed.filter((n): n is number => typeof n === 'number') : [],
+    marksMs: typeof raw.marksMs === 'number' && Number.isFinite(raw.marksMs) ? raw.marksMs : 0,
+    firstScoreAt: cleanTime(raw.firstScoreAt),
+    finalAnswers: Array.isArray(raw.finalAnswers) ? raw.finalAnswers.map((v) => (isAnswer(v) ? v : null)) : null,
+  };
+}
+
+function cleanRun(raw: unknown): TestRun | null {
+  if (!isObject(raw)) return null;
+  if (typeof raw.id !== 'string' || typeof raw.participant !== 'string') return null;
+  const parts: Record<string, RunPart> = {};
+  if (isObject(raw.parts)) {
+    for (const [k, v] of Object.entries(raw.parts)) if (isObject(v)) parts[k] = cleanPart(v);
+  }
+  return {
     id: raw.id,
     participant: raw.participant,
     inputMode: raw.inputMode === 'rows' ? 'rows' : 'keypad',
     plannedExamId: typeof raw.plannedExamId === 'string' ? raw.plannedExamId : '',
-    startedAt: num(raw.startedAt) ?? 0,
-    endedAt: num(raw.endedAt),
+    startedAt: cleanTime(raw.startedAt) ?? 0,
+    endedAt: cleanTime(raw.endedAt),
     sessionId: typeof raw.sessionId === 'string' ? raw.sessionId : null,
     examId: typeof raw.examId === 'string' ? raw.examId : null,
     screens: Array.isArray(raw.screens)
-      ? raw.screens.filter((s): s is { screen: string; at: number } => isObject(s) && typeof s.screen === 'string' && typeof s.at === 'number')
+      ? raw.screens.filter(
+          (s): s is { screen: string; at: number } => isObject(s) && typeof s.screen === 'string' && cleanTime(s.at) !== null,
+        )
       : [],
-    examSelectAt: num(raw.examSelectAt),
-    inputStartAt: num(raw.inputStartAt),
-    firstInputAt: num(raw.firstInputAt),
-    inputDoneAt: num(raw.inputDoneAt),
-    reviewConfirmAt: num(raw.reviewConfirmAt),
-    itemInputs: counts,
-    reviewFixed: Array.isArray(raw.reviewFixed) ? raw.reviewFixed.filter((n): n is number => typeof n === 'number') : [],
-    marksMs: num(raw.marksMs) ?? 0,
-    firstScoreAt: num(raw.firstScoreAt),
-    examReselects: num(raw.examReselects) ?? 0,
+    examSelectAt: cleanTime(raw.examSelectAt),
+    ...cleanPart(raw),
+    examReselects: typeof raw.examReselects === 'number' && Number.isFinite(raw.examReselects) ? raw.examReselects : 0,
+    parts,
     answerKeyText: typeof raw.answerKeyText === 'string' ? raw.answerKeyText : '',
-    finalAnswers: Array.isArray(raw.finalAnswers) ? raw.finalAnswers.map((v) => (isAnswer(v) ? v : null)) : null,
   };
 }
 

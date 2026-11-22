@@ -161,6 +161,28 @@ export function TestAdmin() {
     navigate('/');
   };
 
+  /** 내보낼 글자를 만든다. 저장 값이 망가져 만들지 못하면 null. */
+  const build = (kind: 'json' | 'csv'): string | null => {
+    try {
+      return kind === 'json' ? exportJson(rows, Date.now()) : exportCsv(rows);
+    } catch {
+      return null;
+    }
+  };
+  const save = (kind: 'json' | 'csv') => {
+    const text = build(kind);
+    const ok = text !== null && downloadText(`score-anatomy-test-${stamp()}.${kind}`, text, kind === 'json' ? 'application/json' : 'text/csv');
+    setExportMsg(ok ? S.test.saved : S.test.saveFailed);
+  };
+  const copy = (kind: 'json' | 'csv') => {
+    const text = build(kind);
+    if (text === null) {
+      setExportMsg(S.test.copyFailed);
+      return;
+    }
+    void copyText(text).then((ok) => setExportMsg(ok ? S.test.copied : S.test.copyFailed));
+  };
+
   const stamp = () => {
     const d = new Date();
     const p = (n: number) => String(n).padStart(2, '0');
@@ -291,7 +313,7 @@ export function TestAdmin() {
               type="button"
               className="btn btn--secondary grow"
               data-testid="save-json"
-              onClick={() => setExportMsg(downloadText(`score-anatomy-test-${stamp()}.json`, exportJson(rows, Date.now()), 'application/json') ? S.test.saved : S.test.saveFailed)}
+              onClick={() => save('json')}
             >
               {S.test.saveJson}
             </button>
@@ -299,7 +321,7 @@ export function TestAdmin() {
               type="button"
               className="btn btn--secondary grow"
               data-testid="save-csv"
-              onClick={() => setExportMsg(downloadText(`score-anatomy-test-${stamp()}.csv`, exportCsv(rows), 'text/csv') ? S.test.saved : S.test.saveFailed)}
+              onClick={() => save('csv')}
             >
               {S.test.saveCsv}
             </button>
@@ -309,7 +331,7 @@ export function TestAdmin() {
               type="button"
               className="btn btn--secondary grow"
               data-testid="copy-json"
-              onClick={() => void copyText(exportJson(rows, Date.now())).then((ok) => setExportMsg(ok ? S.test.copied : S.test.copyFailed))}
+              onClick={() => copy('json')}
             >
               {S.test.copyJson}
             </button>
@@ -317,7 +339,7 @@ export function TestAdmin() {
               type="button"
               className="btn btn--secondary grow"
               data-testid="copy-csv"
-              onClick={() => void copyText(exportCsv(rows)).then((ok) => setExportMsg(ok ? S.test.copied : S.test.copyFailed))}
+              onClick={() => copy('csv')}
             >
               {S.test.copyCsv}
             </button>

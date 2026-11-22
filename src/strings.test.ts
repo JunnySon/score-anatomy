@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, listNos, rangePoints, S } from './strings';
+import { formatDate, formatTime, listNos, rangePoints, S } from './strings';
 
 // 화면 문구 검사: 금지 문자, 느낌표, 이모지, 쓰지 않기로 한 말이 없는지 본다.
 
@@ -225,5 +225,7 @@ describe('문구 도우미', () => {
   it('날짜', () => {
     expect(formatDate('2026-11-22T03:00:00.000Z')).toMatch(/^2026년 11월 2[23]일$/);
     expect(formatDate('엉뚱한 값')).toBe('');
+    expect(formatTime('2026-11-22T03:05:00.000Z')).toMatch(/^\d{1,2}시 5분$/);
+    expect(formatTime('엉뚱한 값')).toBe('');
   });
 });

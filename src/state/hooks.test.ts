@@ -382,6 +382,126 @@ describe('테스트 측정과 시험 기록', () => {
     expect(runMetrics(run(), null, examA).residualNos).toEqual([3]);
   });
 
+  it('채점까지 마친 기록을 지우고 시험을 새로 시작해도 마친 측정값과 최종 답은 남는다', () => {
+    startTestRun('P05', 'keypad', 'sample-a');
+    logScreenEvent('exams');
+    startSession('sample-a', 'not_yet', null);
+    logScreenEvent('input');
+    enter({ ...answersA, 3: 5 }, ALL);
+    logScreenEvent('review');
+    logScreenEvent('marks');
+    tick(1500);
+    store.update((d) => ({ ...d, sessions: d.sessions.map((s) => markGraded(s, examA, '2026-11-22T10:00:00.000Z')) }));
+    logScreenEvent('score');
+    const graded = current()!.id;
+    const before = activeRun(store.get())!;
+    expect(before.firstScoreAt).not.toBeNull();
+    expect(before.marksMs).toBe(1500);
+    // 측정 중에 그 기록을 지우고 같은 시험을 새로 시작한다.
+    deleteSession(graded);
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    logScreenEvent('input');
+    putAnswer(handle(), 1, 1, 'input');
+    const run = activeRun(store.get())!;
+    expect(run.sessionId).toBe(graded);
+    expect(run.examReselects).toBe(0);
+    expect(run.firstScoreAt).toBe(before.firstScoreAt);
+    expect(run.inputDoneAt).toBe(before.inputDoneAt);
+    expect(run.marksMs).toBe(1500);
+    expect(run.itemInputs).toEqual(before.itemInputs);
+    expect(run.finalAnswers).toHaveLength(30);
+    setRunAnswerKey(run.id, keyText);
+    expect(runMetrics(activeRun(store.get())!, null, examA).residualNos).toEqual([3]);
+    // 새로 시작한 기록의 화면은 따로 적힌다.
+    expect(run.screens[run.screens.length - 1]!.screen).toBe('other:input');
+  });
+
+  it('다른 시험에 갔다가 원래 기록으로 돌아오면 재던 값이 이어진다', () => {
+    startTestRun('P05', 'keypad', 'sample-a');
+    logScreenEvent('exams');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    logScreenEvent('input');
+    const a = current()!.id;
+    enter(answersA, ALL.slice(0, 10));
+    const first = activeRun(store.get())!;
+    const startedInput = first.inputStartAt;
+    expect(startedInput).not.toBeNull();
+    // 뒤로 가서 다른 시험을 잘못 고르고 답을 3개 넣는다.
+    tick(1000);
+    logScreenEvent('exams');
+    startSession('sample-b', 'not_yet', 'first');
+    logScreenEvent('input');
+    const answersB = exampleAnswers(findExam('sample-b') as Exam);
+    enter(answersB, [1, 2, 3]);
+    let run = activeRun(store.get())!;
+    expect(run.examId).toBe('sample-b');
+    expect(Object.keys(run.itemInputs)).toHaveLength(3);
+    expect(run.examReselects).toBe(1);
+    // 기록 화면에서 원래 기록을 다시 연다(시험 선택을 거치지 않는다).
+    tick(1000);
+    logScreenEvent('history');
+    openSession(a);
+    logScreenEvent('input');
+    run = activeRun(store.get())!;
+    expect(run.sessionId).toBe(a);
+    expect(run.examId).toBe('sample-a');
+    expect(run.examReselects).toBe(2);
+    expect(run.inputStartAt).toBe(startedInput);
+    expect(Object.keys(run.itemInputs)).toHaveLength(10);
+    expect(run.screens[run.screens.length - 1]!.screen).toBe('input');
+    tick(1000);
+    enter(answersA, ALL.slice(10));
+    run = activeRun(store.get())!;
+    expect(Object.keys(run.itemInputs)).toHaveLength(30);
+    expect(Object.values(run.itemInputs).every((n) => n === 1)).toBe(true);
+    // 답 입력 시간은 그 기록의 답 입력 화면에 처음 들어온 때부터 다 찬 때까지다.
+    expect(runMetrics(run, current(), examA).inputSeconds).toBe(3);
+    // 시험 선택 화면으로 돌아가 다시 골라도 같은 값이 이어진다.
+    logScreenEvent('exams');
+    startSession('sample-b', 'not_yet', 'first');
+    expect(Object.keys(activeRun(store.get())!.itemInputs)).toHaveLength(3);
+    startSession('sample-a', 'not_yet', null);
+    expect(Object.keys(activeRun(store.get())!.itemInputs)).toHaveLength(30);
+  });
+
+  it('테스트 중에 남의 기록이나 채점한 기록을 열어도 측정은 옮겨 가지 않는다', () => {
+    startSession('sample-a', 'not_yet', null);
+    enter(answersA, [1, 2]);
+    const old = current()!.id;
+    startTestRun('P06', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    const mine = current()!.id;
+    enter(answersA, [1, 2, 3, 4, 5]);
+    openSession(old);
+    expect(store.get().currentId).toBe(old);
+    expect(activeRun(store.get())!.sessionId).toBe(mine);
+    expect(activeRun(store.get())!.examReselects).toBe(0);
+    // 남의 기록을 보고 있어도 "이어서 보기"는 이번 참가자의 기록을 연다.
+    expect(resumeCandidate(store.get())!.session.id).toBe(mine);
+  });
+
+  it('표시 화면에 머문 시간에 진행자용 화면에 다녀온 시간은 들어가지 않는다', () => {
+    startTestRun('P07', 'keypad', 'sample-a');
+    startSession('sample-a', 'not_yet', null);
+    logScreenEvent('input');
+    enter(answersA, ALL);
+    logScreenEvent('review');
+    logScreenEvent('marks');
+    tick(1000);
+    logScreenEvent('test');
+    tick(3000);
+    logScreenEvent('marks');
+    tick(1000);
+    logScreenEvent('test');
+    expect(activeRun(store.get())!.marksMs).toBe(2000);
+    // 표시 화면에서 진행자용 화면으로 가서 바로 마쳐도 그때까지 머문 시간이 남는다.
+    finishTestRun();
+    expect(store.get().testRuns[0]!.marksMs).toBe(2000);
+  });
+
   it('새 참가자를 시작하면 앞 참가자의 측정은 닫힌다', () => {
     startTestRun('P06', 'keypad', 'sample-a');
     startSession('sample-a', 'not_yet', null);

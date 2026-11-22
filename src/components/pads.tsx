@@ -61,7 +61,8 @@ export function McPad({
 
 /**
  * 단답형 키패드: 0~9, 안 풂(없을 수도 있음), 지우기, 확정 키.
- * 5지선다 키패드와 같은 틀이다. 1~5 키는 같은 자리에 있고 그 아래에 6~0 줄이 더 붙는다.
+ * 5지선다 키패드와 같은 틀이다. 숫자가 두 줄(1~5, 6~0)이라 1~5 줄은 5지선다 때보다 한 줄 위에 놓이고,
+ * 5지선다의 1~5 자리에는 6~0 줄이 온다(가로 자리는 같다).
  * 숫자를 두 줄로 둔 것은 브라우저 주소 줄을 뺀 실제 화면 높이(약 640px)에 안내문까지 들어가게 하려는 것이다.
  */
 export function DigitPad({
@@ -83,7 +84,8 @@ export function DigitPad({
     <div className={`pad${inSheet ? ' pad--sheet' : ''}`} role="group" aria-label={S.input.keypadLabel}>
       <div className="pad__digits">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) => (
-          <button key={d} type="button" className="key key--num" data-key={d} onClick={() => onDigit(d)}>
+          // 숫자 키는 화면이 바뀐 직후에 같은 자리를 눌러도 버리지 않는다(src/tapGuard.ts).
+          <button key={d} type="button" className="key key--num" data-key={d} data-tap-safe="" onClick={() => onDigit(d)}>
             {d}
           </button>
         ))}

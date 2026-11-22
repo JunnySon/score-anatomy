@@ -41,6 +41,8 @@ export function ExamSelect() {
     <Screen
       top={<TopBar back="/" title={S.start.pick} />}
       tabs="current"
+      // 고를 때마다 아래 질문이 나타나고 화면이 저절로 스크롤된다. 연달아 누른 것이 그 자리에 온 다른 선택지에 닿지 않게 한다.
+      guardKey={`${examId ?? ''}/${graded ?? ''}/${seen ?? ''}`}
       actions={
         <>
           {msg ? <Message>{msg}</Message> : null}

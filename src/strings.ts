@@ -29,6 +29,13 @@ export function formatDate(iso: string): string {
   return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일`;
 }
 
+/** 시와 분(24시 기준). 같은 날 같은 점수의 기록을 구분할 때만 쓴다. */
+export function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getHours()}시 ${d.getMinutes()}분`;
+}
+
 export const S = {
   appName: '점수 해부',
 
@@ -376,6 +383,6 @@ export const S = {
     resetConfirm: '테스트 기록을 모두 지울까요?',
     resetBody: '참가자가 넣은 시험 기록은 지우지 않아요. 측정 기록만 지워요.',
     plannedMismatch: '참가자가 계획과 다른 시험을 골랐어요.',
-    examReselected: (n: number) => `참가자가 답을 넣다가 시험을 ${n}번 다시 골랐어요. 마지막에 고른 기록만 쟀어요.`,
+    examReselected: (n: number) => `참가자가 측정 중에 다른 시험 기록으로 ${n}번 옮겨 갔어요. 아래 값은 마지막에 넣던 기록에서 잰 것이에요.`,
   },
 } as const;

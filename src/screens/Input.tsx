@@ -9,6 +9,7 @@ import { navigate } from '../router';
 import { putAnswer, type SessionHandle } from '../state/hooks';
 import { answerText, firstMissingIndex } from '../state/session';
 import { S } from '../strings';
+import { markUiChanged } from '../tapGuard';
 import type { AnswerValue, ExamItem, InputMode } from '../types';
 
 // (3) 답 입력 화면. 키패드 방식과 5행 방식이 같은 기록을 쓴다.
@@ -115,6 +116,9 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   /** 칸을 눌러 그 문항으로 간다. 확정하지 않은 숫자는 버리고 알린다. */
   const goTo = (index: number) => {
     if (index === cursor) return;
+    // 묶음이 바뀌면 같은 자리에 다섯 문항 앞(뒤)의 칸이 온다. 연달아 누른 것이 그 칸에 닿지 않게 한다.
+    // 키를 눌러 다음 묶음으로 넘어갈 때는 막지 않는다(같은 키를 빠르게 이어 누르는 것은 받아야 한다).
+    if (groupIndexOf(index) !== g) markUiChanged();
     moveTo(index, dirty ? S.input.notCommitted(item.no) : null);
   };
 
@@ -126,6 +130,8 @@ function InputKeypad({ h }: { h: SessionHandle }) {
     if (dirty) {
       setDraft(null);
       setMsg(S.input.notCommitted(item.no));
+      // 안내문을 읽기 전에 같은 자리를 또 눌러 나가 버리지 않게 한다.
+      markUiChanged();
       return;
     }
     navigate(to);

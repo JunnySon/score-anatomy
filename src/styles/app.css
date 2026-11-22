@@ -249,11 +249,12 @@ a {
   background: var(--bg);
   padding-bottom: env(safe-area-inset-bottom);
 }
-/* 화면이 바뀐 직후, 바로 앞에 누른 자리에 잠깐 두는 보이지 않는 가림막(src/tapGuard.ts). */
+/* 화면이 바뀐 직후 잠깐 누름을 받지 않는 자리의 표시(src/tapGuard.ts). 보이지 않고 누름도 받지 않는다. */
 .tap-shield {
   position: fixed;
   z-index: 100;
   background: transparent;
+  pointer-events: none;
 }
 .actions {
   border-top: 1px solid var(--line);
@@ -416,7 +417,7 @@ a {
   color: var(--ok);
 }
 
-/* 카드와 상자: 표면색(지시서 5장). 그 안에 놓인 표면색 요소는 배경색으로 바꿔서 구분한다. */
+/* 카드와 상자: 표면색(지시서 5장). 그 안의 안내문은 배경색으로 바꿔서 구분한다. 입력 칸은 표면색 그대로 두고 테두리로 구분한다. */
 .card {
   border-radius: var(--r-card);
   padding: var(--s4);
@@ -424,7 +425,6 @@ a {
   --under: var(--surface);
 }
 .card .msg,
-.card .field__input,
 .card .btn--text:active {
   background: var(--bg);
 }
@@ -874,6 +874,10 @@ a {
 .mark-cell span {
   padding: 0 3px;
   border-radius: 4px;
+}
+/* 표시 격자에서도 "안 풂" 글자가 옆 칸의 답 숫자와 같은 높이에 오게 위아래 3px을 준다. */
+.mark-cell .cell__val--small {
+  padding: 3px;
 }
 .mark-cell__tag {
   min-height: var(--lh-cap);

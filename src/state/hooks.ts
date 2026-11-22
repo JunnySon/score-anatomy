@@ -5,7 +5,7 @@ import type { AnswerValue, AppData, Exam, GradedBefore, InputMode, SeenBefore, S
 import { demoStore } from './demo';
 import { newSession, setAnswer } from './session';
 import { store } from './store';
-import { activeRun, bindRun, logAnswer, logScreen, newRun, screenLogName, withActiveRun, withFinalAnswers } from './testlog';
+import { activeRun, bindRun, isMine, isRunDone, logAnswer, logScreen, newRun, screenLogName, withActiveRun, withFinalAnswers } from './testlog';
 
 export function useAppData(): AppData {
   return useSyncExternalStore(store.subscribe, store.get, store.get);
@@ -86,9 +86,7 @@ export function startSession(examId: string, gradedBefore: GradedBefore, seenBef
   const nowIso = new Date().toISOString();
   store.update((d) => {
     const run = activeRun(d);
-    // 이번 참가자가 만든 기록: 측정에 묶인 기록이거나, 측정을 시작한 뒤에 만든 기록.
-    const mine = (s: Session) => !run || s.id === run.sessionId || Date.parse(s.createdAt) > run.startedAt;
-    const reusable = d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && mine(s));
+    const reusable = d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && (!run || isMine(run, s)));
     let sessions = d.sessions;
     let session: Session;
     if (reusable) {
@@ -98,13 +96,20 @@ export function startSession(examId: string, gradedBefore: GradedBefore, seenBef
       session = newSession(examId, gradedBefore, seenBefore, nowIso);
       sessions = [session, ...sessions];
     }
-    const nd: AppData = { ...d, sessions, currentId: session.id };
-    return withActiveRun(nd, (r) => {
-      // 채점까지 마친 기록에 묶여 있으면 그대로 둔다. 그 뒤에 새로 시작한 기록은 재지 않는다.
-      const bound = d.sessions.find((s) => s.id === r.sessionId) ?? null;
-      if (bound && bound.firstGradedAt !== null && bound.id !== session.id) return r;
-      return bindRun(r, session.id, examId);
-    });
+    return rebind({ ...d, sessions, currentId: session.id }, session);
+  });
+}
+
+/**
+ * 진행 중인 측정을 이 기록에 묶는다(시험을 골랐을 때, 이번 참가자가 만든 채점 전 기록을 다시 열었을 때).
+ * 채점까지 마친 측정은 그대로 둔다. 그 뒤에 새로 시작한 기록은 재지 않는다.
+ */
+function rebind(d: AppData, session: Session): AppData {
+  return withActiveRun(d, (r) => {
+    if (r.sessionId === session.id) return bindRun(r, session.id, session.examId);
+    const bound = d.sessions.find((s) => s.id === r.sessionId) ?? null;
+    if (isRunDone(r, bound)) return r;
+    return bindRun(r, session.id, session.examId);
   });
 }
 
@@ -119,9 +124,13 @@ export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | 
     return s && exam ? { session: s, exam } : null;
   };
   const current = pick(d.sessions.find((s) => s.id === d.currentId));
-  if (current) return current;
   const run = activeRun(d);
-  if (run) return pick(d.sessions.find((s) => s.id === run.sessionId));
+  if (run) {
+    // 테스트 중: 지금 보는 기록이 이번 참가자의 것이면 그 기록, 아니면 측정에 묶인 기록.
+    if (current && isMine(run, current.session)) return current;
+    return pick(d.sessions.find((s) => s.id === run.sessionId));
+  }
+  if (current) return current;
   // 새 기록은 목록 맨 앞에 넣으므로, 앞에서부터 처음 만나는 기록이 가장 최근 것이다.
   for (const s of d.sessions) {
     const found = pick(s);
@@ -130,8 +139,20 @@ export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | 
   return null;
 }
 
+/**
+ * 기록을 연다(기록 화면의 열기, 시작 화면의 "이어서 보기").
+ * 테스트 중에 이번 참가자가 만든 채점 전 기록을 다시 열면 측정도 그 기록으로 옮긴다.
+ * 남의 기록이나 채점한 기록을 여는 것은 재지 않는다.
+ */
 export function openSession(id: string): void {
-  store.update((d) => (d.sessions.some((s) => s.id === id) ? { ...d, currentId: id } : d));
+  store.update((d) => {
+    const session = d.sessions.find((s) => s.id === id);
+    if (!session) return d;
+    const nd: AppData = { ...d, currentId: id };
+    const run = activeRun(d);
+    if (run && isMine(run, session) && session.firstGradedAt === null) return rebind(nd, session);
+    return nd;
+  });
 }
 
 /** 시험 기록이 사라지기 전에, 그 기록에 묶인 측정 기록에 최종 답을 옮겨 둔다. 이미 끝난 측정은 건드리지 않는다. */

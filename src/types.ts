@@ -66,7 +66,7 @@ export interface RetryRecord {
   attempts: number;
   /** 처음 맞힌 것이 몇 번째 시도였는지. 아직 맞힌 적이 없으면 null. */
   firstCorrectAttempt: number | null;
-  /** 다시 풀기 전에 정답을 알 수 있었는지. 정답 보기를 눌렀거나, 이미 채점한 경로이거나, 맞힌 문항이었던 경우. */
+  /** 다시 풀기 전에 정답을 알 수 있었는지. 정답 보기를 눌렀거나, "이미 했어요" 경로인 경우. */
   answerKnown: boolean;
   at: string;
 }
@@ -97,7 +97,21 @@ export interface Session {
 }
 
 /** 사용성 테스트 한 번의 측정 기록. 이 기기 안에만 둔다. */
-export interface TestRun {
+/** 측정 기록 가운데 시험 기록 한 건에 딸린 값. 참가자가 다른 기록으로 옮겨 가면 따로 넣어 두었다가 돌아오면 이어 쓴다. */
+export interface RunPart {
+  inputStartAt: number | null;
+  firstInputAt: number | null;
+  inputDoneAt: number | null;
+  reviewConfirmAt: number | null;
+  itemInputs: Record<number, number>;
+  reviewFixed: number[];
+  marksMs: number;
+  firstScoreAt: number | null;
+  /** 참가자가 최종 제출한 답의 사본. 시험 기록을 지워도 남은 오입력을 셀 수 있게 따로 둔다. 미입력은 null. */
+  finalAnswers: (AnswerValue | null)[] | null;
+}
+
+export interface TestRun extends RunPart {
   id: string;
   participant: string;
   inputMode: InputMode;
@@ -108,19 +122,11 @@ export interface TestRun {
   examId: string | null;
   screens: { screen: string; at: number }[];
   examSelectAt: number | null;
-  inputStartAt: number | null;
-  firstInputAt: number | null;
-  inputDoneAt: number | null;
-  reviewConfirmAt: number | null;
-  itemInputs: Record<number, number>;
-  reviewFixed: number[];
-  marksMs: number;
-  firstScoreAt: number | null;
-  /** 답을 넣다가 다른 시험 기록으로 바꾼 횟수. 바꾸면 그때까지 잰 입력 측정은 비운다. */
+  /** 측정 중에 다른 시험 기록으로 옮겨 간 횟수. */
   examReselects: number;
+  /** 지금 묶인 기록이 아닌 기록에서 재던 값(기록 id별). 그 기록으로 돌아오면 이어 쓴다. */
+  parts: Record<string, RunPart>;
   answerKeyText: string;
-  /** 참가자가 최종 제출한 답의 사본. 시험 기록을 지워도 남은 오입력을 셀 수 있게 따로 둔다. 미입력은 null. */
-  finalAnswers: (AnswerValue | null)[] | null;
 }
 
 export interface AppData {

@@ -396,6 +396,60 @@ describe('사용성 테스트 측정 기록', () => {
     expect(cells[head.indexOf('inputs_q1')]).toBe('0');
   });
 
+  it('저장된 측정 기록의 시각이 날짜로 쓸 수 없는 값이어도 읽고 내보낼 수 있다', () => {
+    const stored = parseStored(
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        testRuns: [
+          {
+            id: 'r1',
+            participant: 'P01',
+            inputMode: 'keypad',
+            plannedExamId: 'sample-a',
+            startedAt: 9e15,
+            endedAt: 1e300,
+            examId: 'sample-a',
+            screens: [
+              { screen: 'start', at: 1000 },
+              { screen: 'exams', at: 9e15 },
+            ],
+            inputStartAt: 9e15,
+            itemInputs: { 1: 2, x: 3, 0: 1 },
+            // 옛 형식에는 parts 와 examReselects 가 없다. 망가진 parts 는 모양이 맞는 것만 남긴다.
+            parts: { s9: { itemInputs: { 2: 1 }, marksMs: 'x', firstScoreAt: 5000 }, bad: 7 },
+          },
+        ],
+      }),
+    )!;
+    const r = stored.testRuns[0]!;
+    expect(r.startedAt).toBe(0);
+    expect(r.endedAt).toBeNull();
+    expect(r.inputStartAt).toBeNull();
+    expect(r.screens).toEqual([{ screen: 'start', at: 1000 }]);
+    expect(r.itemInputs).toEqual({ 1: 2 });
+    expect(r.examReselects).toBe(0);
+    expect(Object.keys(r.parts)).toEqual(['s9']);
+    expect(r.parts.s9).toEqual({
+      inputStartAt: null,
+      firstInputAt: null,
+      inputDoneAt: null,
+      reviewConfirmAt: null,
+      itemInputs: { 2: 1 },
+      reviewFixed: [],
+      marksMs: 0,
+      firstScoreAt: 5000,
+      finalAnswers: null,
+    });
+    const rows = [{ run: r, session: null, exam: examA }];
+    expect(() => exportCsv(rows)).not.toThrow();
+    expect(() => exportJson(rows, 0)).not.toThrow();
+    // 날짜로 쓸 수 없는 시각이 그대로 들어와도 내보내기는 멈추지 않는다.
+    const broken = [{ run: { ...r, startedAt: 9e15, screens: [{ screen: 'start', at: 9e15 }] }, session: null, exam: examA }];
+    expect(() => exportCsv(broken)).not.toThrow();
+    expect(() => exportJson(broken, 9e15)).not.toThrow();
+  });
+
   it('답지를 넣지 않았으면 남은 오입력은 비워 둔다', () => {
     const m = runMetrics(run(), filled(), examA);
     expect(m.residualErrors).toBeNull();

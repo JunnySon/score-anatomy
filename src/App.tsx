@@ -161,7 +161,8 @@ export function App() {
   }, [route.raw]);
 
   // 테스트가 진행 중이면 화면 진입 시각을 남긴다. 화면이 실제로 그려졌을 때만 불린다.
-  const logName = route.name === 'test' || route.name === 'unknown' ? null : screenKey;
+  // 진행자용 화면도 적는다. 표시 화면에서 진행자용 화면으로 간 시간을 표시 화면에 머문 시간에 넣지 않으려는 것이다.
+  const logName = route.name === 'unknown' ? null : screenKey;
   const onShown = useCallback(() => {
     if (logName) logScreenEvent(logName);
   }, [logName]);

@@ -8,6 +8,8 @@ import { chooseExam, enterKeypad, expect, expectHash, loadExam, openApp, seedSto
 // 2) 바텀시트나 대화상자가 닫힌 직후, 아래 버튼이나 묶음이 바뀐 직후, 화면이 저절로 스크롤된 직후에
 //    같은 자리를 다시 눌러도 그 자리에 새로 온 버튼이 눌리지 않는다.
 // 3) 단답형 숫자 키는 버리지 않고, 막는 자리에서 시작한 끌기는 그대로 스크롤된다.
+// 4) 마지막 문항의 답을 넣어 저절로 입력 확인으로 넘어간 직후에는 다른 자리의 누름도 받지 않는다.
+// 5) 표시 화면의 단답형 번호와 시간 선택지는 눌러도 자리가 바뀌지 않는다(같은 자리에 옆 요소가 오지 않는다).
 // 누름은 좌표로 직접 보낸다(page.touchscreen.tap, page.mouse). locator 로 누르는 것은 보호가 풀릴 때까지 기다리므로
 // (e2e/helpers.ts) 여기서는 준비 단계에만 쓴다.
 
@@ -343,6 +345,67 @@ test.describe('화면이 바뀐 직후에 같은 자리를 다시 누르면 받�
     await expect(page.getByTestId('page-range')).toHaveText('21~25번');
   });
 
+  test('5행 방식: 다른 자리를 누른 뒤에는 처음 누른 자리도 바로 받는다', async ({ page }) => {
+    await openApp(page, '/?input=rows');
+    await page.getByRole('button', { name: '시험 고르기' }).click();
+    await chooseExam(page, 'sample-a');
+    await expect(page.getByTestId('page-range')).toHaveText('1~5번');
+    await waitSettled(page);
+    const next = await centerOfLoc(page.getByTestId('rows-next'));
+    // 6~10번 쪽의 6번 줄 보기 3. 쪽이 바뀌어도 줄의 자리는 같으므로 1번 줄에서 재 둔다.
+    const choice = await centerOfLoc(page.locator('[data-row="1"] [data-choice="3"]'));
+    expect(far(next, choice), '"다음 5문항"과 보기의 자리가 달라야 함').toBe(true);
+    await page.waitForTimeout(600);
+    // "다음 5문항", 0.15초 뒤 보기 3, 0.15초 뒤 다시 "다음 5문항". 앞 누름에서 0.3초밖에 안 지났지만
+    // 사이에 다른 자리를 눌렀으므로 연달아 누른 것이 아니다.
+    await tapSeries(page, [
+      { at: next, wait: 0 },
+      { at: choice, wait: 150 },
+      { at: next, wait: 150 },
+    ]);
+    await expect(page.getByTestId('page-range')).toHaveText('11~15번');
+    expect((await stored(page)).sessions[0].answers[6]).toBe(3);
+  });
+
+  test('재풀이: 맞춰 보는 키를 연달아 눌러도 그 자리에 온 버튼이 눌리지 않는다', async ({ page }) => {
+    const exam = loadExam('a');
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [
+        {
+          id: 's1',
+          examId: 'sample-a',
+          createdAt: '2026-11-22T10:00:00.000Z',
+          gradedBefore: 'not_yet',
+          answers: exampleAnswers(exam),
+          marks: exampleMarks(),
+          causes: exampleCauses(),
+          gradedAt: '2026-11-22T10:05:00.000Z',
+          firstGradedAt: '2026-11-22T10:05:00.000Z',
+        },
+      ],
+      currentId: 's1',
+    });
+    await page.reload();
+    for (const gap of [150, 400]) {
+      await openApp(page, '/steps');
+      await openApp(page, '/retry/t03');
+      await expect(page.getByTestId('retry-no')).toHaveText('15번');
+      await tapKey(page, 3);
+      await waitSettled(page);
+      const go = await centerOfLoc(page.locator('[data-key="go"]'));
+      await page.waitForTimeout(600);
+      await doubleTap(page, go, gap);
+      await page.waitForTimeout(700);
+      // 결과가 뜨면 키패드가 사라지고 그 자리에 다른 조작 요소(아래 버튼이나 탭)가 온다. 그래도 화면은 그대로다.
+      await expectHash(page, '/retry/t03');
+      await expect(page.getByTestId('retry-no')).toHaveText('15번');
+      await expect(page.getByTestId('retry-result')).toBeVisible();
+      expect(await hitInside(page, go, 'button, a'), `같은 자리에 다른 조작 요소가 와 있어야 함 (간격 ${gap}ms)`).toBe(true);
+    }
+  });
+
   test('정답 공개 전 시험: "답 저장하기"를 연달아 눌러도 안내문을 건너뛰지 않는다', async ({ page }) => {
     const exam = loadExam('c');
     const answers: Record<number, number> = {};
@@ -624,4 +687,149 @@ test.describe('작은 화면(360x640)', () => {
     expect(scrolled, '본문이 스크롤돼야 함').toBeGreaterThan(30);
     await expectHash(page, '/anatomy');
   });
+});
+
+test.describe('마지막 문항을 넣어 저절로 입력 확인으로 넘어간 직후', () => {
+  for (const gap of [150, 450]) {
+    test(`답을 넣던 박자로 더 눌러도 입력 확인 화면에 머문다 (간격 ${gap}ms)`, async ({ page }) => {
+      const exam = loadExam('b');
+      const answers: Record<number, number> = {};
+      for (const it of exam.items.slice(0, 29)) answers[it.no] = it.kind === 'mc' ? 1 : 12;
+      await openApp(page, '/');
+      await seedStore(page, {
+        version: 1,
+        sessions: [{ id: 's1', examId: 'sample-b', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', seenBefore: 'first', answers }],
+        currentId: 's1',
+      });
+      await page.reload();
+      await openApp(page, '/input?input=keypad');
+      await expect(page.getByTestId('now-no')).toHaveText('30번');
+      await tapKey(page, 4);
+      await tapKey(page, 8);
+      await waitSettled(page);
+      const nine = await centerOfLoc(page.locator('[data-key="9"]'));
+      const seven = await centerOfLoc(page.locator('[data-key="7"]'));
+      const go = await centerOfLoc(page.locator('[data-key="go"]'));
+      await page.waitForTimeout(600);
+      // "다음"으로 30번을 확정하면 입력 확인으로 넘어간다. 같은 박자로 9, 7, "다음" 자리를 더 누른다.
+      await tapSeries(page, [
+        { at: go, wait: 0 },
+        { at: nine, wait: gap },
+        { at: seven, wait: gap },
+        { at: go, wait: gap },
+      ]);
+      await page.waitForTimeout(700);
+      await expectHash(page, '/review');
+      const session = (await stored(page)).sessions[0];
+      expect(session.answers[30]).toBe(48);
+      expect(session.gradedAt ?? null).toBeNull();
+      // 더 누른 자리에는 입력 확인 화면의 버튼이 있다. 화면 전체를 막지 않았다면 그 버튼이 눌렸을 것이다.
+      expect(await hitInside(page, nine, 'button, a'), '키 9 자리에 다른 조작 요소가 와 있어야 함').toBe(true);
+      // 0.5초 동안 누르지 않으면 풀린다.
+      await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
+      await expectHash(page, '/marks');
+    });
+  }
+
+  test('"전체 보기"로 넘어간 때는 화면 전체를 막지 않는다(다른 자리는 바로 받는다)', async ({ page }) => {
+    const exam = loadExam('a');
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [{ id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers: exampleAnswers(exam) }],
+      currentId: 's1',
+    });
+    await page.reload();
+    // 입력 확인 화면에서 14번 칸의 자리를 재 둔다.
+    await openApp(page, '/review');
+    await waitSettled(page);
+    const cell = await centerOfLoc(page.locator('main [data-cell="14"]'));
+    await openApp(page, '/input?input=keypad');
+    await waitSettled(page);
+    const showAll = await centerOfLoc(page.getByRole('button', { name: '전체 보기' }));
+    expect(far(showAll, cell), '"전체 보기"와 14번 칸의 자리가 달라야 함').toBe(true);
+    await page.waitForTimeout(600);
+    await tapSeries(page, [
+      { at: showAll, wait: 0 },
+      { at: cell, wait: 250 },
+    ]);
+    await expectHash(page, '/review');
+    await expect(page.locator('.sheet')).toBeVisible();
+  });
+});
+
+test.describe('표시 화면: 눌러도 자리가 바뀌지 않는다', () => {
+  for (const size of [
+    { width: 390, height: 844 },
+    { width: 360, height: 640 },
+  ]) {
+    test(`단답형 번호와 시간 선택지 (${size.width}x${size.height})`, async ({ page }) => {
+      await page.setViewportSize(size);
+      const exam = loadExam('a');
+      await openApp(page, '/');
+      await seedStore(page, {
+        version: 1,
+        sessions: [{ id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers: exampleAnswers(exam) }],
+        currentId: 's1',
+      });
+      await page.reload();
+      await openApp(page, '/marks');
+      await waitSettled(page);
+      // 본문 안에서의 자리(스크롤과 상관없는 값)와 크기를 모은다.
+      const layout = () =>
+        page.evaluate(() => {
+          const body = document.querySelector('main')!;
+          const top = body.getBoundingClientRect().top - body.scrollTop;
+          return [...document.querySelectorAll('[data-short-mark], [data-mark-cell], .chip')].map((el) => {
+            const r = el.getBoundingClientRect();
+            return [Math.round(r.left * 2) / 2, Math.round((r.top - top) * 2) / 2, Math.round(r.width * 2) / 2, Math.round(r.height * 2) / 2].join(' ');
+          });
+        });
+      const before = await layout();
+      expect(before.length).toBeGreaterThan(30);
+      // 표시를 여러 개 붙이고 시간 답을 고른다.
+      for (const no of [22, 27, 30]) await page.locator(`[data-short-mark="${no}"]`).click();
+      for (const no of [3, 14]) await page.locator(`[data-mark-cell="${no}"]`).click();
+      await page.getByTestId('time-enough').click();
+      await expect(page.locator('[data-short-mark="27"]')).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByTestId('time-enough')).toHaveAttribute('aria-checked', 'true');
+      expect(await layout()).toEqual(before);
+      await page.getByTestId('time-missed').click();
+      expect(await layout()).toEqual(before);
+
+      // 자신 없음이 붙은 27번을 같은 자리에서 연달아 누르면 27번만 두 번 바뀐다(옆 번호로 옮겨 가지 않는다).
+      const mark27 = page.locator('[data-short-mark="27"]');
+      await mark27.scrollIntoViewIfNeeded();
+      await waitSettled(page);
+      const at = await centerOfLoc(mark27);
+      await page.waitForTimeout(600);
+      await doubleTap(page, at, 180);
+      await page.waitForTimeout(300);
+      let marks = (await stored(page)).sessions[0].marks;
+      expect(Object.keys(marks).sort()).toEqual(['14', '22', '27', '3', '30']);
+      expect(marks[27]).toBe('unsure');
+      // 한 번만 누르면 27번의 표시만 지워진다.
+      await tap(page, at);
+      await page.waitForTimeout(300);
+      marks = (await stored(page)).sessions[0].marks;
+      expect(Object.keys(marks).sort()).toEqual(['14', '22', '3', '30']);
+      expect(await layout()).toEqual(before);
+
+      // 고른 시간 선택지의 오른쪽 끝을 연달아 눌러도 옆 선택지가 골라지지 않는다.
+      const chip = page.getByTestId('time-enough');
+      await chip.click();
+      await chip.scrollIntoViewIfNeeded();
+      await waitSettled(page);
+      const box = await boxOf(chip);
+      const edge = { x: box.x + box.width - 6, y: box.y + box.height / 2 };
+      await page.waitForTimeout(600);
+      await doubleTap(page, edge, 150);
+      await page.waitForTimeout(300);
+      // 두 번 눌렀으므로 고른 것이 풀렸다가 다시 골라진다.
+      expect((await stored(page)).sessions[0].timeFeel).toBe('enough');
+      await tap(page, edge);
+      await page.waitForTimeout(300);
+      expect((await stored(page)).sessions[0].timeFeel ?? null).toBeNull();
+    });
+  }
 });

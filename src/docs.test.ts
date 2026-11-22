@@ -52,3 +52,30 @@ describe('사용성 테스트 진행 안내의 답지', () => {
     });
   });
 });
+
+describe('결정 기록의 번호', () => {
+  const record = readFileSync(resolve(process.cwd(), 'docs/결정기록.md'), 'utf8');
+  const mine = record.slice(record.indexOf('## 2. 내가 정한 것'), record.indexOf('## 3. 제안'));
+  const proposals = record.slice(record.indexOf('## 3. 제안'));
+  const numbers = (text: string) => [...text.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
+
+  it('내가 정한 것은 1번부터 빠지거나 겹치는 번호가 없다', () => {
+    const list = numbers(mine);
+    expect(list.length).toBeGreaterThan(60);
+    expect([...list].sort((a, b) => a - b)).toEqual(list.map((_, i) => i + 1));
+  });
+
+  it('제안은 1번부터 차례로 적혀 있다', () => {
+    const list = numbers(proposals);
+    expect(list.length).toBeGreaterThan(10);
+    expect(list).toEqual(list.map((_, i) => i + 1));
+  });
+
+  it('내가 정한 것에 제안의 말투("~기."로 끝나는 문장)가 섞여 있지 않다', () => {
+    // 제안은 "~하기."로 적고 내가 정한 것은 "~요."로 적는다. 항목을 고치다가 다른 묶음의 글로 덮어쓴 것을 잡는다.
+    const lines = mine.split('\n').filter((l) => /^\d+\. /.test(l));
+    const odd = lines.filter((l) => /기\.( |$)/.test(l));
+    expect(odd).toEqual([]);
+  });
+});
+

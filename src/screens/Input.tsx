@@ -138,8 +138,12 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   };
 
   const advance = () => {
-    if (cursor >= last) navigate(h.path('/review'));
-    else moveTo(cursor + 1, null);
+    if (cursor >= last) {
+      // 마지막 문항의 답을 넣으면 저절로 입력 확인으로 넘어간다. 답을 넣던 박자로 더 누른 것이
+      // 새 화면의 버튼에 닿지 않게, 이때만 화면 전체를 잠깐 막는다.
+      markUiChanged('screen');
+      navigate(h.path('/review'));
+    } else moveTo(cursor + 1, null);
   };
 
   /** "지우기"는 한 칸 뒤로 가서 지운다(지시서 8장 (3)). 무엇을 지웠는지 알린다. */

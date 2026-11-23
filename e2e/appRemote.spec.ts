@@ -52,9 +52,11 @@ interface SavedRecord {
   answers: Record<string, unknown>;
   marks: Record<string, unknown>;
   causes: Record<string, unknown>;
+  retries: Record<string, { correct: boolean; answersRev?: number }>;
   savedAt: string | null;
   gradedAt: string | null;
   gradedWith?: { answersRev: number; score: number };
+  examTitle?: string;
 }
 
 /** 저장 형식(JSON)으로 옮긴 값. 문항 번호 열쇠가 글자가 된다. */
@@ -548,6 +550,86 @@ test('app-test: 답을 넣는 도중에 새 시험 자료가 와도 넣은 답, 
   expectNoOtherRequests(page);
 });
 
+test('app-test: 다시 풀기 도중에 정정된 판이 와도 지금 문항은 문항 번호로 정해서, 고른 답이 다른 문항의 기록으로 들어가지 않고 목록에서 빠진 문항은 알린다(별도 검토 A1, B4)', async ({ page }) => {
+  const record = sessionRecord('s-retry', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+  await openBundle(page, 'app-test', { bridge: 2, store: storeOf([record]), remote: remoteData(1, AT_1710, [testExam()]) }, '/retry/t03');
+  await expectHash(page, '/retry/t03');
+  // 수열(t03)의 다시 풀 문항은 15번과 29번이다. 15번(5지선다)에 3을 고르고 맞춰 보기 전이다.
+  await expect(page.getByTestId('retry-no')).toHaveText('15번');
+  await expect(page.getByTestId('retry-progress')).toHaveText(S.retry.progress(1, 2));
+  await tapKey(page, 3);
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('3');
+  // 7번 정답을 4로 정정한 판(학생 답 5라 7번이 틀리게 되어 목록이 7, 15, 29번이 된다). 지금 문항과 고른 답은 그대로다.
+  await sendRemote(page, remoteData(2, AT_2010, [correctedExam(2, { 7: 4 })]));
+  await expect(page.getByTestId('retry-progress')).toHaveText(S.retry.progress(2, 3));
+  await expect(page.getByTestId('retry-no')).toHaveText('15번');
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('3');
+  await expect(page.getByTestId('retry-moved')).toHaveCount(0);
+  // 15번 정답을 학생 답(1)으로 정정한 판: 15번이 목록에서 빠져 그 뒤의 29번으로 옮기고 알린다. 고르던 3은 쓰지 않는다.
+  await sendRemote(page, remoteData(3, AT_2010, [correctedExam(3, { 7: 4, 15: 1 }, { answersRev: 3 })]));
+  await expect(page.getByTestId('retry-no')).toHaveText('29번');
+  await expect(page.getByTestId('retry-progress')).toHaveText(S.retry.progress(2, 2));
+  await expect(page.getByTestId('retry-moved')).toHaveText(S.retry.moved(15, true));
+  expect(S.retry.moved(15, true)).toBe('시험 자료가 바뀌어서 15번은 다시 풀 문항에서 빠졌어요. 넣던 답은 기록하지 않았어요.');
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('');
+  await expectCleanText(page, '다시 풀기(정정으로 빠진 문항)');
+  // 29번(단답형)에 257을 넣고 맞춰 보면 29번의 기록만 남는다. 15번과 7번에는 다시 풀기 기록이 없다.
+  for (const d of [2, 5, 7]) await tapKey(page, d);
+  await tapKey(page, 'go');
+  await expect(page.getByTestId('retry-result')).toHaveAttribute('data-correct', 'true');
+  await expect(page.getByTestId('retry-moved')).toHaveCount(0);
+  const last = (await lastRecord(page, 's-retry'))!;
+  expect(Object.keys(last.retries)).toEqual(['29']);
+  expect(last.retries['29']).toMatchObject({ correct: true, answersRev: 3 });
+  expectSameInput(await savedRecords(page, 's-retry'), record.answers, record.marks);
+  expectNoOtherRequests(page);
+});
+
+test('app-test: 학생이 누르지 않았는데 넘겨받은 새 자료로 목록 자리가 옮겨 가면 0.5초 동안 화면 전체의 누름을 받지 않아, 옮겨 가기 전 자리를 누른 것이 다른 시험이나 다른 문항의 원인으로 들어가지 않는다(별도 검토 A3)', async ({
+  page,
+  context,
+}) => {
+  const center = (b: { x: number; y: number; width: number; height: number }) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  // 시험 선택: 예시 시험 B의 자리를 적어 두고, 시행일 없는 새 시험이 맨 위에 더해진 자료가 오자마자 그 자리를 누른다.
+  await openBundle(page, 'app-test', { bridge: 2, remote: remoteData(1, AT_1710, []) }, '/exams');
+  expect(await examIds(page)).toEqual(['sample-a', 'sample-b', 'sample-c']);
+  const spot = center((await page.getByTestId('exam-sample-b').boundingBox())!);
+  await sendRemote(page, remoteData(2, AT_2010, [testExam()]));
+  await expect(page.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  expect(await examIds(page)).toEqual(['test-remote-a', 'sample-a', 'sample-b', 'sample-c']);
+  await page.mouse.click(spot.x, spot.y);
+  // 그 자리에는 예시 시험 A가 와 있다. 그 누름은 받지 않아서 아무 시험도 고르지 않았다.
+  await expect(page.locator('main [role="radio"][aria-checked="true"]')).toHaveCount(0);
+  // 0.5초가 지나면 그 자리를 다시 누를 수 있다(그때 보이는 예시 시험 A가 골라진다).
+  await expect(page.locator('.tap-shield')).toHaveCount(0);
+  await page.mouse.click(spot.x, spot.y);
+  await expect(page.getByTestId('exam-sample-a')).toHaveAttribute('aria-checked', 'true');
+
+  // 오답 원인: 20번 카드의 "풀 줄 아는데 틀렸어요" 자리를 적어 두고, 15번이 맞게 정정된 판이 와서 아래 카드가 올라오자마자 그 자리를 누른다.
+  const record = sessionRecord('s-causes', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 }, causes: {} });
+  const again = await context.newPage();
+  const errors = errorsOf(again);
+  await openBundle(again, 'app-test', { bridge: 2, store: storeOf([record]), remote: remoteData(1, AT_1710, [testExam()]) }, '/causes');
+  await expectHash(again, '/causes');
+  expect(await wrongNos(again)).toEqual([11, 15, 20, 21, 27, 29]);
+  await again.getByTestId('wrong-20').evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const slip20 = center((await again.getByTestId('cause-20-slip').boundingBox())!);
+  await sendRemote(again, remoteData(2, AT_2010, [correctedExam(2, { 15: 1 })]));
+  await expect(again.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  expect(await wrongNos(again)).toEqual([11, 20, 21, 27, 29]);
+  await again.mouse.click(slip20.x, slip20.y);
+  // 받지 않아서 어느 문항의 원인도 고르지 않았고, 원인을 저장하지 않았다.
+  await expect(again.locator('[data-testid^="cause-"][aria-checked="true"]')).toHaveCount(0);
+  for (const r of await savedRecords(again, 's-causes')) expect(r.causes).toEqual({});
+  // 0.5초가 지나면 원인을 고를 수 있다.
+  await expect(again.locator('.tap-shield')).toHaveCount(0);
+  await again.getByTestId('cause-20-slip').click();
+  await expect.poll(async () => (await lastRecord(again, 's-causes'))?.causes).toEqual({ 20: 'slip' });
+  expect(errors, '다시 연 앱의 콘솔 오류').toEqual([]);
+  expectNoOtherRequests(page, again);
+  await again.close();
+});
+
 test('app-test: "새로 확인"을 누르면 saRemote 로 { op: "refresh" } 를 보내고 응답이 올 때까지 버튼을 쓸 수 없으며, 결과 셋(같은 seq, remoteFailed, 새 자료)을 보여 준다', async ({ page }) => {
   const first = remoteData(1, AT_1710, []);
   const next = remoteData(2, AT_2010, [testExam()]);
@@ -728,6 +810,8 @@ test('app-test: 넘겨받은 시험의 기록을 그 자료 없이 다시 열면
   const json = (await lastSavedJson(page))!;
   const record = (JSON.parse(json) as { sessions: SavedRecord[] }).sessions[0]!;
   expect(Object.keys(record.answers)).toHaveLength(3);
+  // 시험을 고를 때 그 시험의 제목을 기록에 적어 둔다(별도 검토 D2).
+  expect(record.examTitle).toBe(TITLE);
 
   // 껍데기가 넘겨받은 자료를 아직 넣지 못한 채(remote 칸 없음) 기록만 넣어 다시 연다.
   const again = await context.newPage();
@@ -739,9 +823,11 @@ test('app-test: 넘겨받은 시험의 기록을 그 자료 없이 다시 열면
   await expectHash(again, '/history');
   await expect(again.getByTestId('history-missing')).toHaveText(S.missingExam.body);
   expect(S.missingExam.body).toBe('시험 자료를 받으면 다시 볼 수 있어요.');
-  await expect(again.getByTestId('history-missing-item')).toContainText('test-remote-a');
+  // 이름 자리에는 시험 id 대신 기록에 적어 둔 시험 제목을 쓴다(별도 검토 D2).
+  await expect(again.getByTestId('history-missing-item')).toContainText(TITLE);
+  await expect(again.getByTestId('history-missing-item')).not.toContainText('test-remote-a');
   await expect(again.getByRole('button', { name: /기록 열기/ })).toHaveCount(0);
-  await expect(again.getByTestId('history-remove')).toHaveAttribute('aria-label', /^test-remote-a 기록 지우기, /);
+  await expect(again.getByTestId('history-remove')).toHaveAttribute('aria-label', new RegExp(`^${TITLE} 기록 지우기, `));
   await expectCleanText(again, '기록(시험을 찾지 못한 기록)');
   // 그 기록을 이어 여는 주소: 처음 화면으로 보내지 않고 안내와 돌아갈 길이 있는 작은 화면을 보여 준다.
   await gotoHash(again, '/input');

@@ -269,6 +269,14 @@ export function cutsText(c: ExamCuts): string {
   return `${c.confirmed ? '확정' : '추정'}, 기준 ${c.asOf}, 등급 ${Object.keys(c.grades).length}개`;
 }
 
+/**
+ * 두 번째 이상의 정정에서 내는 알림(별도 검토 B3, D4). 학생 화면의 정정 알림은 채점한 때의 점수에서 지금 점수로 바뀐 것과
+ * 시험 파일의 정정 안내(answersNote) 한 문장만 보여 줘서, 앞선 정정을 받지 못했거나 확인하지 않은 학생은 앞선 정정의 까닭을 볼 곳이 없다.
+ */
+export function cumulativeNoteText(publishedAnswersRev: number): string {
+  return `발행한 판에 이미 정정이 있어요(answersRev ${publishedAnswersRev}). 앞선 정정을 받지 못했거나 확인하지 않은 학생은 이 정정 안내 한 문장만 봐요. answersNote 에 정답 공개 뒤의 정정을 모두 적었는지 확인해 주세요(형식 예시: 7번과 12번 정답이 정정됐어요.).`;
+}
+
 function hasNote(exam: Exam): boolean {
   return typeof exam.answersNote === 'string' && exam.answersNote.trim() !== '';
 }
@@ -330,8 +338,10 @@ export function compareWithPublished(prev: StateEntry, exam: Exam): ExamComparis
       if (!hasNote(exam)) error(`공개한 정답이나 배점이 바뀌었는데(${list}) answersNote 에 정정 안내가 없어요.`);
       if (answersRev > prev.answersRev + 1) warn(`answersRev 가 한 번에 2 이상 올랐어요(발행한 판 ${prev.answersRev}, 지금 ${answersRev}).`);
       if (answersRev > prev.answersRev && hasNote(exam) && exam.answersNote === prev.answersNote) {
-        warn('answersRev 가 올랐는데 answersNote 가 발행한 판과 같아요. 이번 정정을 알리는 문장인지 확인해 주세요.');
+        warn('answersRev 가 올랐는데 answersNote 가 발행한 판과 같아요. 이번 정정이 빠지지 않았는지 확인해 주세요. 정정 안내에는 정답 공개 뒤의 정정을 모두 적어요.');
       }
+      // 앞선 정정을 받지 못했거나 그 알림을 확인하지 않은 학생은 마지막 정정 안내 한 문장만 본다(별도 검토 B3, D4).
+      if (answersRev > prev.answersRev && prev.answersRev >= 2) warn(cumulativeNoteText(prev.answersRev));
       changes.push(`정답 정정: 채점이 바뀌는 문항 ${list}. answersRev 가 ${prev.answersRev}에서 ${ro(answersRev)} 올라요. 정정 안내: "${exam.answersNote ?? ''}"`);
     } else if (answersRev > prev.answersRev) {
       error(

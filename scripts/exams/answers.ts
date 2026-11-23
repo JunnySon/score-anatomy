@@ -5,7 +5,7 @@ import { isRecord, withKey } from './data.ts';
 import { looksLikeAnswerNote, screenTextProblems } from './check.ts';
 import { EXAM_KEYS_BEFORE, bumpRevForEdit, loadEditTarget, writeEdit } from './edit.ts';
 import type { Io } from './io.ts';
-import { itemSummary, nosText, ro, scoringDiff, scoringText, structureDiff } from './state.ts';
+import { cumulativeNoteText, itemSummary, nosText, ro, scoringDiff, scoringText, structureDiff } from './state.ts';
 
 // exams:answers(작업 지시서 3의 6-4): 두 사람이 따로 적은 정답 파일 두 개를 받아, 완전히 같을 때만 원본 시험 파일에 정답을 넣고
 // answerReleased 를 true 로 한다. 다르면 다른 문항 번호만 보여 주고(답 값은 보여 주지 않음) 아무것도 쓰지 않는다.
@@ -229,7 +229,7 @@ export function runAnswers(opts: AnswersOptions, io: Io): number {
     if (changes.length > 0) {
       if (note === null) {
         return fail([
-          `발행한 정답과 채점이 다른 문항: ${scoringText(changes)}. 정정이라 --note "<정정 안내>" 가 있어야 해요(형식 예시: 12번 정답이 정정됐어요.).`,
+          `발행한 정답과 채점이 다른 문항: ${scoringText(changes)}. 정정이라 --note "<정정 안내>" 가 있어야 해요(형식 예시: 12번 정답이 정정됐어요.). 학생은 마지막 정정 안내 한 문장만 보니, 앞선 정정이 있으면 함께 적어요.`,
         ]);
       }
       const problems = screenTextProblems(note, 'answersNote');
@@ -239,6 +239,8 @@ export function runAnswers(opts: AnswersOptions, io: Io): number {
       next = withKey(next, 'answersNote', note, EXAM_KEYS_BEFORE.answersNote);
       notes.push(`정정이에요. 발행한 정답과 채점이 다른 문항: ${scoringText(changes)}. answersRev 를 ${ro(nextRev)} 두고 정정 안내를 넣었어요.`);
       if (looksLikeAnswerNote(note)) notes.push('알림: 정정 안내에 정답 값처럼 보이는 글자가 있어요. 학생은 정답 보기를 누르기 전에 이 문장을 봐요.');
+      // 앞선 정정이 있었으면 그 정정도 이 안내에 담았는지 보게 한다(별도 검토 B3, D4).
+      if (prev.answersRev >= 2) notes.push(`알림: ${cumulativeNoteText(prev.answersRev)}`);
     } else {
       if (note !== null) return fail(['발행한 정답과 채점이 같아서 정정 안내(--note)를 쓰지 않아요.']);
       // 앞서 이 명령으로 정정을 넣었다가(발행 전) 발행한 정답으로 되돌린 경우: 정답 판 번호와 정정 안내를 발행한 판의 값으로 돌린다.

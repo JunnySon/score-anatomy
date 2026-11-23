@@ -144,7 +144,9 @@ describe('발행 도구 exams:check 금지된 변경(작업 지시서 3의 6-4)'
     writeExam(dir, withItem(releasedExam({ rev: 2, answersRev: 3, answersNote: note, typesReady: false }), 2, { answer: 4 }));
     const report = checkData(dir);
     expect(report.errors).toEqual([]);
-    expect(report.warnings).toContain('src/test-tool-a.json: answersRev 가 올랐는데 answersNote 가 발행한 판과 같아요. 이번 정정을 알리는 문장인지 확인해 주세요.');
+    expect(report.warnings).toContain(
+      'src/test-tool-a.json: answersRev 가 올랐는데 answersNote 가 발행한 판과 같아요. 이번 정정이 빠지지 않았는지 확인해 주세요. 정정 안내에는 정답 공개 뒤의 정정을 모두 적어요.',
+    );
     expect(report.warnings).toContain('src/test-tool-a.json: 유형 분류를 마친 판을 발행했는데 typesReady 가 false 로 돌아갔어요. 학생 화면에서 계단이 사라져요.');
     expect(report.warnings).toContain('src/test-tool-a.json: 발행한 등급컷을 뺐어요. 학생 화면에서 등급컷이 사라져요.');
   });

@@ -87,7 +87,7 @@ describe('발행 도구 exams:answers(작업 지시서 3의 6-4)', () => {
     const refused = answers(dir, files);
     expect(refused.code).toBe(1);
     expect(refused.err).toEqual([
-      '발행한 정답과 채점이 다른 문항: 2번(정답). 정정이라 --note "<정정 안내>" 가 있어야 해요(형식 예시: 12번 정답이 정정됐어요.).',
+      '발행한 정답과 채점이 다른 문항: 2번(정답). 정정이라 --note "<정정 안내>" 가 있어야 해요(형식 예시: 12번 정답이 정정됐어요.). 학생은 마지막 정정 안내 한 문장만 보니, 앞선 정정이 있으면 함께 적어요.',
       '아무것도 쓰지 않았어요.',
     ]);
     expect(readFileSync(path).equals(before)).toBe(true);
@@ -112,6 +112,36 @@ describe('발행 도구 exams:answers(작업 지시서 3의 6-4)', () => {
     expect(back.code).toBe(0);
     expect(readExam(dir).answersRev).toBeUndefined();
     expect(readExam(dir).answersNote).toBeUndefined();
+  });
+
+  it('두 번째 이상의 정정이면 정정 안내에 앞선 정정도 적었는지 알린다(학생은 마지막 정정 안내 한 문장만 봐서, 별도 검토 B3, D4)', () => {
+    // 2번 정답을 정정해 발행한 판(answersRev 2)에서 1번 정답을 또 정정한다.
+    const firstFix = { ...releasedExam({ answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }) };
+    const corrected = (firstFix.items as Record<string, unknown>[]).map((it) => (it.no === 2 ? { ...it, answer: 1 } : it));
+    const published = { ...firstFix, items: corrected };
+    const dir = dataDir();
+    writeExam(dir, published);
+    markPublished(dir, [published]);
+    const second = SHEET.replace('2 5', '2 1').replace('1 3', '1 4');
+    const done = answers(dir, sheets(dir, second, second), '테스트 전용 정정 안내예요. 둘째 정정도 담았어요.');
+    expect(done.code).toBe(0);
+    expect(readExam(dir).answersRev).toBe(3);
+    const notice =
+      '발행한 판에 이미 정정이 있어요(answersRev 2). 앞선 정정을 받지 못했거나 확인하지 않은 학생은 이 정정 안내 한 문장만 봐요. answersNote 에 정답 공개 뒤의 정정을 모두 적었는지 확인해 주세요(형식 예시: 7번과 12번 정답이 정정됐어요.).';
+    expect(done.out).toContain(`  알림: ${notice}`);
+    // exams:check 도 같은 알림을 낸다(발행은 막지 않는다).
+    const report = checkData(dir);
+    expect(report.errors).toEqual([]);
+    expect(report.warnings).toContain(`src/test-tool-a.json: ${notice}`);
+    // 첫 정정에서는 알리지 않는다.
+    const once = dataDir();
+    writeExam(once, releasedExam());
+    markPublished(once, [releasedExam()]);
+    const firstOnly = SHEET.replace('2 5', '2 1');
+    const first = answers(once, sheets(once, firstOnly, firstOnly), '테스트 전용 정정 안내예요.');
+    expect(first.code).toBe(0);
+    expect(first.out.some((line) => line.includes('발행한 판에 이미 정정이 있어요'))).toBe(false);
+    expect(checkData(once).warnings.some((w) => w.includes('발행한 판에 이미 정정이 있어요'))).toBe(false);
   });
 
   it('처음 공개하는 정답에는 --note 를 쓰지 않고, 정정 안내가 화면 문구 규칙에 어긋나면 쓰지 않는다', () => {

@@ -1,9 +1,11 @@
-import { isValidYmd, parseAsOf, parseYmdHm } from '../logic/dates';
-import type { Exam, ExamItem, LockEntry } from '../types';
+import { isValidYmd, parseAsOf, parseYmdHm } from '../logic/dates.ts';
+import type { Exam, ExamItem, LockEntry } from '../types.ts';
 
 // 시험 파일(JSON)과 풀이 잠금 달력의 검사, 시험 파일 선택 칸의 기본값.
 // 묶음 안 자료, 껍데기가 넘겨준 자료, 발행 도구가 모두 이 규칙을 쓴다(작업 지시서 3의 4-5, 5-2, 6-4). 규칙을 두 벌로 만들지 않는다.
 // 넘겨받은 자료는 모양이 크게 틀릴 수 있어서, 검사는 어떤 값을 받아도 던지지 않고 오류 문장을 돌려준다.
+// 발행 도구(scripts/exams)는 Node 가 타입만 지우고 이 파일을 바로 읽는다. 그래서 이 파일과 src/logic/dates.ts 는
+// 상대 경로를 '.ts' 까지 적고, 타입만 가져올 때는 import type 문을 쓰고, enum 과 JSON import 와 별칭('#')을 쓰지 않는다.
 
 export const SHORT_MIN = 0;
 export const SHORT_MAX = 999;

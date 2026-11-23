@@ -5,6 +5,8 @@
 // Date 로 바꾸면 실행하는 곳의 시간대에 따라 하루가 밀릴 수 있다.
 // 지금 시각(UTC 밀리초)을 한국 시간 글자로 적을 때만 Date 를 쓴다. 그때도 9시간을 더한 값을 UTC 로 읽고,
 // 기기의 시간대 설정을 읽는 Date 메서드는 이 파일에서 쓰지 않는다.
+// 발행 도구(scripts/exams)도 Node 로 이 파일을 바로 읽는다(src/exams/validate.ts 를 거쳐). 다른 파일을 가져오게 되면
+// 상대 경로를 '.ts' 까지 적고, 타입만 가져올 때는 import type 문을 쓴다.
 
 export interface Ymd {
   y: number;

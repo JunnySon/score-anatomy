@@ -119,11 +119,11 @@ npm run build:app
 
 | 명령 | 하는 일 |
 | --- | --- |
-| `npm run exams:check` | 원본을 검사하고 마지막 발행 기록과 견줘 변경 요약을 보여 줘요. 파일을 쓰지 않아요 |
+| `npm run exams:check` | 원본을 검사하고 마지막 발행 기록과 견줘 변경 요약을 보여 줘요. 앱 묶음에 든 시험(src/exams)과 같은 id 는 거부해요. 파일을 쓰지 않아요 |
 | `npm run exams:answers -- <정답 파일 1> <정답 파일 2>` | 두 사람이 따로 적은 정답 파일이 같을 때만 원본에 정답을 넣어요 |
 | `npm run exams:cuts -- <추정 컷 파일>` | 기관별 추정 컷으로 등급컷 범위를 써요 |
-| `npm run exams:publish` | 검사를 통과하면 dist-exams 에 발행물을 만들고 서명해요. 비밀 키는 환경 변수 SA_EXAM_KEY_FILE 이 가리키는 저장소 밖 파일에서만 읽어요 |
-| `npm run exams:verify` | 발행 폴더나 주소의 서명과 SHA-256 을 확인해요 |
+| `npm run exams:publish` | 검사를 통과하면 dist-exams 에 발행물을 만들고 서명해요. 비밀 키는 환경 변수 SA_EXAM_KEY_FILE 이 가리키는 저장소 밖 파일에서만 읽어요. 저장소의 exam-data 로 발행할 때는 짝인 공개 키(exam-data/public-key.txt)가 있어야 해요 |
+| `npm run exams:verify` | 발행 폴더나 주소의 서명과 SHA-256 을 확인해요. 주소를 확인할 때는 자료 폴더의 마지막 발행과 다르면 실패예요 |
 | `npm run exams:serve` | 발행 폴더를 이 컴퓨터에서 내줘요(리허설용, http://127.0.0.1:4180/) |
 | `npm run exams:keygen -- <비밀 키 경로>` | 서명 키 쌍을 만들어요. 비밀 키는 저장소 밖에, 공개 키는 exam-data/public-key.txt 에 써요 |
 | `npm run exams:testdata` | 테스트 전용 키와 발행물 네 가지를 exam-data/testdata 에 만들어요. 진짜 발행에는 쓰지 않아요 |

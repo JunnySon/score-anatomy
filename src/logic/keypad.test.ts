@@ -168,7 +168,7 @@ describe('키패드 답 입력의 흐름(3-2)', () => {
     expect(pad.answers[30]).toBe(ANSWERS[30]);
   });
 
-  it('(f) 다 찬 상태에서 9번을 고치면 입력 확인으로 가고, 이어 누른 것은 9번을 다시 바꾸지 않는다', () => {
+  it('(f) 다 찬 상태에서 9번을 고치면 입력 확인으로 간다(이어 누른 것이 9번을 바꾸지 않는 것은 화면 테스트가 본다)', () => {
     const pad = new Pad(ANSWERS);
     // 다 찬 채로 화면을 열면 잠근 채로 시작한다.
     expect(pad.state.lock).toBe('full');
@@ -178,9 +178,8 @@ describe('키패드 답 입력의 흐름(3-2)', () => {
     const v = otherChoice(ANSWERS, 9);
     expect(pad.key(v)!.toReview).toBe(true);
     expect(pad.answers[9]).toBe(v);
-    // 입력 확인으로 넘어간 뒤의 누름은 키패드에 닿지 않는다.
-    expect(pad.key(otherChoice(pad.answers, 9))).toBeNull();
-    expect(pad.answers[9]).toBe(v);
+    // 넘어간 뒤 이어 누른 것은 키패드 규칙이 아니라 화면 전체를 잠깐 막는 누르기 보호가 받지 않는다.
+    // 그래서 e2e/rhythm.spec.ts 의 기다리지 않는 좌표 누름 테스트가 본다(결정기록 97번).
   });
 
   it('(g) 답이 든 칸을 눌러 바로 고친 경우와 지우기로 비운 뒤 다시 넣은 경우의 결과가 같다', () => {
@@ -351,11 +350,14 @@ describe('키패드 답 입력의 흐름(3-2)', () => {
     let puts = 0;
     let locks = 0;
     let erasures = 0;
+    let fullEvents = 0;
+    let fullErasures = 0;
     for (let seq = 0; seq < SEQUENCES; seq += 1) {
-      // 시작 기록: 문항마다 3분의 2 확률로 답이 있다(안 풂 포함).
+      // 시작 기록: 열 10개 가운데 1개쯤은 다 찬 채로 연다(빈칸 없이 연 잠금). 나머지는 문항마다 3분의 2 확률로 답이 있다(안 풂 포함).
+      const full = rand() < 0.1;
       const start: Answers = {};
       for (const it of items) {
-        if (rand() < 0.67) start[it.no] = rand() < 0.1 ? 'skip' : it.kind === 'mc' ? 1 + Math.floor(rand() * 5) : Math.floor(rand() * 1000);
+        if (full || rand() < 0.67) start[it.no] = rand() < 0.1 ? 'skip' : it.kind === 'mc' ? 1 + Math.floor(rand() * 5) : Math.floor(rand() * 1000);
       }
       const pad = new Pad(start);
       // 고치기로 들어온 뒤 아직 답을 넣지 않았는지.
@@ -376,11 +378,14 @@ describe('키패드 답 입력의 흐름(3-2)', () => {
         const out = pad.press(e)!;
         events += 1;
 
-        // 잠긴 키(답 키, 안 풂, 숫자 키, 다음)는 아무것도 바꾸지 않는다.
-        if (prev.lock !== null && (e.type === 'choice' || e.type === 'skip' || e.type === 'digit' || e.type === 'go')) {
+        // 잠긴 키(답 키, 안 풂, 숫자 키, 다음)는 아무것도 바꾸지 않는다. 빈칸 없이 연 잠금에서는 지우기도 받지 않는다.
+        const fullErase = prev.lock === 'full' && e.type === 'erase';
+        if (prev.lock !== null && (e.type === 'choice' || e.type === 'skip' || e.type === 'digit' || e.type === 'go' || fullErase)) {
           expect(out.accepted).toBe(false);
           expect(out.store).toBeNull();
         }
+        if (prev.lock === 'full') fullEvents += 1;
+        if (fullErase) fullErasures += 1;
         if (!out.accepted) continue;
 
         const curNo = noAt(prev.cursor);
@@ -428,6 +433,8 @@ describe('키패드 답 입력의 흐름(3-2)', () => {
     expect(puts).toBeGreaterThan(10000);
     expect(locks).toBeGreaterThan(1000);
     expect(erasures).toBeGreaterThan(1000);
+    expect(fullEvents).toBeGreaterThan(1000);
+    expect(fullErasures).toBeGreaterThan(100);
   });
 });
 

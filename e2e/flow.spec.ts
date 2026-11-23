@@ -232,6 +232,16 @@ for (const mode of ['keypad', 'rows'] as const) {
     await expectHash(page, '/steps');
     await expect(page.getByTestId('step-1').getByTestId('retry-status')).toContainText('14번: 찍음 표시 정답, 막힌다고 표시함');
     await expect(page.getByTestId('step-1').getByTestId('retry-status')).toContainText('20번: 2번째로 넣은 답이 맞음');
+    // "아직 안 풀어 봤어요"는 앞서 고른 것을 지우고 다음 문항으로 넘어간다(결정기록 79번, 94번).
+    await page.getByTestId('step-1').getByTestId('retry-btn').click();
+    await expect(page.getByTestId('retry-no')).toHaveText('14번');
+    await expect(page.getByTestId('self-stuck')).toHaveAttribute('aria-checked', 'true');
+    await page.getByTestId('self-not-yet').click();
+    await expect(page.getByTestId('retry-no')).toHaveText('20번');
+    await page.getByRole('button', { name: '뒤로' }).click();
+    await expectHash(page, '/steps');
+    await expect(page.getByTestId('step-1').getByTestId('retry-status')).not.toContainText('14번');
+    await expect(page.getByTestId('step-1').getByTestId('retry-status')).toContainText('20번: 2번째로 넣은 답이 맞음');
 
     // 기록에 78점으로 남고, 새로 열어도 그대로다.
     await page.getByRole('link', { name: '기록' }).click();

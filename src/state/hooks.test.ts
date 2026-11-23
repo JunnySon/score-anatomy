@@ -656,7 +656,7 @@ describe('테스트 기기(3-11)', () => {
     startSession('sample-a', 'not_yet', null);
     expect(current()!.id).not.toBe(a);
     expect(current()!.answers).toEqual({});
-    // 앞 참가자의 기록은 지우지 않는다(진행자용 화면의 최종 답과 대조에 쓴다).
+    // 앞 참가자의 기록은 앱이 지우지 않는다(지우는 것은 진행자가 한다. 대조는 마칠 때 옮겨 둔 사본을 쓴다).
     expect(store.get().sessions.find((s) => s.id === a)!.answers).toEqual(answersA);
   });
 

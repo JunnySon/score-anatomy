@@ -37,6 +37,12 @@ for (const c of CASES) {
       // 가로 화면은 지원 범위(세로 360~430) 밖이고, 이 조건들은 결과만 적는다(결정기록 58번, 98번).
       const check = async (label: string, strict = true) => {
         await waitSettled(page);
+        // Playwright 는 누르기 전에 요소가 보이게 조상 상자를 민다. 화면 틀(.app)은 넘쳐도 손가락으로 밀 수 없으므로(overflow hidden)
+        // 학생이 보는 자리로 되돌린 뒤 잰다. 되돌리지 않으면 앞서 누른 키 때문에 밀린 만큼 잘린 높이가 작게 나온다.
+        await page.evaluate(() => {
+          const app = document.querySelector('.app');
+          if (app) app.scrollTop = 0;
+        });
         // 키패드가 화면 아래로 나간 높이(px).
         const keysCutPx = await page.evaluate(() =>
           Math.max(0, ...Array.from(document.querySelectorAll('.pad [data-key]')).map((el) => Math.ceil(el.getBoundingClientRect().bottom - window.innerHeight))),

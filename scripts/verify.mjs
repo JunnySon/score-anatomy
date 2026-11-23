@@ -80,7 +80,7 @@ const REQUIRED_UNIT_TESTS = [
   '키패드 답 입력의 흐름(3-2) (c) 잠금에서 "10번도 고치기"를 누르면 10번을 한 번 고칠 수 있고 다시 잠긴다',
   '키패드 답 입력의 흐름(3-2) (d) 5번과 7번이 비어 있을 때 5번을 눌러 채우면 잠기고, 버튼은 "6번도 고치기"와 "7번부터 이어서 넣기"다',
   '키패드 답 입력의 흐름(3-2) (e) 5번만 비워 둔 채 30번을 넣으면 입력 확인으로 가고 5번은 미입력으로 남는다',
-  '키패드 답 입력의 흐름(3-2) (f) 다 찬 상태에서 9번을 고치면 입력 확인으로 가고, 이어 누른 것은 9번을 다시 바꾸지 않는다',
+  '키패드 답 입력의 흐름(3-2) (f) 다 찬 상태에서 9번을 고치면 입력 확인으로 간다(이어 누른 것이 9번을 바꾸지 않는 것은 화면 테스트가 본다)',
   '키패드 답 입력의 흐름(3-2) (g) 답이 든 칸을 눌러 바로 고친 경우와 지우기로 비운 뒤 다시 넣은 경우의 결과가 같다',
   '키패드 답 입력의 흐름(3-2) (h) 6번을 넣고 7번으로 넘어온 직후 지우기를 누르면 6번이 지워지고 6번에 머문다. 다시 넣으면 7번으로 간다',
   '키패드 답 입력의 흐름(3-2) (i) 빈칸을 직접 눌러 들어온 직후의 지우기는 아무것도 지우지 않는다',
@@ -134,6 +134,14 @@ const metrics = existsSync(join(OUT, 'metrics.jsonl'))
 
 const unitTests = unit ? unit.testResults.flatMap((f) => f.assertionResults) : [];
 const missingUnit = REQUIRED_UNIT_TESTS.filter((name) => !unitTests.some((t) => t.fullName === name && t.status === 'passed'));
+// 작업 지시서 1의 5장: 기다리지 않는 좌표 누름 테스트와 3-2 (f)의 뒷부분(화면 테스트가 맡는다, 결정기록 97번).
+// 지워지거나 이름이 바뀌어 빠지면 2번 항목이 실패한다.
+const REQUIRED_E2E_TESTS = [
+  '표시가 0개일 때 같은 칸을 0.2초 간격으로 두 번 누르면 "찍음"이 된다(채점 버튼 라벨이 바뀌어도 둘째 누름을 버리지 않는다)',
+  '잠금 뒤에 0.3초 간격으로 이어 누른 답 키는 어디에도 들어가지 않는다',
+  '마지막 문항 뒤에 이어 누른 키가 입력 확인의 버튼을 누르지 않는다',
+  '다 찬 상태에서 9번을 고친 뒤 이어 누른 키는 9번을 다시 바꾸지 않고 입력 확인의 버튼도 누르지 않는다',
+];
 // 통과도 실패도 아닌 단위 테스트(건너뜀, 나중에 할 일로 표시)는 통과로 세지 않는다.
 const skippedUnit = unitTests.filter((t) => t.status !== 'passed' && t.status !== 'failed');
 
@@ -197,8 +205,8 @@ const REQUIRED = {
   shots: 69, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 334, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 123, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 84, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 193, // 통과한 단위 테스트 수의 최소
+  e2eTests: 85, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  unitTests: 196, // 통과한 단위 테스트 수의 최소
   leakChecks: 48, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
   leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
@@ -270,7 +278,8 @@ const unitOk =
   unit.numPassedTests >= REQUIRED.unitTests &&
   missingUnit.length === 0;
 const flowTests = byFile('flow.spec.ts');
-const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4;
+const missingE2e = REQUIRED_E2E_TESTS.filter((title) => !tests.some((t) => t.file.endsWith('rhythm.spec.ts') && t.title === title && t.ok));
+const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
 const smallOk =
   allOk(smallTests) &&
@@ -383,7 +392,7 @@ function buildReport(textOk, textResult) {
       '2',
       '화면 흐름(390x844)',
       flowOk,
-      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인`,
+      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인. 꼭 있어야 하는 기다리지 않는 좌표 누름 테스트 ${REQUIRED_E2E_TESTS.length}개 가운데 ${REQUIRED_E2E_TESTS.length - missingE2e.length}개 통과`,
     ],
     [
       '3',

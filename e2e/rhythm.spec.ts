@@ -131,6 +131,8 @@ test('다 찬 상태에서 9번을 고친 뒤 이어 누른 키는 9번을 다�
   const skip = await key('skip');
   const erase = await key('erase');
   await tapAtRhythm(page, [k2, k4, k5, skip, erase, k4], 200);
+  // 이어 누른 것이 실제로 화면에 닿았고 받지 않았다(버린 누름 알림이 하나 떴다).
+  await expect(page.locator('.tap-notice')).toHaveCount(1);
   await page.waitForTimeout(300);
   // 빈칸이 없어져 입력 확인으로 넘어갔고, 넘어간 화면의 버튼이나 칸은 눌리지 않았다.
   await expectHash(page, '/review');

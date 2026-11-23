@@ -514,3 +514,82 @@ describe('사용성 테스트 측정 기록', () => {
     expect(m.selectToScoreSeconds).toBeNull();
   });
 });
+
+/** 앱의 다리처럼 보관(archive)을 받는 저장소. 받은 순서를 calls 에 남긴다. */
+class ArchiveStorage implements StorageLike {
+  calls: string[] = [];
+  constructor(
+    private text: string | null,
+    private archiveSent = true,
+  ) {}
+  getItem(): string | null {
+    return this.text;
+  }
+  setItem(_key: string, value: string): void {
+    this.calls.push(`save:${value}`);
+  }
+  archive(): boolean {
+    this.calls.push('archive');
+    return this.archiveSent;
+  }
+}
+const noListen = () => () => undefined;
+
+describe('앱 저장소(다리): 읽지 못한 기록의 보관', () => {
+  it('읽지 못한 기록은 보관을 먼저 요청하고, 보관 안내 표시를 남긴 새 기록을 곧바로 저장한다', () => {
+    for (const text of ['{not json', JSON.stringify({ version: 2, sessions: [] }), JSON.stringify({ version: 0, sessions: [] }), '']) {
+      const s = new ArchiveStorage(text);
+      const store = new Store(s, noListen);
+      expect(s.calls[0]).toBe('archive');
+      expect(s.calls).toHaveLength(2);
+      const saved = JSON.parse(s.calls[1]!.slice('save:'.length));
+      expect(saved.archiveNotice).toBe(true);
+      expect(saved.sessions).toEqual([]);
+      expect(store.get().archiveNotice).toBe(true);
+      expect(store.storageOk).toBe(true);
+    }
+  });
+
+  it('읽을 수 있는 기록과 기록 없음(null)은 보관하지 않고 저장도 바로 하지 않는다', () => {
+    const readable = new ArchiveStorage(JSON.stringify({ ...defaultData(), sessions: [filled()] }));
+    expect(new Store(readable, noListen).get().sessions).toHaveLength(1);
+    expect(readable.calls).toEqual([]);
+    const none = new ArchiveStorage(null);
+    expect(new Store(none, noListen).get()).toEqual(defaultData());
+    expect(none.calls).toEqual([]);
+  });
+
+  it('보관 요청을 보내지 못하면 이 실행 동안 저장하지 않는다(읽지 못한 기록을 덮어쓰지 않는다)', () => {
+    const s = new ArchiveStorage('{not json', false);
+    const store = new Store(s, noListen);
+    store.update((d) => ({ ...d, sessions: [filled()] }));
+    expect(store.get().sessions).toHaveLength(1);
+    expect(s.calls).toEqual(['archive']);
+    expect(store.storageOk).toBe(false);
+  });
+
+  it('껍데기가 저장 실패를 알리면 storageOk 가 false 가 되고, 다음 저장을 보내면 다시 true 가 된다', () => {
+    let notifyFailed: () => void = () => undefined;
+    const s = new ArchiveStorage(null);
+    const store = new Store(s, (fn) => {
+      notifyFailed = fn;
+      return () => undefined;
+    });
+    let changes = 0;
+    store.subscribeStatus(() => {
+      changes += 1;
+    });
+    notifyFailed();
+    expect(store.storageOk).toBe(false);
+    expect(store.getStatus()).toEqual({ ok: false });
+    store.update((d) => ({ ...d, inputMode: 'rows' }));
+    expect(store.storageOk).toBe(true);
+    expect(changes).toBe(2);
+  });
+
+  it('보관 안내 표시는 기록에 남아 다시 읽어도 있고, true 가 아닌 값은 읽지 않는다', () => {
+    expect(parseStored(JSON.stringify({ ...defaultData(), archiveNotice: true }))!.archiveNotice).toBe(true);
+    expect(parseStored(JSON.stringify({ ...defaultData(), archiveNotice: 'yes' }))!.archiveNotice).toBeUndefined();
+    expect('archiveNotice' in parseStored(JSON.stringify(defaultData()))!).toBe(false);
+  });
+});

@@ -20,8 +20,8 @@ test('WebKit: 앱 시험용 묶음에서 예시 시험 A를 검산 예시대로 
   await page.getByRole('button', { name: '틀린 문항 살펴보기' }).click();
   await chooseCauses(page, exampleCauses());
   await page.getByRole('button', { name: '점수 해부 보기' }).click();
-  await expect(page.getByTestId('row-guess')).toContainText('7점');
-  await expect(page.getByTestId('row-slip')).toContainText('8점');
+  await expect(page.getByTestId('row-guess').locator('.num')).toHaveText('7점');
+  await expect(page.getByTestId('row-slip').locator('.num')).toHaveText('8점');
   await page.getByTestId('grade-2').click();
   await expect(page.getByTestId('cut-actual')).toHaveText('실제 78점 기준 3~7점 남았어요');
   await expect(page.getByTestId('cut-luck')).toContainText('약 75점');

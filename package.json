@@ -1,7 +1,7 @@
 {
   "name": "score-anatomy",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "수능 수학 점수 해부 모바일 웹앱 v1 시제품",
   "type": "module",
   "scripts": {

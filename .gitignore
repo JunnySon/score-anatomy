@@ -7,3 +7,4 @@ playwright-report/
 verify-out/
 *.log
 .DS_Store
+dist-exams/

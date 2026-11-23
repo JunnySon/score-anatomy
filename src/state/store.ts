@@ -95,6 +95,8 @@ function cleanSession(raw: unknown): Session | null {
   };
   // 작업 지시서 3의 4-6에서 더한 칸(채점 흔적). 모양이 맞을 때만 칸을 두고, 없거나 틀리면 칸이 없는 옛 기록으로 읽는다(version 은 그대로 1).
   if (isGradedWith(raw.gradedWith)) session.gradedWith = { answersRev: raw.gradedWith.answersRev, score: raw.gradedWith.score };
+  // 기록을 시작한 때의 시험 제목(별도 검토 D2). 빈칸이 아닌 글자(200자까지)일 때만 칸을 두고, 아니면 칸이 없는 옛 기록으로 읽는다.
+  if (typeof raw.examTitle === 'string' && raw.examTitle.trim() !== '' && raw.examTitle.length <= 200) session.examTitle = raw.examTitle;
   return session;
 }
 

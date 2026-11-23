@@ -94,6 +94,8 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
  */
 export function startSession(examId: string, gradedBefore: GradedBefore, seenBefore: SeenBefore | null): void {
   const nowIso = new Date().toISOString();
+  // 기록에 그때의 시험 제목을 적는다. 나중에 그 시험을 찾지 못해도 기록 화면이 시험 id 대신 제목을 보여 준다(별도 검토 D2).
+  const examTitle = findExam(examId)?.title;
   store.update((d) => {
     const run = __SA_TOOLS__ ? activeRun(d) : null;
     const reusable = isTestDevice(d)
@@ -102,10 +104,10 @@ export function startSession(examId: string, gradedBefore: GradedBefore, seenBef
     let sessions = d.sessions;
     let session: Session;
     if (reusable) {
-      session = { ...reusable, gradedBefore, seenBefore };
+      session = { ...reusable, gradedBefore, seenBefore, ...(examTitle ? { examTitle } : {}) };
       sessions = sessions.map((s) => (s.id === reusable.id ? session : s));
     } else {
-      session = newSession(examId, gradedBefore, seenBefore, nowIso);
+      session = newSession(examId, gradedBefore, seenBefore, nowIso, examTitle);
       sessions = [session, ...sessions];
     }
     const nd: AppData = { ...d, sessions, currentId: session.id };

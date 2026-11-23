@@ -5,13 +5,15 @@ import { newId } from './store';
 
 // 기록 한 건(Session)을 고치는 순수 함수들. 화면은 이 함수들로만 기록을 바꾼다.
 
+/** examTitle 은 그때의 시험 제목이다. 주면 기록에 적어서, 나중에 그 시험을 찾지 못해도 기록 화면이 제목을 보여 준다(별도 검토 D2). */
 export function newSession(
   examId: string,
   gradedBefore: GradedBefore | null,
   seenBefore: SeenBefore | null,
   nowIso: string,
+  examTitle?: string,
 ): Session {
-  return {
+  const session: Session = {
     id: newId('s'),
     examId,
     createdAt: nowIso,
@@ -31,6 +33,8 @@ export function newSession(
     retries: {},
     selfChecks: {},
   };
+  if (examTitle !== undefined && examTitle.trim() !== '') session.examTitle = examTitle;
+  return session;
 }
 
 function omit<T>(rec: Record<number, T>, no: number): Record<number, T> {

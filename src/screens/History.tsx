@@ -123,7 +123,8 @@ export function History() {
           <ul className="rule-list mt4" aria-label={S.history.listLabel}>
             {sessions.map((s) => {
               const exam = findExam(s.examId);
-              const title = exam?.title ?? s.examId;
+              // 시험을 찾지 못한 기록은 기록을 시작한 때의 제목을 쓰고, 그것도 없는 옛 기록만 시험 id 를 쓴다(별도 검토 D2).
+              const title = exam?.title ?? s.examTitle ?? s.examId;
               // 같은 시험의 기록이 여러 건이어도 구분되게, 접근성 이름에 날짜와 점수를 함께 넣는다.
               // 시험, 날짜, 점수가 모두 같은 기록이 또 있으면 넣은 시각(시, 분)도 적고, 분까지 같으면 초도 적는다.
               const plain = describe(s, formatDate(s.createdAt));

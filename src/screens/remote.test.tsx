@@ -8,9 +8,9 @@ import { KST_OFFSET_MS } from '../logic/dates';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import { parseHash } from '../router';
 import { buildDemoSession } from '../state/demo';
-import { useDemoHandle, watchOldGradedRecords, type SessionHandle } from '../state/hooks';
+import { startSession, useDemoHandle, watchOldGradedRecords, type SessionHandle } from '../state/hooks';
 import { markGraded, markSaved, newSession } from '../state/session';
-import { defaultData, store } from '../state/store';
+import { defaultData, parseStored, store } from '../state/store';
 import { formatDate, S } from '../strings';
 import type { Exam, Session } from '../types';
 import { ExamSelect } from './ExamSelect';
@@ -46,6 +46,11 @@ function remoteExam(more: Partial<Exam> = {}): Exam {
 const unreleasedA = () => remoteExam({ answerReleased: false, items: examA.items.map(({ answer: _answer, ...it }) => it) });
 /** 정답이 든 판(rev 2). 정답을 처음 넣은 것이라 정답 판 번호(answersRev)는 1 그대로다. */
 const releasedA = () => remoteExam({ rev: 2 });
+
+/** 시험을 골라 기록을 시작한다(시험 선택 화면의 "답 넣기"와 같은 함수). */
+function startSessionFor(examId: string): void {
+  startSession(examId, 'not_yet', null);
+}
 
 /** 주소의 화면을 그린다(App.tsx 의 Routes). */
 function routeHtml(path: string): string {
@@ -113,6 +118,26 @@ describe('넘겨받은 시험 자료와 화면(작업 지시서 3의 5-2, 5-3)',
     saves.stop();
     expect(saves.count()).toBe(0);
     expect(store.get()).toBe(before);
+  });
+
+  it('기록에 시작한 때의 시험 제목이 있으면, 시험을 찾지 못해도 기록 화면과 지우기 이름에 시험 id 대신 그 제목을 쓴다(별도 검토 D2)', () => {
+    // 시험을 고르면 그때의 시험 제목을 기록에 적는다.
+    arrive([remoteExam()]);
+    startSessionFor('test-remote-a');
+    const made = store.get().sessions[0]!;
+    expect(made.examTitle).toBe('테스트 전용 시험 A');
+    // 저장한 글자에서 다시 읽어도 제목이 남고, 모양이 틀린 제목은 버린다(칸이 없는 옛 기록으로 읽는다).
+    expect(parseStored(JSON.stringify({ version: 1, sessions: [made], currentId: made.id }))!.sessions[0]!.examTitle).toBe('테스트 전용 시험 A');
+    for (const bad of [7, '', '   ', 'x'.repeat(201)]) {
+      expect('examTitle' in parseStored(JSON.stringify({ version: 1, sessions: [{ ...made, examTitle: bad }], currentId: made.id }))!.sessions[0]!).toBe(false);
+    }
+    // 그 시험 자료가 없는 채로 기록 화면을 그리면 이름 자리와 지우기 이름에 제목을 쓴다.
+    arrive([]);
+    const date = formatDate(made.createdAt);
+    const html = renderToStaticMarkup(<History />);
+    expect(html).toContain(`data-testid="history-missing-item"><span class="inline"><span class="strong">테스트 전용 시험 A</span></span><span class="sub">${date}</span>`);
+    expect(html).toContain(`aria-label="테스트 전용 시험 A 기록 지우기, ${date}"`);
+    expect(html).not.toContain('test-remote-a');
   });
 
   it('지금 기록의 시험을 찾지 못하면 처음 화면으로 보내지 않고 안내와 돌아갈 길이 있는 작은 화면을 보여 주고, 자료를 받으면 그 기록의 화면을 그린다', () => {

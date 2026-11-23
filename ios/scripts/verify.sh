@@ -15,8 +15,10 @@ PROJECT="$IOS_DIR/ScoreAnatomy.xcodeproj"
 SCHEME="ScoreAnatomy"
 PREFIX="SA검증"
 REPORT=(python3 "$IOS_DIR/scripts/verify_report.py")
-# 저장소 경로에 한글이 있으면 XCTest 가 실패를 기록하다 멈춘다. 테스트 빌드에만 디버그 맵 경로를 상대 경로로 바꾸는 링커 설정을 더한다.
-TEST_LDFLAGS='OTHER_LDFLAGS=$(inherited) -Wl,-oso_prefix,$(PROJECT_DIR)/'
+# 저장소가 데스크톱 폴더(개인정보 보호로 접근이 관리되는 곳)에 있으면 XCTest 가 실패 위치를 기호화하려고 빌드 중간 파일을 열다
+# 멈춘다(open 에서 막힘). 테스트 빌드에만 디버그 맵을 넣지 않는 링커 설정(-S)을 더한다. 실패한 줄은 소스의 파일과 줄 번호로
+# 따로 기록되므로 잃는 것이 없다(docs/ios_결정기록.md).
+TEST_LDFLAGS='OTHER_LDFLAGS=$(inherited) -Wl,-S'
 TEST_TIME=(-test-timeouts-enabled YES -default-test-execution-time-allowance 600 -maximum-test-execution-time-allowance 900)
 CREATED=""
 
@@ -118,10 +120,20 @@ for rt, devs in json.load(sys.stdin)["devices"].items():
   xcrun simctl delete "$old" >/dev/null 2>&1 || true
 done
 
-# 프로젝트 파일이 project.yml 과 같은지(XcodeGen 이 있을 때만).
+# 프로젝트 파일이 project.yml 과 같은지(XcodeGen 이 있을 때만). 지금 프로젝트 파일을 먼저 떠 두고, 다시 만든 것과 견준 뒤
+# 다르면 떠 둔 것으로 되돌린다. 검증은 늘 원래 프로젝트 파일로 한다.
 if command -v xcodegen >/dev/null 2>&1; then
+  rm -rf "$OUT/project-before" && mkdir -p "$OUT/project-before"
+  cp -R "$PROJECT" "$OUT/project-before/" && cp "$IOS_DIR/ScoreAnatomy/Info.plist" "$OUT/project-before/"
   (cd "$IOS_DIR" && xcodegen generate --quiet >/dev/null 2>&1)
-  if [ -z "$(git -C "$REPO" status --porcelain -- ios/ScoreAnatomy.xcodeproj ios/ScoreAnatomy/Info.plist)" ]; then meta projectInSync yes; else meta projectInSync no; fi
+  if diff -rq "$PROJECT" "$OUT/project-before/ScoreAnatomy.xcodeproj" >/dev/null 2>&1 && cmp -s "$IOS_DIR/ScoreAnatomy/Info.plist" "$OUT/project-before/Info.plist"; then
+    meta projectInSync yes
+  else
+    meta projectInSync "다름(project.yml 로 다시 만들면 바뀜, 원래 파일로 되돌림)"
+    diff -r "$PROJECT" "$OUT/project-before/ScoreAnatomy.xcodeproj" > "$OUT/project-diff.txt" 2>&1 || true
+    rm -rf "$PROJECT" && cp -R "$OUT/project-before/ScoreAnatomy.xcodeproj" "$PROJECT"
+    cp "$OUT/project-before/Info.plist" "$IOS_DIR/ScoreAnatomy/Info.plist"
+  fi
 else
   meta projectInSync "확인하지 못함(XcodeGen 없음)"
 fi
@@ -175,7 +187,16 @@ log "6, 11. 소스 검사"
 
 # ---------------------------------------------------------------- 2. 단위 테스트와 화면 테스트 빌드
 log "테스트 빌드(Debug)"
-xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" "$TEST_LDFLAGS" build-for-testing > "$OUT/build-tests.log" 2>&1 || log "테스트 빌드 실패(로그: $OUT/build-tests.log)"
+# 링커 설정이 모든 테스트 바이너리에 확실히 들어가게 처음부터 다시 만든다.
+xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" "$TEST_LDFLAGS" clean build-for-testing > "$OUT/build-tests.log" 2>&1 || log "테스트 빌드 실패(로그: $OUT/build-tests.log)"
+debug_map_entries=0
+for bin in "$BUILD/Build/Products/Debug-iphonesimulator/ScoreAnatomy.app/ScoreAnatomy.debug.dylib" \
+           "$BUILD/Build/Products/Debug-iphonesimulator/ScoreAnatomy.app/PlugIns/ScoreAnatomyTests.xctest/ScoreAnatomyTests" \
+           "$BUILD/Build/Products/Debug-iphonesimulator/ScoreAnatomyUITests-Runner.app/PlugIns/ScoreAnatomyUITests.xctest/ScoreAnatomyUITests"; do
+  [ -f "$bin" ] && debug_map_entries=$((debug_map_entries + $(dsymutil -s "$bin" 2>/dev/null | grep -c N_OSO)))
+done
+meta testDebugMapEntries "$debug_map_entries"
+[ "$debug_map_entries" = 0 ] || log "경고: 테스트 바이너리에 디버그 맵 항목이 $debug_map_entries 개 남아 있다(실패하면 멈출 수 있다)"
 "${REPORT[@]}" app "$BUILD/Build/Products/Debug-iphonesimulator/ScoreAnatomy.app" "$IOS_DIR/ScoreAnatomy/Web/manifest.json" debug "$OUT/app-debug.json"
 log "2. 단위 테스트"
 mkdir -p "$OUT/runs/unit"
@@ -189,7 +210,8 @@ run_ui main "$MAIN" iphone17 \
   ScoreAnatomyUITests/NetworkProbeTests ScoreAnatomyUITests/FontScaleUITests/testDefaultSize \
   ScoreAnatomyUITests/FontScaleUITests/testLargestStandardSize ScoreAnatomyUITests/FontScaleUITests/testAccessibilitySize \
   ScoreAnatomyUITests/FontScaleUITests/testLargestAccessibilitySizeIsCappedAtTwo ScoreAnatomyUITests/BridgeIntegrationTests \
-  ScoreAnatomyUITests/StartScreenTests ScoreAnatomyUITests/AccessibilityAuditTests ScoreAnatomyUITests/CaptureTests
+  ScoreAnatomyUITests/StartScreenTests ScoreAnatomyUITests/AccessibilityAuditTests ScoreAnatomyUITests/CaptureTests \
+  ScoreAnatomyUITests/KeyboardInputTests
 
 # 7. 켜 둔 채 글자 크기를 바꾸면 fontScale 로 알리는지(시뮬레이터의 글자 크기를 이 스크립트가 바꾼다).
 log "7. 켜 둔 채 글자 크기 바꾸기"
@@ -227,6 +249,17 @@ elif [ -n "$I18" ]; then
   run_ui ios18 "$I18" ios18 ScoreAnatomyUITests/FlowTests
 fi
 
+# ---------------------------------------------------------------- 추가: Release 구성으로 켜기
+# 1번의 Release 앱 검사를 마친 뒤에 한다. 화면 테스트를 붙이려고 이 빌드에만 ENABLE_TESTABILITY 를 켠다(코드는 같다).
+log "Release 구성으로 켜기"
+xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" \
+  "$TEST_LDFLAGS" ENABLE_TESTABILITY=YES build-for-testing > "$OUT/build-release-tests.log" 2>&1 || log "Release 테스트 빌드 실패(로그: $OUT/build-release-tests.log)"
+mkdir -p "$OUT/runs/release"
+TEST_RUNNER_SA_OUT="$OUT/runs/release" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+  -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release.xcresult" \
+  -only-testing:ScoreAnatomyUITests/ReleaseSmokeTests "${TEST_TIME[@]}" test-without-building > "$OUT/release.log" 2>&1
+"${REPORT[@]}" xcresult "$OUT/release.xcresult" "$OUT/ui-release.json" iphone17
+
 # ---------------------------------------------------------------- 13. 캡처 모으기
 rm -rf "$OUT/screens"
 mkdir -p "$OUT/screens"
@@ -237,7 +270,9 @@ rm -rf "$REPO/docs/screens-ios"
 mkdir -p "$REPO/docs/screens-ios/extra"
 [ -f "$OUT/runs/ipad/screens/ipad/light/시작.png" ] && cp "$OUT/runs/ipad/screens/ipad/light/시작.png" "$REPO/docs/screens-ios/extra/ipad-시작.png"
 [ -f "$OUT/runs/main/screens/iphone17/light/불러오기실패.png" ] && cp "$OUT/runs/main/screens/iphone17/light/불러오기실패.png" "$REPO/docs/screens-ios/extra/iphone17-불러오기실패.png"
-for f in "$OUT"/runs/main/screens/iphone17/light/글자-*.png; do [ -f "$f" ] && cp "$f" "$REPO/docs/screens-ios/extra/iphone17-$(basename "$f")"; done
+for f in "$OUT"/runs/main/screens/iphone17/light/글자-*.png "$OUT"/runs/main/screens/iphone17/light/진행자-자판.png "$OUT"/runs/release/screens/iphone17/light/release-기록.png; do
+  [ -f "$f" ] && cp "$f" "$REPO/docs/screens-ios/extra/iphone17-$(basename "$f")"
+done
 
 # ---------------------------------------------------------------- 문서
 log "docs/ios_검증결과.md 쓰기"

@@ -49,7 +49,7 @@ ios/scripts/verify.sh
 - 시뮬레이터를 새로 만들어(이름이 `SA검증-` 으로 시작) 빌드, 단위 테스트, 화면 테스트, 정적 검사, 캡처를 모두 돌리고 끝나면 그 시뮬레이터를 지워요. 30분쯤 걸려요.
 - 결과는 [docs/ios_검증결과.md](../docs/ios_검증결과.md), 캡처는 `docs/screens-ios`, 로그와 테스트 결과 묶음은 `ios/build/verify` 에 남아요(커밋하지 않음).
 - Xcode 에서 테스트만 돌릴 때는 Command + U 예요. 화면 테스트는 DEBUG 전용 실행 인자로 기록 폴더를 따로 쓰고 탐침을 켜요(`ScoreAnatomy/Debug/DebugOptions.swift`).
-- 주의: 저장소 경로에 한글(예: "고딩")이 있으면 Xcode 26.4 의 XCTest 가 테스트 실패를 기록하다 멈춰요(실패 메시지 없이 시간 초과). verify.sh 는 테스트 빌드에만 링커 설정 `-Wl,-oso_prefix,$(PROJECT_DIR)/` 를 덧붙여 피해요. Xcode 에서 직접 테스트를 돌리다 멈추면 저장소를 영문 경로에 두거나 verify.sh 를 써요.
+- 주의: 저장소가 맥의 데스크톱 폴더 안에 있으면 Xcode 26.4 의 XCTest 가 테스트 실패를 기록하다 멈춰요(실패 메시지 없이 시간 초과). 실패 위치를 찾으려고 빌드 중간 파일(ios/build 아래 .o)을 열다 막혀요. verify.sh 는 테스트 빌드에만 링커 설정 `-Wl,-S`(디버그 맵 빼기)를 덧붙여 피해요. Xcode 에서 직접 테스트를 돌리다 멈추면 저장소를 데스크톱 밖(예: 홈 폴더 아래 Developer)으로 옮기거나 verify.sh 를 써요. 한글이 든 경로 자체는 문제가 아니었어요.
 
 ## 4. 프로젝트 파일을 다시 만들 때
 

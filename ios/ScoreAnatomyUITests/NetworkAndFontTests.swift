@@ -52,10 +52,13 @@ final class LoopbackListener: @unchecked Sendable {
         lock.unlock()
         connection.start(queue: queue)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 512) { [weak self] data, _, _, _ in
-            let text = data.map { String(decoding: $0, as: UTF8.self) } ?? ""
-            self?.lock.lock()
-            self?.lines.append(String(text.split(separator: "\r\n").first ?? "(TLS 또는 빈 요청)"))
-            self?.lock.unlock()
+            // 내용이 온 연결만 요청으로 센다(HTTP 의 첫 줄, TLS 라면 알아볼 수 없는 바이트).
+            if let data, !data.isEmpty {
+                let text = String(decoding: data, as: UTF8.self)
+                self?.lock.lock()
+                self?.lines.append(String(text.split(separator: "\r\n").first ?? "(알아볼 수 없는 바이트)"))
+                self?.lock.unlock()
+            }
             connection.cancel()
         }
     }
@@ -69,7 +72,18 @@ final class NetworkProbeTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func runProbe(control: Bool) throws -> (Int, [String: Any], [String: Any], [String]) {
+    struct ProbeResult {
+        /// 스크립트로 낸 요청(탐침)이 끝난 뒤 수신기에 닿은 연결 수.
+        var scriptConnections: Int
+        /// 사람이 링크를 누른 뒤까지 닿은 연결 수.
+        var connectionsAfterTaps: Int
+        /// 내용(요청)이 온 연결의 첫 줄.
+        var requests: [String]
+        var outcomes: [String: Any]
+        var stats: [String: Any]
+    }
+
+    private func runProbe(control: Bool) throws -> ProbeResult {
         let listener = try LoopbackListener()
         XCTAssertTrue(listener.start(), "시험용 수신기가 떠야 한다")
         defer { listener.stop() }
@@ -80,32 +94,64 @@ final class NetworkProbeTests: XCTestCase {
         let output = try XCTUnwrap(handle.probeFile("probe-network.json", timeout: 90), "탐침 결과")
         XCTAssertEqual(output["ok"] as? Bool, true, "탐침이 끝까지 돌았다: \(output)")
         Thread.sleep(forTimeInterval: 1.5)
-        let value = output["value"] as? [String: Any] ?? [:]
-        return (listener.connections, value, handle.shellStats(), listener.firstLines)
+        let scriptConnections = listener.connections
+        // 사람이 누른 링크(사용자 동작)는 팝업 차단을 지나 껍데기까지 온다. 새 창 링크와 바깥 링크를 붙이고 실제로 누른다.
+        _ = handle.evaluate("""
+        const make = (id, top, target) => {
+          const a = document.createElement('a');
+          a.id = id; a.textContent = id; a.href = 'http://127.0.0.1:\(listener.port)/' + id;
+          if (target) a.target = target;
+          a.style.cssText = 'position:fixed;left:20px;top:' + top + 'px;z-index:99999;display:block;padding:16px;font-size:20px;background:#fff;color:#000';
+          document.body.appendChild(a);
+        };
+        make('sa-probe-blank', 160, '_blank');
+        make('sa-probe-link', 260, null);
+        return true;
+        """)
+        for id in ["sa-probe-blank", "sa-probe-link"] {
+            let link = handle.web.links.matching(handle.exact(id)).firstMatch
+            XCTAssertTrue(link.waitForExistence(timeout: 5), "\(id) 링크")
+            Thread.sleep(forTimeInterval: 0.6)
+            link.tap()
+            Thread.sleep(forTimeInterval: 1.0)
+        }
+        XCTAssertEqual(handle.evaluate("return location.href.startsWith('file:');") as? Bool, true, "처음 문서에 머문다")
+        Thread.sleep(forTimeInterval: 1.0)
+        return ProbeResult(scriptConnections: scriptConnections, connectionsAfterTaps: listener.connections, requests: listener.firstLines,
+                           outcomes: output["value"] as? [String: Any] ?? [:], stats: handle.shellStats())
     }
 
     func testRequestsToOutsideAreBlocked() throws {
-        let (connections, value, stats, lines) = try runProbe(control: false)
-        XCTAssertEqual(connections, 0, "바깥으로 나간 요청이 없어야 한다: \(lines)")
-        XCTAssertEqual(value["stillOnDocument"] as? Bool, true, "처음 문서에 머문다: \(value["href"] ?? "")")
-        XCTAssertEqual(value["windowOpenReturnedNull"] as? Bool, true, "새 창을 열지 않는다")
+        let r = try runProbe(control: false)
+        XCTAssertEqual(r.scriptConnections, 0, "스크립트로 낸 바깥 요청은 연결조차 닿지 않는다")
+        XCTAssertEqual(r.requests, [], "어떤 요청 내용도 바깥으로 나가지 않는다")
+        XCTAssertEqual(r.outcomes["stillOnDocument"] as? Bool, true, "처음 문서에 머문다: \(r.outcomes["href"] ?? "")")
+        XCTAssertEqual(r.outcomes["windowOpenReturnedNull"] as? Bool, true, "스크립트가 연 새 창은 열리지 않는다")
         for key in ["fetch", "fetchHttps", "xhr", "image", "script", "style", "websocket", "eventSource"] {
-            let outcome = "\(value[key] ?? "")"
+            let outcome = "\(r.outcomes[key] ?? "")"
             XCTAssertFalse(outcome == "loaded" || outcome == "open", "\(key) 가 성공하면 안 된다: \(outcome)")
         }
-        let navigations = stats["blockedNavigations"] as? [String] ?? []
-        let windows = stats["blockedWindows"] as? [String] ?? []
-        XCTAssertGreaterThanOrEqual(navigations.count, 3, "링크, location, form 이동을 껍데기가 취소했다: \(navigations)")
-        XCTAssertGreaterThanOrEqual(windows.count, 1, "새 창 요청을 껍데기가 막았다: \(windows)")
-        recordMetric(["kind": "network", "mode": "blocked", "connections": connections, "outcomes": value, "blockedNavigations": navigations.count, "blockedWindows": windows.count])
+        let navigations = r.stats["blockedNavigations"] as? [String] ?? []
+        // 스크립트가 연 새 창(window.open, 스크립트의 click)은 WebKit 의 팝업 차단(javaScriptCanOpenWindowsAutomatically = false)이
+        // 먼저 막는다(window.open 이 null). 사람이 누른 새 창 링크는 껍데기의 createWebViewWith 까지 와서 껍데기가 막는다.
+        let windows = r.stats["blockedWindows"] as? [String] ?? []
+        XCTAssertGreaterThanOrEqual(navigations.count, 4, "링크, location, form 이동과 사람이 누른 바깥 링크를 껍데기가 취소했다: \(navigations)")
+        XCTAssertTrue(navigations.contains { $0.hasSuffix("/sa-probe-link") }, "사람이 누른 바깥 링크를 껍데기가 취소했다: \(navigations)")
+        XCTAssertTrue(windows.contains { $0.hasSuffix("/sa-probe-blank") }, "사람이 누른 새 창 링크를 껍데기가 막았다: \(windows)")
+        // 사람이 링크를 누르면 WebKit 이 요청을 정하기 전에 TCP 연결을 미리 맺을 수 있다(내용은 보내지 않음).
+        // 콘텐츠 규칙과 이동 취소로는 막히지 않는다. 웹 묶음에는 바깥 링크가 없어서(정적 검사) 실제로는 생기지 않는다. 숫자만 남긴다.
+        recordMetric(["kind": "network", "mode": "blocked", "connections": r.scriptConnections, "preconnectsAfterTaps": r.connectionsAfterTaps - r.scriptConnections,
+                      "requests": r.requests, "outcomes": r.outcomes, "blockedNavigations": navigations.count, "blockedWindows": windows.count])
     }
 
     func testControlRunWithoutRulesWouldReachListener() throws {
         // 대조 실행: 차단 규칙을 걸지 않으면 같은 탐침이 수신기에 닿는다(탐침과 수신기가 새는 요청을 잡아낸다는 증거).
-        let (connections, value, stats, lines) = try runProbe(control: true)
-        XCTAssertGreaterThanOrEqual(connections, 1, "규칙이 없으면 요청이 닿아야 한다: \(value)")
-        XCTAssertEqual(value["stillOnDocument"] as? Bool, true, "규칙이 없어도 이동은 껍데기가 취소한다")
-        recordMetric(["kind": "network", "mode": "control", "connections": connections, "requests": lines, "blockedNavigations": (stats["blockedNavigations"] as? [String] ?? []).count])
+        let r = try runProbe(control: true)
+        XCTAssertGreaterThanOrEqual(r.scriptConnections, 1, "규칙이 없으면 요청이 닿아야 한다: \(r.outcomes)")
+        XCTAssertFalse(r.requests.isEmpty, "규칙이 없으면 요청 내용도 닿는다")
+        XCTAssertEqual(r.outcomes["stillOnDocument"] as? Bool, true, "규칙이 없어도 이동은 껍데기가 취소한다")
+        recordMetric(["kind": "network", "mode": "control", "connections": r.scriptConnections, "requests": r.requests.count,
+                      "blockedNavigations": (r.stats["blockedNavigations"] as? [String] ?? []).count])
     }
 }
 

@@ -16,11 +16,14 @@ final class RestartTests: XCTestCase {
         let handle = AppHandle(name: "restart-12")
         handle.launch()
         handle.startExampleA()
-        handle.enterAnswers(from: 1, to: 12)
-        XCTAssertTrue(handle.nowNumber(13).waitForExistence(timeout: 5))
+        handle.enterAnswers(from: 1, to: 11)
+        XCTAssertTrue(handle.nowNumber(12).waitForExistence(timeout: 5))
+        // 12번째 답 키 누름이 끝난 때부터(XCUITest 의 누름은 앱이 쉴 때까지 기다린 뒤 돌아온다) 파일에 보이기까지 잰다.
+        handle.tapKey("\(ExampleA.answers[12]!)")
         let tapped = Date()
         XCTAssertTrue(handle.waitForStore { self.answerCount($0) == 12 }, "12번까지 store.json 에 저장된다")
         let landed = Date().timeIntervalSince(tapped)
+        XCTAssertTrue(handle.nowNumber(13).waitForExistence(timeout: 5))
 
         handle.terminate()
         handle.launch()
@@ -74,6 +77,17 @@ final class RhythmTests: XCTestCase {
         handle.launch()
         handle.goToMarksWithExampleAnswers()
         XCTAssertTrue(handle.button("없어요, 채점하기").exists, "표시가 0개일 때의 채점 버튼")
+        // 칸마다 손가락 이벤트와 click 이 웹에 언제 오는지 기록해 둔다(근거로 남긴다).
+        _ = handle.evaluate("""
+        window.__saEvents = [];
+        for (const no of [9, 14, 20]) {
+          const cell = document.querySelector('[data-mark-cell="' + no + '"]');
+          for (const t of ['touchstart', 'touchend', 'click', 'dblclick']) {
+            cell.addEventListener(t, (e) => window.__saEvents.push({ no, t, at: performance.now(), detail: e.detail || 0 }), true);
+          }
+        }
+        return true;
+        """)
         // 화면이 막 바뀐 직후의 보호가 끝난 뒤에 시작한다.
         Thread.sleep(forTimeInterval: 0.7)
         var allGaps: [TimeInterval] = []
@@ -83,12 +97,31 @@ final class RhythmTests: XCTestCase {
             let point = center(cell)
             let gaps = tapRhythm(handle.app, points: [point, point], gap: 0.2)
             allGaps += gaps
-            XCTAssertTrue(handle.waitLabel(cell, contains: "찍음"), "\(no)번을 0.2초 간격으로 두 번 누르면 찍음: \(cell.label)")
+            XCTAssertTrue(handle.waitLabel(cell, contains: "찍음"), "\(no)번을 이어서 두 번 누르면 찍음: \(cell.label)")
         }
         XCTAssertTrue(handle.button("채점하기").exists, "표시를 붙이면 '채점하기'")
         XCTAssertEqual(noticeCount(handle), 0, "버린 누름 알림이 없다")
         XCTAssertLessThan(allGaps.max() ?? 9, 0.5, "실제 간격이 보호 시간(0.5초)보다 짧아야 의미가 있다: \(allGaps)")
-        recordMetric(["kind": "rhythm", "case": "marks-double", "gaps": allGaps])
+
+        // 근거: 첫 click 은 손을 뗀 뒤 곧바로 온다. 그보다 늦게 다시 누르면 두 번 모두 click 으로 들어간다.
+        let events = handle.evaluate("return window.__saEvents;") as? [[String: Any]] ?? []
+        let nine = events.filter { ($0["no"] as? Int) == 9 }
+        let firstEnd = nine.first { ($0["t"] as? String) == "touchend" }?["at"] as? Double ?? 0
+        let clicks = nine.filter { ($0["t"] as? String) == "click" }
+        let firstClick = clicks.first?["at"] as? Double ?? 0
+        XCTAssertEqual(clicks.count, 2, "두 번 누름이 click 두 번으로 들어왔다: \(nine)")
+        XCTAssertLessThan(firstClick - firstEnd, 50, "첫 click 이 손을 뗀 뒤 곧바로 왔다(ms)")
+
+        // 참고: XCUITest 의 doubleTap 은 손을 떼고 2ms 쯤 만에 다시 누른다(사람보다 훨씬 빠름).
+        // 이때 WebKit 은 첫 click 을 내지 않고 click 한 번(detail 2)과 dblclick 만 낸다. 판정에 넣지 않고 기록만 한다.
+        let cell20 = handle.markCell(20)
+        handle.reveal(cell20)
+        Thread.sleep(forTimeInterval: 0.7)
+        cell20.doubleTap()
+        Thread.sleep(forTimeInterval: 1.0)
+        let after = handle.evaluate("return window.__saEvents.filter((e) => e.no === 20).map((e) => e.t + ':' + e.detail);") as? [String] ?? []
+        recordMetric(["kind": "rhythm", "case": "marks-double", "gaps": allGaps, "firstClickAfterTouchEndMs": firstClick - firstEnd,
+                      "fastDoubleTapLabel": cell20.label, "fastDoubleTapEvents": after])
     }
 
     func testKeysAfterFixingNineAreNotEntered() throws {

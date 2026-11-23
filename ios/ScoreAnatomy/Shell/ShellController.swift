@@ -71,36 +71,7 @@ final class ShellController {
         appVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         self.background = background ?? AppBackgroundTasks()
 
-        let configuration = WKWebViewConfiguration()
-        // 웹 쪽 저장소(쿠키, localStorage 등)는 남기지 않는다. 기록은 다리로 store.json 에만 둔다.
-        configuration.websiteDataStore = .nonPersistent()
-        // 전화번호나 주소를 자동으로 링크로 바꾸지 않는다.
-        configuration.dataDetectorTypes = []
-        // 사기 사이트 경고(바깥 조회)를 쓰지 않는다. 바깥 주소를 열지 않으므로 필요 없다.
-        configuration.preferences.isFraudulentWebsiteWarningEnabled = false
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        for name in BridgeSpec.Inbound.allCases {
-            configuration.userContentController.add(messageProxy, contentWorld: .page, name: name.rawValue)
-        }
-
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        // 켤 때 깜빡이지 않게 웹뷰와 그 뒤를 토큰 배경색으로 칠한다.
-        webView.isOpaque = false
-        webView.backgroundColor = Palette.background
-        webView.underPageBackgroundColor = Palette.background
-        webView.scrollView.backgroundColor = Palette.background
-        // 화면 전체가 당겨져 튕기지 않게. 위아래 여백은 웹이 안전 영역 값으로 처리한다.
-        webView.scrollView.bounces = false
-        webView.scrollView.alwaysBounceVertical = false
-        webView.scrollView.alwaysBounceHorizontal = false
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        // 길게 눌러 뜨는 미리보기와 가장자리 밀기로 뒤로 가기를 끈다.
-        webView.allowsLinkPreview = false
-        webView.allowsBackForwardNavigationGestures = false
-        #if DEBUG
-        // Safari 웹 검사기는 Debug 빌드에서만 켠다.
-        webView.isInspectable = true
-        #endif
+        webView = Self.makeWebView(messageHandler: messageProxy)
 
         messageProxy.owner = self
         delegate.owner = self
@@ -118,6 +89,41 @@ final class ShellController {
 
         observeSystem()
         start()
+    }
+
+    /// 껍데기의 웹뷰를 만든다. 설정을 한 곳에 모아 단위 테스트가 확인할 수 있게 했다.
+    static func makeWebView(messageHandler: WKScriptMessageHandler) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        // 웹 쪽 저장소(쿠키, localStorage 등)는 남기지 않는다. 기록은 다리로 store.json 에만 둔다.
+        configuration.websiteDataStore = .nonPersistent()
+        // 전화번호나 주소를 자동으로 링크로 바꾸지 않는다.
+        configuration.dataDetectorTypes = []
+        // 사기 사이트 경고(바깥 조회)를 쓰지 않는다. 바깥 주소를 열지 않으므로 필요 없다.
+        configuration.preferences.isFraudulentWebsiteWarningEnabled = false
+        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        for name in BridgeSpec.Inbound.allCases {
+            configuration.userContentController.add(messageHandler, contentWorld: .page, name: name.rawValue)
+        }
+
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        // 켤 때 깜빡이지 않게 웹뷰와 그 뒤를 토큰 배경색으로 칠한다.
+        webView.isOpaque = false
+        webView.backgroundColor = Palette.background
+        webView.underPageBackgroundColor = Palette.background
+        webView.scrollView.backgroundColor = Palette.background
+        // 화면 전체가 당겨져 튕기지 않게. 위아래 여백은 웹이 안전 영역 값으로 처리한다.
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        // 길게 눌러 뜨는 미리보기와 가장자리 밀기로 뒤로 가기를 끈다.
+        webView.allowsLinkPreview = false
+        webView.allowsBackForwardNavigationGestures = false
+        #if DEBUG
+        // Safari 웹 검사기는 Debug 빌드에서만 켠다.
+        webView.isInspectable = true
+        #endif
+        return webView
     }
 
     // MARK: 싣기

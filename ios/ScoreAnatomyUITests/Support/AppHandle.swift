@@ -136,6 +136,16 @@ final class AppHandle {
         return nil
     }
 
+    /// 껍데기 기록(shell-stats.json)이 조건을 만족할 때까지 기다린다.
+    func waitForStats(timeout: TimeInterval = 5, _ condition: ([String: Any]) -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition(shellStats()) { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return false
+    }
+
     func shellStats() -> [String: Any] {
         let url = probeDirectory.appendingPathComponent("shell-stats.json")
         guard let data = try? Data(contentsOf: url) else { return [:] }

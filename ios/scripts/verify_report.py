@@ -18,8 +18,9 @@ import struct
 import subprocess
 import sys
 
-FORBIDDEN = {"—": "U+2014", "–": "U+2013", "·": "U+00B7", "ㆍ": "U+318D", "・": "U+30FB", "‧": "U+2027"}
-EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿️]")
+# 금지 문자는 글자 대신 코드 번호로 적는다(이 파일 자신이 검사에 걸리지 않게).
+FORBIDDEN = {chr(c): f"U+{c:04X}" for c in (0x2014, 0x2013, 0x00B7, 0x318D, 0x30FB, 0x2027)}
+EMOJI = re.compile("[" + chr(0x1F000) + "-" + chr(0x1FAFF) + chr(0x2600) + "-" + chr(0x27BF) + chr(0xFE0F) + "]")
 
 # 껍데기 소스에 없어야 하는 네트워크 API(시험 코드는 대상이 아니다).
 NETWORK_APIS = [
@@ -34,18 +35,18 @@ PERMISSION_APIS = [r"\bAVCaptureDevice\b", r"\bPHPhotoLibrary\b", r"\bCLLocation
 # 사유를 적어야 하는 API(Apple 의 required reason API 목록에서 이 앱과 관련 있을 수 있는 이름).
 REQUIRED_REASON = {
     "NSPrivacyAccessedAPICategoryUserDefaults": [r"\bUserDefaults\b", r"\bNSUserDefaults\b", r"@AppStorage"],
-    "NSPrivacyAccessedAPICategoryFileTimestamp": [r"\bcreationDate\b", r"\bmodificationDate\b", r"contentModificationDate", r"\battributesOfItem\b", r"fileModificationDate", r"NSFileCreationDate", r"NSFileModificationDate", r"\bgetattrlist", r"\bstat\(", r"\bfstat\(", r"\blstat\(", r"\bfstatat\(", r"creationDateKey", r"contentModificationDateKey"],
+    "NSPrivacyAccessedAPICategoryFileTimestamp": [r"\bcreationDate\b", r"\bmodificationDate\b", r"contentModificationDate", r"\battributesOfItem\b", r"fileModificationDate", r"NSFileCreationDate", r"NSFileModificationDate", r"\bf?getattrlist", r"getattrlistbulk", r"getattrlistat", r"\bstat\(", r"\bfstat\(", r"\blstat\(", r"\bfstatat\(", r"creationDateKey", r"contentModificationDateKey", r"contentAccessDateKey", r"attributeModificationDateKey"],
     "NSPrivacyAccessedAPICategorySystemBootTime": [r"\bsystemUptime\b", r"\bmach_absolute_time\b"],
-    "NSPrivacyAccessedAPICategoryDiskSpace": [r"volumeAvailableCapacity", r"\bstatfs\(", r"\bfstatfs\(", r"systemFreeSize", r"systemSize"],
+    "NSPrivacyAccessedAPICategoryDiskSpace": [r"volumeAvailableCapacity", r"volumeTotalCapacity", r"\bstatfs\(", r"\bfstatfs\(", r"\bstatvfs\(", r"\bfstatvfs\(", r"systemFreeSize", r"systemSize", r"NSFileSystemFreeSize", r"NSFileSystemSize"],
     "NSPrivacyAccessedAPICategoryActiveKeyboards": [r"\bactiveInputModes\b"],
 }
 # 바이너리에서 찾는 기호(앱 코드가 직접 부르는 것).
 BINARY_SYMBOLS = {
     "network": ["_OBJC_CLASS_$_NSURLSession", "_OBJC_CLASS_$_NSURLConnection", "_nw_connection_create", "_nw_listener_create", "_socket", "_connect", "_getaddrinfo", "_CFSocketCreate", "_CFStreamCreatePairWithSocketToHost", "_$s10Foundation10URLSessionC"],
     "notification": ["_OBJC_CLASS_$_UNUserNotificationCenter"],
-    "requiredReason": ["_OBJC_CLASS_$_NSUserDefaults", "_$s10Foundation12UserDefaultsC", "_stat", "_fstat", "_lstat", "_fstatat", "_getattrlist", "_mach_absolute_time", "_statfs", "_fstatfs"],
+    "requiredReason": ["_OBJC_CLASS_$_NSUserDefaults", "_$s10Foundation12UserDefaultsC", "_stat", "_fstat", "_lstat", "_fstatat", "_getattrlist", "_fgetattrlist", "_getattrlistbulk", "_getattrlistat", "_mach_absolute_time", "_statfs", "_fstatfs", "_statvfs", "_fstatvfs"],
 }
-DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "shell-stats.json", "probe-network.json"]
+DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "shell-stats.json", "probe-network.json", "setInspectable:"]
 
 
 def load(path, default=None):
@@ -172,6 +173,18 @@ def cmd_scan(ios_dir, repo_dir, out):
             if name in files:
                 report["packages"].append(os.path.relpath(os.path.join(base, name), repo_dir))
 
+    # 웹 묶음 안의 바깥 링크(사람이 누르면 WebKit 이 미리 연결할 수 있다), 새 창, 자원 미리 연결 표시.
+    bundle_links = {}
+    for name in ("app-test", "app-release"):
+        text = open(os.path.join(shell_dir, "Web", name, "index.html"), encoding="utf-8").read()
+        bundle_links[name] = {
+            "absoluteHref": len(re.findall(r"href\s*=\s*[\"']https?:", text)),
+            "windowOpen": text.count("window.open"),
+            "targetBlank": text.count("_blank"),
+            "linkPreconnectTag": len(re.findall(r"<link[^>]+rel=[\"']?(?:preconnect|dns-prefetch|prefetch)", text)),
+        }
+    report["bundleLinks"] = bundle_links
+
     privacy = plistlib.load(open(os.path.join(shell_dir, "Resources", "PrivacyInfo.xcprivacy"), "rb"))
     report["privacyManifest"] = {
         "tracking": privacy.get("NSPrivacyTracking"),
@@ -260,10 +273,12 @@ def cmd_app(app, manifest_path, kind, out):
     for binary in macho_binaries(app):
         rel = os.path.relpath(binary, app)
         otool = subprocess.run(["otool", "-L", binary], capture_output=True, text=True).stdout
-        for line in otool.splitlines()[1:]:
+        for line in otool.splitlines():
             line = line.strip()
-            if line:
-                libs.append({"binary": rel, "lib": line.split(" (")[0], "weak": "weak" in line})
+            # 머리줄("파일:" 또는 "파일 (architecture arm64):")은 라이브러리가 아니다. 여러 아키텍처 바이너리는 머리줄이 여럿이다.
+            if not line or line.endswith(":"):
+                continue
+            libs.append({"binary": rel, "lib": line.split(" (")[0], "weak": "weak" in line})
         undefined = subprocess.run(["nm", "-u", binary], capture_output=True, text=True).stdout.split()
         for group, names in BINARY_SYMBOLS.items():
             found = sorted({n for n in names for u in undefined if u == n or u.startswith(n) and n.endswith("C")})
@@ -383,13 +398,15 @@ def cmd_render(out_dir, doc_path):
         items.append({"no": no, "title": title, "status": status, "numbers": numbers, "criteria": criteria})
 
     # 1 빌드
-    rel_ok = release_app.get("exists") and release_app.get("bundlePresent") and not release_app.get("otherBundlePresent") and release_app.get("sha256Matches") and not release_app.get("testText") and not any(release_app.get("debugMarkers", {}).values()) and not release_app.get("swiftWebKit") and not release_app.get("nonSystemLibraries")
-    dbg_control = debug_app.get("exists") and debug_app.get("bundlePresent") and bool(debug_app.get("testText")) and any(debug_app.get("debugMarkers", {}).values())
-    build_ok = env.get("debugBuild") == "ok" and env.get("releaseBuild") == "ok" and rel_ok and dbg_control
+    rel_ok = bool(release_app.get("exists") and release_app.get("bundlePresent") and not release_app.get("otherBundlePresent") and release_app.get("sha256Matches") and not release_app.get("testText") and not any(release_app.get("debugMarkers", {}).values()) and not release_app.get("swiftWebKit") and not release_app.get("nonSystemLibraries") and release_app.get("versionMatchesManifest"))
+    dbg_control = bool(debug_app.get("exists") and debug_app.get("bundlePresent") and debug_app.get("testText") and any(debug_app.get("debugMarkers", {}).values()))
+    warnings_ok = str(env.get("debugWarnings")) == "0" and str(env.get("releaseWarnings")) == "0"
+    sync_ok = env.get("projectInSync") == "yes"
+    build_ok = env.get("debugBuild") == "ok" and env.get("releaseBuild") == "ok" and rel_ok and dbg_control and warnings_ok and sync_ok and env.get("manifestSha") == "yes"
     markers_hit = sum(len(v) for v in release_app.get("debugMarkers", {}).values())
     add(1, "빌드(Debug, Release, 시뮬레이터)", "통과" if build_ok else "실패",
-        f"Xcode {env.get('xcodeVersion', '?')}({env.get('xcodeBuild', '?')}), SDK {env.get('sdk', '?')}. Debug {env.get('debugBuild')}, 경고 {env.get('debugWarnings')}개. Release {env.get('releaseBuild')}, 경고 {env.get('releaseWarnings')}개(도구 안내 줄 {env.get('toolNotes', '?')}줄은 따로 셈). Release 앱: 시험용 묶음 {'있음' if release_app.get('otherBundlePresent') else '없음'}, '테스트 시작하기' {len(release_app.get('testText', []))}건, DEBUG 표식 {markers_hit}건, libswiftWebKit 연결 {len(release_app.get('swiftWebKit', []))}건, 묶음 SHA-256 {'일치' if release_app.get('sha256Matches') else '불일치'}. 대조로 Debug 앱에는 '테스트 시작하기' {len(debug_app.get('testText', []))}건, DEBUG 표식 {sum(len(v) for v in debug_app.get('debugMarkers', {}).values())}건이 있다. 기기용 컴파일(서명 없음) {env.get('deviceBuild', '?')}",
-        "두 빌드 성공, 컴파일러 경고 0, Release 안의 시험용 묶음과 DEBUG 표식 0건(Debug 에서는 찾아져야 검사가 맞다)")
+        f"Xcode {env.get('xcodeVersion', '?')}(빌드 {env.get('xcodeBuild', '?')}), SDK {env.get('sdk', '?')}. Debug {env.get('debugBuild')}, 컴파일러 경고 {env.get('debugWarnings')}개. Release {env.get('releaseBuild')}, 컴파일러 경고 {env.get('releaseWarnings')}개(도구 안내 줄 {env.get('toolNotes', '?')}줄은 경고가 아니라 따로 셈). Release 앱: 시험용 묶음 {'있음' if release_app.get('otherBundlePresent') else '없음'}, '테스트 시작하기' {len(release_app.get('testText', []))}건, DEBUG 표식 {markers_hit}건, libswiftWebKit 연결 {len(release_app.get('swiftWebKit', []))}건, 시스템 밖 라이브러리 {len(release_app.get('nonSystemLibraries', []))}개, 묶음 SHA-256 {'일치' if release_app.get('sha256Matches') else '불일치'}, 버전 {release_app.get('info', {}).get('CFBundleShortVersionString')}({'manifest 와 같음' if release_app.get('versionMatchesManifest') else 'manifest 와 다름'}). 대조로 Debug 앱에는 '테스트 시작하기' {len(debug_app.get('testText', []))}건, DEBUG 표식 {sum(len(v) for v in debug_app.get('debugMarkers', {}).values())}건이 있다. 커밋된 프로젝트 파일과 project.yml {('일치' if sync_ok else '불일치: ' + str(env.get('projectInSync')))}. manifest 의 SHA-256 {'일치' if env.get('manifestSha') == 'yes' else '불일치'}. 기기용 컴파일(서명 없음) {env.get('deviceBuild', '?')}",
+        "두 빌드 성공, 컴파일러 경고 0, Release 안의 시험용 묶음과 DEBUG 표식 0건(Debug 에서는 찾아져야 검사가 맞다), 프로젝트 파일이 project.yml 과 같음")
 
     # 2 단위
     unit_tests = tests_of(unit)
@@ -410,11 +427,20 @@ def cmd_render(out_dir, doc_path):
     add(5, "사람 손 박자", "통과" if all_passed(rhythm, 3) else "실패", fmt_tests(rhythm) + rhythm_numbers(rows), "3개 통과, 실제 누름 간격이 보호 시간 0.5초보다 짧음")
 
     net = suite("NetworkProbeTests")
-    static_ok = (not [x for x in scan.get("network", []) if True]) and not scan.get("notification") and not scan.get("tracking") and not scan.get("permissionApis") and not scan.get("packages") and not scan.get("permissionKeys") and not release_app.get("permissionKeys") and release_app.get("privacyManifest") and not scan.get("requiredReason") and not release_app.get("symbols", {}).get("network") and not release_app.get("symbols", {}).get("notification")
+    pm = scan.get("privacyManifest", {})
+    found_reason = sum(len(v) for v in scan.get("requiredReason", {}).values())
+    release_reason_symbols = release_app.get("symbols", {}).get("requiredReason", [])
+    info = scan.get("infoPlist", {})
     http_release = [h for h in scan.get("httpLiterals", []) if not h.get("debugOnly")]
-    add(6, "통신과 권한", "통과" if all_passed(net, 2) and static_ok and not http_release else "실패",
-        fmt_tests(net) + network_numbers(rows) + f" 정적 검사: 네트워크 API {len(scan.get('network', []))}건, 외부 패키지 {len(scan.get('packages', []))}개, 권한 문구 {len(scan.get('permissionKeys', []))}개(Release Info.plist {len(release_app.get('permissionKeys', []))}개), 알림 API {len(scan.get('notification', []))}건, 추적 API {len(scan.get('tracking', []))}건, 권한이 필요한 기기 API {len(scan.get('permissionApis', []))}건, DEBUG 밖 소스의 http(s) 주소 글자 {len(http_release)}건. PrivacyInfo.xcprivacy {'있음' if release_app.get('privacyManifest') else '없음'}(추적 {scan.get('privacyManifest', {}).get('tracking')}, 수집 자료 {len(scan.get('privacyManifest', {}).get('collected', []))}개, 사유 API 선언 {len(scan.get('privacyManifest', {}).get('accessedCategories', []))}개). 소스에서 찾은 사유 API 이름 {sum(len(v) for v in scan.get('requiredReason', {}).values())}건, Release 바이너리의 사유 API 기호 {len(release_app.get('symbols', {}).get('requiredReason', []))}건",
-        "탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 정적 검사 모두 0, 개인정보 매니페스트 있음, 찾은 사유 API 와 선언이 같음(둘 다 0)")
+    static_ok = bool(scan) and bool(release_app) and not scan.get("network") and not scan.get("notification") and not scan.get("tracking") and not scan.get("permissionApis") \
+        and not scan.get("packages") and not scan.get("permissionKeys") and not release_app.get("permissionKeys") and release_app.get("privacyManifest") \
+        and pm.get("tracking") is False and not pm.get("trackingDomains") and not pm.get("collected") and len(pm.get("accessedCategories", [])) == found_reason == 0 \
+        and not release_reason_symbols and not release_app.get("symbols", {}).get("network") and not release_app.get("symbols", {}).get("notification") \
+        and info.get("ITSAppUsesNonExemptEncryption") is False and info.get("UISupportedInterfaceOrientations") == ["UIInterfaceOrientationPortrait"] and not http_release \
+        and all(sum(v.values()) == 0 for v in scan.get("bundleLinks", {"x": {"missing": 1}}).values())
+    add(6, "통신과 권한", "통과" if all_passed(net, 2) and static_ok else "실패",
+        fmt_tests(net) + network_numbers(rows) + (" 소스 검사 결과가 없다." if not scan else f" 정적 검사: 네트워크 API {len(scan.get('network', []))}건, 외부 패키지 {len(scan.get('packages', []))}개, 권한 문구 {len(scan.get('permissionKeys', []))}개(Release Info.plist {len(release_app.get('permissionKeys', []))}개), 알림 API {len(scan.get('notification', []))}건, 추적 API {len(scan.get('tracking', []))}건, 권한이 필요한 기기 API {len(scan.get('permissionApis', []))}건, DEBUG 밖 소스의 http(s) 주소 글자 {len(http_release)}건, Release 바이너리의 네트워크 기호 {len(release_app.get('symbols', {}).get('network', []))}건, 웹 묶음 안의 바깥 링크와 새 창과 미리 연결 표시 {sum(sum(v.values()) for v in scan.get('bundleLinks', {}).values())}건. PrivacyInfo.xcprivacy {'있음' if release_app.get('privacyManifest') else '없음'}(추적 {pm.get('tracking')}, 추적 도메인 {len(pm.get('trackingDomains', []))}개, 수집 자료 {len(pm.get('collected', []))}개, 사유 API 선언 {len(pm.get('accessedCategories', []))}개). 소스에서 찾은 사유 API 이름 {found_reason}건, Release 바이너리의 사유 API 기호 {len(release_reason_symbols)}건. Info.plist: 암호화 사용 {info.get('ITSAppUsesNonExemptEncryption')}, 방향 {info.get('UISupportedInterfaceOrientations')}"),
+        "탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 정적 검사 모두 0, 개인정보 매니페스트 있음(추적 없음, 수집 없음), 찾은 사유 API 와 선언이 같음(둘 다 0), 암호화 사용 NO, 세로 고정")
 
     font = suite("FontScaleUITests")
     live_tests = tests_of(live)
@@ -445,7 +471,7 @@ def cmd_render(out_dir, doc_path):
 
     vis = scan.get("visibleText", {})
     commits = scan.get("commitMessages", {})
-    forb_ok = not scan.get("forbidden") and vis.get("exclamation") == 0 and vis.get("emoji") == 0 and vis.get("forbidden") == 0
+    forb_ok = bool(scan) and not scan.get("forbidden") and vis.get("exclamation") == 0 and vis.get("emoji") == 0 and vis.get("forbidden") == 0 and commits.get("forbidden") == 0
     add(11, "금지 문자", "통과" if forb_ok else "실패", f"검사한 파일 {scan.get('scanned')}개에서 금지 문자 {len(scan.get('forbidden', []))}건. 보이는 글자({', '.join(vis.get('texts', []))}) 느낌표 {vis.get('exclamation')}, 이모지 {vis.get('emoji')}. 이 브랜치 커밋 메시지 {commits.get('count', '?')}개의 금지 문자 {commits.get('forbidden', '?')}건", "모두 0")
 
     audit_tests = suite("AccessibilityAuditTests")
@@ -459,18 +485,25 @@ def cmd_render(out_dir, doc_path):
 
     bridge = suite("BridgeIntegrationTests")
     start = suite("StartScreenTests")
+    keyboard = suite("KeyboardInputTests")
+    release_smoke = suite("ReleaseSmokeTests", tests_of(load(os.path.join(out_dir, "ui-release.json"), {})))
+    extra_ok = all_passed(bridge, 4) and all_passed(start, 1) and all_passed(keyboard, 1) and all_passed(release_smoke, 1)
+    add(14, "추가: 다리 통합, 글 입력, Release 실행", "통과" if extra_ok else "실패",
+        f"다리 통합(보관, 더 높은 version, 저장 실패, 불러오기 실패) {fmt_tests(bridge)}. 시작 화면(iPhone 17) {fmt_tests(start)}. 진행자용 화면의 키보드 글 입력 {fmt_tests(keyboard)}. Release 구성으로 켜기 {fmt_tests(release_smoke)}",
+        "모두 통과. 13개 항목 밖이지만 판정과 종료 코드에 넣는다")
 
     lines = []
     lines.append("# iOS 앱 껍데기 검증 결과")
     lines.append("")
     total_fail = [i for i in items if i["status"] == "실패"]
     unknown = [i for i in items if i["status"] == "확인하지 못함"]
-    lines.append(f"결론: 13개 항목 가운데 통과 {sum(1 for i in items if i['status'] == '통과')}, 실패 {len(total_fail)}, 확인하지 못함 {len(unknown)}. `ios/scripts/verify.sh` 가 {env.get('date', '?')}에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.")
+    core = [i for i in items if i["no"] <= 13]
+    lines.append(f"결론: 13개 항목 가운데 통과 {sum(1 for i in core if i['status'] == '통과')}, 실패 {sum(1 for i in core if i['status'] == '실패')}, 확인하지 못함 {sum(1 for i in core if i['status'] == '확인하지 못함')}. 추가 확인(14번)은 {items[-1]['status']}. `ios/scripts/verify.sh` 가 {env.get('date', '?')}에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.")
     lines.append("")
     lines.append(f"- 맥: macOS {env.get('macos', '?')}, Xcode {env.get('xcodeVersion', '?')}(빌드 {env.get('xcodeBuild', '?')}), SDK {env.get('sdk', '?')}, XcodeGen {env.get('xcodegen', '?')}")
     lines.append(f"- 저장소: 브랜치 {env.get('branch', '?')}, 커밋 {env.get('commit', '?')}{' (커밋하지 않은 바뀜 있음)' if env.get('dirty') == 'yes' else ''}")
     lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {env.get('simulators', '?')}")
-    lines.append(f"- 한글 경로 대응: 테스트 빌드에만 링커 설정 `-Wl,-oso_prefix,$(PROJECT_DIR)/` 를 덧붙였어요(이유는 docs/ios_결정기록.md). 앱 코드와 프로젝트 설정은 그대로예요.")
+    lines.append(f"- 데스크톱 폴더 대응: 테스트 빌드에만 링커 설정 `-Wl,-S`(디버그 맵 빼기)를 덧붙였어요. 테스트 바이너리의 디버그 맵 항목 {env.get('testDebugMapEntries', '?')}개(0이어야 해요). 이유는 docs/ios_결정기록.md 에 있어요. 앱 코드와 프로젝트 설정은 그대로예요.")
     lines.append("")
     lines.append("| 번호 | 항목 | 결과 | 숫자 | 최소 기준 |")
     lines.append("| --- | --- | --- | --- | --- |")
@@ -486,7 +519,8 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("| 묶음 | 테스트 | 기기 | 결과 | 걸린 시간(초) |")
     lines.append("| --- | --- | --- | --- | --- |")
-    for label, res in (("단위", unit), ("화면", main_ui), ("화면", live), ("화면", se_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(참고)", ios18_ui)):
+    release_ui = load(os.path.join(out_dir, "ui-release.json"), {})
+    for label, res in (("단위", unit), ("화면", main_ui), ("화면", live), ("화면", se_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
         for t in tests_of(res):
             dur = t.get("duration")
             lines.append(f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | {dur:.1f} |" if isinstance(dur, (int, float)) else f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | |")
@@ -495,8 +529,11 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("## 다리와 껍데기 통합 확인(추가)")
     lines.append("")
-    lines.append(f"- 보관, 저장 실패, 불러오기 실패: {fmt_tests(bridge)}. 읽지 못한 기록(글자가 아닌 바이트, 더 높은 version)은 store-보관-날짜시각.json 으로 바이트 그대로 남고, 쓸 수 없는 폴더에서는 storeFailed 로 웹의 안내가 뜨고, 묶음을 못 열면 흰 화면 대신 안내가 떠요.")
-    lines.append(f"- 시작 화면(iPhone 17): {fmt_tests(start)}")
+    if all_passed(bridge, 4):
+        lines.append(f"- 보관, 저장 실패, 불러오기 실패: {fmt_tests(bridge)}. 읽지 못한 기록(글자가 아닌 바이트, 더 높은 version)은 store-보관-날짜시각.json 으로 바이트 그대로 남았고, 쓸 수 없는 폴더에서는 storeFailed 를 받은 웹이 기록 화면에 안내를 띄웠고, 묶음을 못 열면 흰 화면 대신 안내가 떴어요.")
+    else:
+        lines.append(f"- 보관, 저장 실패, 불러오기 실패: {fmt_tests(bridge)}. 통과하지 못한 것: " + ", ".join(f"{t['name']}({t['result']})" for t in bridge if t["result"] != "Passed") + ". 이 동작은 확인되지 않았어요.")
+    lines.append(f"- 시작 화면(iPhone 17): {fmt_tests(start)}. 진행자용 화면의 키보드 글 입력: {fmt_tests(keyboard)}. Release 구성으로 켜기: {fmt_tests(release_smoke)}")
     lines.append("")
     lines.append("## 접근성 감사에서 걸린 것")
     lines.append("")
@@ -509,8 +546,17 @@ def cmd_render(out_dir, doc_path):
         if not a.get("issues"):
             lines.append(f"| {a.get('screen')} | 없음 |  |  |  |")
         for issue in a.get("issues", []):
-            judge = reasons.get(issue.get("type"), "예외 아님: 사람이 확인할 것")
+            rule = reasons.get(issue.get("type"))
+            if isinstance(rule, dict):
+                judge = rule.get("byLabel", {}).get(issue.get("element", ""), rule.get("default", "예외 아님: 사람이 확인할 것"))
+            else:
+                judge = rule or "예외 아님: 사람이 확인할 것"
             lines.append(f"| {a.get('screen')} | {issue.get('type')} | {esc(issue.get('element', '')[:60])} | {esc((issue.get('summary') or '')[:120])} | {esc(judge)} |")
+    lines.append("")
+    targets = [t for a in audit for t in a.get("domTargets", [])]
+    if targets:
+        lines.append("")
+        lines.append("감사와 함께 잰 실제 누름 영역(DOM, pt): " + ", ".join(f"{t.get('label')} {t.get('w')} x {t.get('h')}" for t in targets))
     lines.append("")
     lines.append("## 숫자 기록")
     lines.append("")
@@ -561,23 +607,31 @@ def restart_numbers(rows):
     r = pick(rows, "restart")
     if not r:
         return ""
-    return f". 마지막 누름 뒤 store.json 에 닿기까지 {r[-1].get('secondsUntilSaved', 0):.2f}초 안"
+    return f". 12번째 답 키 누름이 끝난 뒤(XCUITest 가 앱이 쉬는 것을 확인한 뒤) store.json 에 12개가 보이기까지 {r[-1].get('secondsUntilSaved', 0):.2f}초"
 
 
 def rhythm_numbers(rows):
     parts = []
+    names = {"marks-double": "표시 두 번 누름", "lock": "9번 고친 뒤 이어 누름", "last-item": "마지막 문항 뒤 이어 누름"}
     for r in pick(rows, "rhythm"):
         gaps = r.get("gaps") or []
         if gaps:
-            parts.append(f"{r.get('case')}: 간격 {min(gaps):.2f}~{max(gaps):.2f}초")
-    return (". " + ", ".join(parts)) if parts else ""
+            text = f"{names.get(r.get('case'), r.get('case'))}: 실제 간격 {min(gaps):.2f}~{max(gaps):.2f}초"
+            if r.get("case") == "marks-double" and r.get("firstClickAfterTouchEndMs") is not None:
+                text += f"(첫 click 은 손을 뗀 뒤 {r.get('firstClickAfterTouchEndMs'):.0f}ms 에 옴. 참고: 손을 떼고 곧바로 다시 누르는 XCUITest doubleTap 은 '{r.get('fastDoubleTapLabel', '')}', 이벤트 {', '.join(r.get('fastDoubleTapEvents', []))})"
+            parts.append(text)
+    note = " XCUITest 의 좌표 누름은 한 번에 0.35초 넘게 걸려 지시서의 0.15초, 0.2초, 0.3초 간격을 그대로 낼 수 없었어요. 보호 시간(0.5초) 안의 가장 빠른 간격으로 확인했어요."
+    return (". " + ", ".join(parts) + "." + note) if parts else ""
 
 
 def network_numbers(rows):
     parts = []
     for r in pick(rows, "network"):
-        parts.append(f"{'차단' if r.get('mode') == 'blocked' else '대조(규칙 없음)'} 실행에서 수신기에 닿은 연결 {r.get('connections')}건")
-    return (". " + ", ".join(parts) + ".") if parts else "."
+        if r.get("mode") == "blocked":
+            parts.append(f"차단 실행: 스크립트 요청 12가지가 수신기에 닿은 연결 {r.get('connections')}건, 닿은 요청 내용 {len(r.get('requests', []))}건, 껍데기가 취소한 이동 {r.get('blockedNavigations')}건과 새 창 {r.get('blockedWindows')}건. 참고: 페이지에 붙인 바깥 링크를 사람이 누르면 WebKit 이 내용 없이 미리 맺은 연결 {r.get('preconnectsAfterTaps')}건(웹 묶음에는 바깥 링크가 없다)")
+        else:
+            parts.append(f"대조 실행(규칙 없음): 닿은 연결 {r.get('connections')}건, 요청 내용 {r.get('requests')}건")
+    return (". " + ". ".join(parts) + ".") if parts else "."
 
 
 def font_numbers(rows):

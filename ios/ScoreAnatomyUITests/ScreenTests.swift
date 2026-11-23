@@ -139,13 +139,22 @@ final class BridgeIntegrationTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: handle.storeDirectory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: handle.storeDirectory.path) }
         handle.launch()
+        // '답 넣기'에서 새 기록을 처음 저장한다. 폴더에 쓸 수 없어 실패하고 껍데기가 storeFailed 로 알린다.
         handle.startExampleA()
-        handle.tapKey("3")
+        XCTAssertTrue(handle.waitForStats { (($0["sent"] as? [String]) ?? []).contains("{\"type\":\"storeFailed\"}") }, "storeFailed 를 알렸다")
+        // 답 입력 화면은 탭이 없어서 뒤로 나가 탭이 있는 화면에서 기록으로 간다.
+        handle.button("뒤로").tap()
+        let historyTab = handle.web.links.matching(handle.exact("기록")).firstMatch
+        XCTAssertTrue(historyTab.waitForExistence(timeout: 8), "탭이 있는 화면")
+        historyTab.tap()
+        // 웹은 처음 실패했을 때 위쪽에 잠깐 알리고, 기록 화면에는 저장하지 못하는 동안 계속 보여 준다.
         handle.waitForText("이 기기에 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.")
-        let sent = handle.shellStats()["sent"] as? [String] ?? []
-        XCTAssertTrue(sent.contains("{\"type\":\"storeFailed\"}"), "storeFailed 를 알렸다: \(sent)")
         XCTAssertFalse(FileManager.default.fileExists(atPath: handle.storeFile.path), "store.json 을 만들지 않았다")
-        XCTAssertTrue(handle.nowNumber(2).waitForExistence(timeout: 3), "화면은 그대로 쓸 수 있다")
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: handle.storeDirectory.path)) ?? []
+        XCTAssertEqual(leftovers, [], "임시 파일도 남지 않았다")
+        // 화면은 그대로 쓸 수 있다.
+        handle.web.links.matching(handle.exact("이번 시험")).firstMatch.tap()
+        XCTAssertTrue(handle.web.links.matching(handle.exact("기록")).firstMatch.waitForExistence(timeout: 5))
     }
 
     func testLoadFailureShowsMessage() throws {
@@ -155,5 +164,59 @@ final class BridgeIntegrationTests: XCTestCase {
         XCTAssertTrue(message.waitForExistence(timeout: 20), "흰 화면 대신 안내")
         XCTAssertFalse(handle.app.webViews.firstMatch.exists, "웹뷰는 보이지 않는다")
         handle.capture("불러오기실패", theme: "light")
+    }
+}
+
+/// 진행자용 화면(시험용 묶음)에서 기기 자판으로 글을 넣을 수 있다(지시서 5-9).
+@MainActor
+final class KeyboardInputTests: XCTestCase {
+    func testFacilitatorScreenAcceptsTyping() throws {
+        continueAfterFailure = false
+        let handle = AppHandle(name: "keyboard")
+        handle.launch()
+        handle.web.links.matching(handle.exact("기록")).firstMatch.tap()
+        let tester = handle.web.links.matching(handle.exact("테스트 진행자용")).firstMatch
+        XCTAssertTrue(tester.waitForExistence(timeout: 8), "기록 화면 아래 '테스트 진행자용' 링크(시험용 묶음)")
+        handle.reveal(tester, label: "테스트 진행자용")
+        tester.tap()
+        let field = handle.web.textFields.matching(NSPredicate(format: "label BEGINSWITH %@", "참가자 코드")).firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 8), "참가자 코드 칸")
+        field.tap()
+        let keyboard = handle.app.keyboards.firstMatch
+        let keyboardShown = keyboard.waitForExistence(timeout: 8)
+        field.typeText("P01")
+        XCTAssertEqual(handle.evaluate("return document.getElementById('participant').value;") as? String, "P01", "넣은 글이 칸에 들어갔다")
+        XCTAssertEqual(handle.evaluate("return document.activeElement && document.activeElement.id;") as? String, "participant", "칸에 초점이 있다")
+        if keyboardShown {
+            XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY + 1, "칸이 자판에 가리지 않는다")
+        }
+        handle.capture("진행자-자판", theme: "light")
+        recordMetric(["kind": "keyboard", "keyboardShown": keyboardShown, "fieldMaxY": field.frame.maxY, "keyboardMinY": keyboardShown ? keyboard.frame.minY : -1])
+    }
+}
+
+/// Release 구성으로 켜기(verify.sh 가 Release 로 빌드해 돌린다). 진행자용 화면이 없고, DEBUG 실행 인자가 아무 일도 하지 않는다.
+@MainActor
+final class ReleaseSmokeTests: XCTestCase {
+    func testReleaseBuildRunsWithoutTesterScreensOrDebugHooks() throws {
+        guard ProcessInfo.processInfo.environment["SA_CONFIG"] == "Release" else {
+            throw XCTSkip("Release 구성으로 빌드했을 때만 돈다(verify.sh)")
+        }
+        continueAfterFailure = false
+        let handle = AppHandle(name: "release")
+        // Release 에는 DEBUG 장치가 없으므로 아래 인자는 모두 무시돼야 한다.
+        handle.launch(seed: "unreadable", extra: ["-SAProbe", "state", "-SAForceLoadFailure"])
+        XCTAssertTrue(handle.button("시험 고르기").waitForExistence(timeout: 20), "불러오기 실패 인자를 무시하고 시작 화면이 뜬다")
+        XCTAssertTrue(handle.any("가입 없이 써요. 기록은 이 기기에 저장하고 서버로 보내지 않아요.").exists, "앱 안에서만 쓰는 문구")
+        handle.web.links.matching(handle.exact("기록")).firstMatch.tap()
+        XCTAssertTrue(handle.any("앱을 지우면 기록도 함께 지워져요.").waitForExistence(timeout: 8), "기록 화면")
+        XCTAssertFalse(handle.web.links.matching(handle.exact("테스트 진행자용")).firstMatch.exists, "진행자용 화면으로 가는 링크가 없다")
+        XCTAssertFalse(handle.any("준비 중인 기능").exists, "준비 중인 기능 목록이 없다")
+        Thread.sleep(forTimeInterval: 1.0)
+        let probeFiles = (try? FileManager.default.contentsOfDirectory(atPath: handle.probeDirectory.path)) ?? []
+        let storeFiles = (try? FileManager.default.contentsOfDirectory(atPath: handle.storeDirectory.path)) ?? []
+        XCTAssertEqual(probeFiles, [], "탐침이 없다")
+        XCTAssertEqual(storeFiles, [], "기록 위치 바꾸기와 기록 심기가 없다")
+        handle.capture("release-기록", theme: "light")
     }
 }

@@ -33,7 +33,9 @@ final class AccessibilityAuditTests: XCTestCase {
                 // 기록용이라 실패로 치지 않는다.
                 return true
             }
-            report.append(["screen": screen, "ran": true, "issues": collected.items])
+            // 감사가 작다고 본 링크의 실제 누름 영역(웹 요소의 크기)을 함께 남긴다.
+            let targets = handle.evaluate("return Array.from(document.querySelectorAll('.tab')).map((e) => { const r = e.getBoundingClientRect(); return { label: e.textContent.trim(), w: Math.round(r.width), h: Math.round(r.height) }; });") as? [[String: Any]] ?? []
+            report.append(["screen": screen, "ran": true, "issues": collected.items, "domTargets": targets])
         } catch {
             report.append(["screen": screen, "ran": false, "error": "\(error)", "issues": collected.items])
             XCTFail("\(screen) 감사를 돌리지 못했다: \(error)")
@@ -116,9 +118,17 @@ final class CaptureTests: XCTestCase {
     private func captureAll(theme: String) throws {
         XCUIDevice.shared.appearance = theme == "dark" ? .dark : .light
         defer { XCUIDevice.shared.appearance = .light }
+        // 기기 설정이 바뀌는 데 잠깐 걸린다.
+        Thread.sleep(forTimeInterval: 2.0)
         let handle = AppHandle(name: "capture-\(theme)")
         handle.launch()
-        let prefersDark = handle.evaluate("return matchMedia('(prefers-color-scheme: dark)').matches;") as? Bool
+        var prefersDark: Bool?
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            prefersDark = handle.evaluate("return matchMedia('(prefers-color-scheme: dark)').matches;") as? Bool
+            if prefersDark == (theme == "dark") { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        }
         XCTAssertEqual(prefersDark, theme == "dark", "웹이 기기의 밝기 설정을 따른다")
         XCTAssertTrue(handle.button("시험 고르기").waitForExistence(timeout: 20))
         shot(handle, "01-시작", theme)
@@ -156,7 +166,8 @@ final class CaptureTests: XCTestCase {
         let cell5 = handle.markCell(5)
         cell5.tap()
         XCTAssertTrue(handle.waitLabel(cell5, contains: "고민"))
-        let short25 = handle.web.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "25번,")).firstMatch
+        // 단답형 표시는 눌림 상태가 있는 버튼(aria-pressed)이라 종류를 가리지 않고 찾는다.
+        let short25 = handle.web.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "25번,")).firstMatch
         handle.reveal(short25)
         short25.tap()
         XCTAssertTrue(handle.waitLabel(short25, contains: "자신 없음"))

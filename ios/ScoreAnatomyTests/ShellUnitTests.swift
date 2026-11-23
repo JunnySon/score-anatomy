@@ -297,3 +297,35 @@ final class ClipboardTests: XCTestCase {
         UIPasteboard.remove(withName: board.name)
     }
 }
+
+/// 껍데기 웹뷰의 설정(튕김, 미리보기, 가장자리 밀기, 웹 저장소, 팝업, 바깥 조회).
+@MainActor
+final class ShellConfigurationTests: XCTestCase {
+    private final class Sink: NSObject, WKScriptMessageHandler {
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {}
+    }
+
+    func testWebViewSettings() {
+        let webView = ShellController.makeWebView(messageHandler: Sink())
+        let configuration = webView.configuration
+        XCTAssertFalse(configuration.websiteDataStore.isPersistent, "웹 쪽 저장소를 남기지 않는다")
+        XCTAssertFalse(webView.scrollView.bounces, "화면 전체가 튕기지 않는다")
+        XCTAssertFalse(webView.scrollView.alwaysBounceVertical)
+        XCTAssertEqual(webView.scrollView.contentInsetAdjustmentBehavior, .never)
+        XCTAssertFalse(webView.allowsLinkPreview, "길게 눌러 뜨는 미리보기가 없다")
+        XCTAssertFalse(webView.allowsBackForwardNavigationGestures, "가장자리 밀기로 뒤로 가지 않는다")
+        XCTAssertFalse(configuration.preferences.javaScriptCanOpenWindowsAutomatically)
+        XCTAssertFalse(configuration.preferences.isFraudulentWebsiteWarningEnabled, "사기 사이트 경고(바깥 조회)를 쓰지 않는다")
+        XCTAssertEqual(configuration.dataDetectorTypes, [])
+        XCTAssertFalse(webView.isOpaque)
+        #if DEBUG
+        XCTAssertTrue(webView.isInspectable, "웹 검사기는 Debug 에서만")
+        #else
+        XCTAssertFalse(webView.isInspectable)
+        #endif
+    }
+
+    func testOnlyTheThreeBridgeHandlersAreRegistered() {
+        XCTAssertEqual(BridgeSpec.Inbound.allCases.map(\.rawValue), ["saStore", "saHaptic", "saCopy"])
+    }
+}

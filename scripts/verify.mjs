@@ -14,12 +14,22 @@ const npx = isWin ? 'npx.cmd' : 'npx';
 const npm = isWin ? 'npm.cmd' : 'npm';
 const started = Date.now();
 
+/**
+ * 명령을 실행한다. 윈도우의 npm.cmd 와 npx.cmd 는 셸 없이 실행할 수 없어서(Node 18.20.2, 20.12.2 이후의 보안 수정)
+ * 윈도우에서는 인자를 따옴표로 감싼 명령 한 줄을 셸로 실행한다.
+ */
+function spawnTool(cmd, args, options) {
+  if (!isWin || !/\.(cmd|bat)$/i.test(cmd)) return spawnSync(cmd, args, options);
+  const quote = (a) => (/[\s"&|<>^%]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
+  return spawnSync([cmd, ...args].map(quote).join(' '), { ...options, shell: true });
+}
+
 function run(label, cmd, args) {
   console.log(`\n=== ${label} ===`);
   const t = Date.now();
   // verify 는 늘 지금 폴더의 빌드로 서버를 새로 띄워서 잰다. 떠 있는 서버를 다시 쓰는 스위치(SA_REUSE_SERVER)가
   // 셸에 켜져 있어도 따르지 않는다(보고서가 "새로 띄워요"라고 적으므로).
-  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '0', SA_REUSE_SERVER: '' } });
+  const r = spawnTool(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '0', SA_REUSE_SERVER: '' } });
   const ok = r.status === 0;
   console.log(`--- ${label}: ${ok ? '통과' : '실패'} (${((Date.now() - t) / 1000).toFixed(1)}초)`);
   return { ok, seconds: (Date.now() - t) / 1000 };
@@ -321,7 +331,17 @@ const ver = (name) => {
 };
 let browserVersion = '확인 못 함';
 try {
-  const out = spawnSync(process.execPath, ['-e', "require('@playwright/test').chromium.launch().then(async (b) => { console.log(b.version()); await b.close(); })"], {
+  // 화면 검사(playwright.config.ts)와 같은 브라우저를 띄운다. Playwright 브라우저가 없으면 시스템 크롬을 쓴다.
+  const launch = [
+    "const { chromium } = require('@playwright/test');",
+    "const { existsSync } = require('node:fs');",
+    'let o = {};',
+    'if (process.env.SA_CHROMIUM_PATH) o = { executablePath: process.env.SA_CHROMIUM_PATH };',
+    'else if (process.env.SA_BROWSER_CHANNEL) o = { channel: process.env.SA_BROWSER_CHANNEL };',
+    "else { let p = ''; try { p = chromium.executablePath(); } catch {} if (!p || !existsSync(p)) o = { channel: 'chrome' }; }",
+    'chromium.launch(o).then(async (b) => { console.log(b.version()); await b.close(); });',
+  ].join('\n');
+  const out = spawnSync(process.execPath, ['-e', launch], {
     cwd: ROOT,
     encoding: 'utf8',
   });

@@ -1,0 +1,12 @@
+# 줄바꿈을 모든 운영체제에서 LF로 둔다. 윈도우(core.autocrlf=true)에서 받아도 작업 폴더가 LF가 되어,
+# 문서를 읽는 테스트와 앱용 묶음의 SHA-256 이 운영체제에 따라 달라지지 않는다.
+* text=auto eol=lf
+
+# 이진 파일
+*.png binary
+*.jpg binary
+*.woff2 binary
+*.zip binary
+
+# 앱용 묶음은 만든 그대로의 바이트를 둔다(manifest.json 의 SHA-256 과 맞아야 한다).
+ios/ScoreAnatomy/Web/** -text

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { platform } from '#platform';
 import { useLockState } from '../components/LockNotice';
 import { Chip, ConfirmDialog, Message, Screen, TopBar } from '../components/ui';
-import { EXAMS, findExam, LOCKS } from '../exams';
+import { findExam, useExams, useLocks } from '../exams';
 import type { LockState } from '../logic/lock';
 import { navigate } from '../router';
 import { finishTestRun, resetTestRuns, setRunAnswerKey, startTestRun, useAppData } from '../state/hooks';
@@ -158,12 +158,15 @@ export function TestAdmin() {
   const data = useAppData();
   const [code, setCode] = useState('');
   const [mode, setMode] = useState<InputMode>(data.inputMode);
-  const [examId, setExamId] = useState(EXAMS[0]?.id ?? '');
+  // 시험 목록은 넘겨받은 새 자료가 오면 바뀐다(작업 지시서 3의 5-3).
+  const exams = useExams();
+  const [examId, setExamId] = useState(() => exams[0]?.id ?? '');
   const [formMsg, setFormMsg] = useState<string | null>(null);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
-  // 합친 풀이 잠금 달력(묶음 안 달력, 2부부터는 넘겨받은 달력도)으로 지금 잠겼는지 본다.
-  const lock = useLockState(LOCKS);
+  // 합친 풀이 잠금 달력(묶음 안 달력과 넘겨받은 달력)으로 지금 잠겼는지 본다. 넘겨받은 달력이 바뀌면 다시 판정한다.
+  const locks = useLocks();
+  const lock = useLockState(locks);
 
   const active = data.testRuns.find((r) => r.id === data.activeRunId) ?? null;
   const rows: RunExportRow[] = data.testRuns.map((run: TestRun) => {
@@ -300,7 +303,7 @@ export function TestAdmin() {
           {S_TEST.exam}
         </h3>
         <div className="chips mt2" role="radiogroup" aria-labelledby="texam-q">
-          {EXAMS.map((e) => (
+          {exams.map((e) => (
             <Chip key={e.id} testId={`texam-${e.id}`} checked={examId === e.id} onSelect={() => setExamId(e.id)}>
               {e.title}
             </Chip>

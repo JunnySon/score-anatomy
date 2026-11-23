@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Message, Option, Screen, TopBar } from '../components/ui';
-import { EXAMS } from '../exams';
+import { useCatalog, useExams } from '../exams';
 import { parseYmd } from '../logic/dates';
 import { navigate } from '../router';
 import { startSession } from '../state/hooks';
@@ -25,7 +25,10 @@ export function ExamSelect() {
   const [seen, setSeen] = useState<SeenBefore | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const questionRef = useRef<HTMLDivElement>(null);
-  const exam = EXAMS.find((e) => e.id === examId) ?? null;
+  // 시험 목록은 넘겨받은 새 자료가 오면 바뀐다(작업 지시서 3의 5-3). 고른 시험도 지금 목록에서 찾는다.
+  const exams = useExams();
+  const { remote } = useCatalog();
+  const exam = exams.find((e) => e.id === examId) ?? null;
 
   useEffect(() => {
     if (examId) questionRef.current?.scrollIntoView({ block: 'nearest' });
@@ -53,7 +56,8 @@ export function ExamSelect() {
       top={<TopBar back="/" title={S.start.pick} />}
       tabs="current"
       // 고를 때마다 아래 질문이 나타나고 화면이 저절로 스크롤된다. 연달아 누른 것이 그 자리에 온 다른 선택지에 닿지 않게 한다.
-      guardKey={`${examId ?? ''}/${graded ?? ''}/${seen ?? ''}`}
+      // 넘겨받은 새 자료로 시험 목록이 바뀌면(seq) 선택지의 자리가 옮겨 갈 수 있어서 그때도 막는다.
+      guardKey={`${examId ?? ''}/${graded ?? ''}/${seen ?? ''}/${remote?.seq ?? ''}`}
       actions={
         <>
           {msg ? <Message>{msg}</Message> : null}
@@ -67,7 +71,7 @@ export function ExamSelect() {
         {S.exams.title}
       </h2>
       <div className="opts mt4" role="radiogroup" aria-labelledby="exam-q">
-        {EXAMS.map((e) => (
+        {exams.map((e) => (
           <Option
             key={e.id}
             testId={`exam-${e.id}`}

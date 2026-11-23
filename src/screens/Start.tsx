@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, Screen } from '../components/ui';
-import { findExam, SAMPLE_EXAM_ID } from '../exams';
+import { findBundledExam, SAMPLE_EXAM_ID } from '../exams';
 import { typesReadyOf } from '../exams/validate';
 import { exampleResponses } from '../logic/example';
 import { analyze, gradeExam } from '../logic/scoring';
@@ -30,8 +30,9 @@ export function startPreview(exam: Exam | null) {
   }
 }
 
+/** 시작 화면의 미리보기는 묶음 안 예시 시험으로만 그린다(넘겨받은 자료로 검산 예시가 바뀌지 않게, 작업 지시서 3의 5부). */
 function usePreview() {
-  return useMemo(() => startPreview(findExam(SAMPLE_EXAM_ID)), []);
+  return useMemo(() => startPreview(findBundledExam(SAMPLE_EXAM_ID)), []);
 }
 
 export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResume?: () => void }) {

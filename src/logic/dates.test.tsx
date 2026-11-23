@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { EXAMS, findExam, sortExams } from '../exams';
+import { BUNDLED_EXAMS, findExam, sortExams } from '../exams';
 import { validateExam } from '../exams/validate';
 import { heldText } from '../screens/ExamSelect';
 import { clockText, dateText } from '../strings';
@@ -86,8 +86,8 @@ describe('시험 시행일(examDate)', () => {
   });
 
   it('예시 시험 A, B, C에는 시행일을 넣지 않았고(지어낸 날짜 금지) 지금 순서 그대로다', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['sample-a', 'sample-b', 'sample-c']);
-    for (const e of EXAMS) expect(e.examDate).toBeUndefined();
+    expect(BUNDLED_EXAMS.map((e) => e.id)).toEqual(['sample-a', 'sample-b', 'sample-c']);
+    for (const e of BUNDLED_EXAMS) expect(e.examDate).toBeUndefined();
   });
 
   it('시행일(examDate)은 날짜만 받는다(시각을 붙이면 오류)', () => {

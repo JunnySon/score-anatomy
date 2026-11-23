@@ -96,7 +96,8 @@ export function GradedScreen({ h, route }: { h: SessionHandle; route: Route }) {
   }
 }
 
-function Routes({ route, screenKey }: { route: Route; screenKey: string }) {
+/** 주소에 맞는 화면. 단위 테스트가 서버 그리기로 고르는 화면을 확인할 수 있게 내보낸다. */
+export function Routes({ route, screenKey }: { route: Route; screenKey: string }) {
   const data = useAppData();
   const current = useCurrentHandle();
   const demo = useDemoHandle();

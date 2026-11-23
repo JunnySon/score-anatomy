@@ -5,12 +5,13 @@ import { KST_OFFSET_MS } from '../logic/dates';
 import { S_TEST } from '../strings';
 
 // 풀이 잠금(작업 지시서 3의 4-5)의 화면 조각과 진행자용 화면의 한 줄을 글자로 그려서(서버 렌더링) 확인한다.
-// 묶음 안 달력(src/exams/locks.json)은 빈 배열이라, 진행자용 화면이 읽는 합친 달력(LOCKS)을 테스트 전용 달력으로 바꿔 끼운다.
+// 묶음 안 달력(src/exams/locks.json)은 빈 배열이라, 진행자용 화면이 읽는 합친 달력(useLocks)을 테스트 전용 달력으로 바꿔 끼운다.
 
 vi.mock('../exams', async (importOriginal) => {
   const real = await importOriginal<typeof import('../exams')>();
   // 테스트 전용 잠금 항목. 지시서의 형식 예시("2030-01-02T08:40"부터 "2030-01-02T17:45"까지)다. 실제 시험 시간이 아니다.
-  return { ...real, LOCKS: [{ id: 'test-lock-a', label: '테스트 전용 잠금 항목', start: '2030-01-02T08:40', end: '2030-01-02T17:45' }] };
+  const locks = [{ id: 'test-lock-a', label: '테스트 전용 잠금 항목', start: '2030-01-02T08:40', end: '2030-01-02T17:45' }];
+  return { ...real, useLocks: () => locks };
 });
 
 const { TestAdmin, lockStatusLine } = await import('./TestAdmin');

@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { LOCKS } from '../exams';
+import { catalog } from '../exams';
 import rawLocks from '../exams/locks.json';
 import { validateLocks } from '../exams/validate';
 import type { LockEntry } from '../types';
@@ -281,10 +281,12 @@ describe('풀이 잠금 달력과 판정의 세부(4-5)', () => {
     expect(files.filter((f) => /S\.solutionLock\b/.test(read(f)))).toEqual(['src/components/LockNotice.tsx']);
   });
 
-  it('묶음 안 달력(src/exams/locks.json)은 형식에 맞고, 합친 달력(LOCKS)은 그 항목 그대로다', () => {
+  it('묶음 안 달력(src/exams/locks.json)은 형식에 맞고, 넘겨받은 자료가 없으면 합친 달력(시험 목록 저장소의 locks)은 그 항목 그대로다', () => {
     // 실제 날짜와 시각은 주관 기관 공고를 확인한 사람이 넣는다. 넣은 값이 형식에 맞지 않으면 여기서 잡힌다.
     expect(Array.isArray(rawLocks)).toBe(true);
     expect(validateLocks(rawLocks)).toEqual([]);
-    expect(LOCKS).toEqual(rawLocks);
+    // 단위 테스트는 브라우저용 플랫폼(src/platform/web.ts)이라 넘겨받는 자료가 없다.
+    expect(catalog.get().remote).toBeNull();
+    expect(catalog.get().locks).toEqual(rawLocks);
   });
 });

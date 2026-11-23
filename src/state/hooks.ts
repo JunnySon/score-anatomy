@@ -1,5 +1,5 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { findExam } from '../exams';
+import { catalog, findBundledExam, findExam, useExams } from '../exams';
 import { findMissing, gradeExam, type Grade } from '../logic/scoring';
 import type { AnswerValue, AppData, Exam, GradedBefore, InputMode, SeenBefore, Session, TestRun } from '../types';
 import { demoStore } from './demo';
@@ -39,22 +39,29 @@ function updateCurrent(fn: (s: Session) => Session, log?: (run: TestRun, prev: S
   });
 }
 
+/**
+ * 지금 기록과 그 시험. 기록이 없거나 그 시험을 지금 시험 목록에서 찾지 못하면 null.
+ * 시험 목록이 바뀌면(넘겨받은 새 자료, 작업 지시서 3의 5-3) 같은 기록이라도 새 판의 시험으로 손잡이를 다시 만들어 지금 화면을 다시 그린다.
+ * 화면은 다시 마운트되지 않는다(App.tsx 의 화면 열쇠는 주소로만 정한다). 그래서 답 입력 화면의 커서와 잠금 같은 화면 안 상태는 그대로다.
+ */
 export function useCurrentHandle(): SessionHandle | null {
   const data = useAppData();
+  const exams = useExams();
   const session = data.sessions.find((s) => s.id === data.currentId) ?? null;
   return useMemo(() => {
     if (!session) return null;
     const exam = findExam(session.examId);
     if (!exam) return null;
     return { isDemo: false, session, exam, update: (fn) => updateCurrent(fn), path: (p) => p };
-  }, [session]);
+  }, [session, exams]);
 }
 
+/** 예시 결과. 묶음 안 예시 시험으로만 그려서(src/state/demo.ts 와 같은 시험) 넘겨받은 자료로 검산 예시가 바뀌지 않는다. */
 export function useDemoHandle(): SessionHandle | null {
   const session = useSyncExternalStore(demoStore.subscribe, demoStore.get, demoStore.get);
   return useMemo(() => {
     if (!session) return null;
-    const exam = findExam(session.examId);
+    const exam = findBundledExam(session.examId);
     if (!exam) return null;
     return { isDemo: true, session, exam, update: (fn) => demoStore.update(fn), path: (p) => `/demo${p}` };
   }, [session]);
@@ -197,11 +204,21 @@ export function deleteAllSessions(): void {
 
 /**
  * 채점 흔적(gradedWith)이 없는 옛 채점 기록 가운데 시험의 정답 판 번호가 1인 기록에 지금 값을 조용히 채운다(작업 지시서 3의 4-6).
- * 앱이 시작할 때(src/main.tsx) 부른다. 시험 목록이 바뀌면(넘겨받은 시험, 작업 지시서 3의 5부) 그때도 불러야 한다.
- * 채울 것이 없으면 기록을 바꾸지 않아서 저장도 하지 않는다.
+ * 앱이 시작할 때와 시험 목록이 바뀔 때마다 부른다(watchOldGradedRecords).
+ * 채울 것이 없으면 기록을 바꾸지 않아서 저장도 하지 않는다. 시험을 찾지 못한 기록은 건너뛰고 지우지 않는다.
  */
 export function fillOldGradedRecords(): void {
   store.update((d) => fillGradedWith(d, findExam));
+}
+
+/**
+ * 옛 채점 기록 채우기를 지금 한 번 하고, 시험 목록이 바뀔 때마다(넘겨받은 새 자료, 작업 지시서 3의 5부) 다시 한다.
+ * 시작할 때 찾지 못했던 시험이 나중에 오면 그때 채운다. 앱이 시작할 때 화면을 그리기 전에 부른다(src/main.tsx).
+ * 그만두는 함수를 돌려준다.
+ */
+export function watchOldGradedRecords(): () => void {
+  fillOldGradedRecords();
+  return catalog.subscribe(fillOldGradedRecords);
 }
 
 /** 앱: 기록 화면이 보관 안내를 보여 줬으면 기록에 남은 표시를 지운다. */

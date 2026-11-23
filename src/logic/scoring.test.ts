@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EXAMS, findExam } from '../exams';
+import { BUNDLED_EXAMS, findExam } from '../exams';
 import { parseExam, validateExam } from '../exams/validate';
 import type { Answers, AnswerValue, Exam, ExamItem, Marks } from '../types';
 import { cutView, gapFor, gradeKeys } from './cuts';
@@ -30,8 +30,8 @@ function wrongValue(exam: Exam, no: number): number {
 
 describe('예시 시험 데이터', () => {
   it('예시 시험 3개가 모두 검사를 통과한다', () => {
-    expect(EXAMS.map((e) => e.id)).toEqual(['sample-a', 'sample-b', 'sample-c']);
-    for (const e of EXAMS) expect(validateExam(e)).toEqual([]);
+    expect(BUNDLED_EXAMS.map((e) => e.id)).toEqual(['sample-a', 'sample-b', 'sample-c']);
+    for (const e of BUNDLED_EXAMS) expect(validateExam(e)).toEqual([]);
   });
 
   it('예시 시험 A: 1~21번 mc, 22~30번 short, 배점 합 100점', () => {
@@ -84,7 +84,7 @@ describe('예시 시험 데이터', () => {
 
   it('예시 시험의 좌표 라벨은 예시 좌표뿐이다', () => {
     // 실제 시험(isSample이 false)을 추가하면 그 시험의 좌표에는 확인한 실제 표기를 쓴다(docs/시험_추가_방법.md).
-    const samples = EXAMS.filter((e) => e.isSample);
+    const samples = BUNDLED_EXAMS.filter((e) => e.isSample);
     expect(samples.length).toBeGreaterThanOrEqual(3);
     for (const e of samples) {
       for (const t of Object.values(e.types)) {

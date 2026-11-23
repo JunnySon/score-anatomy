@@ -211,6 +211,15 @@ describe('발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5)', 
     expect(sha256Hex(readFileSync(join(dir, 'testdata', F.valid, SIG_FILE)))).toBe(sha256Hex(bytesOf(F.valid, SIG_FILE)));
   });
 
+  it('README 의 받는 쪽 규칙 안내는 저장소 안의 문서(docs/시험_배포_규격.md 3장)를 가리킨다(별도 검토 D6)', () => {
+    const text = readFileSync(join(TESTDATA, 'README.md'), 'utf8');
+    expect(text).toContain('받는 쪽 규칙은 docs/시험_배포_규격.md 3장(작업 지시서 3의 6-3)에 있어요.');
+    expect(text).not.toContain('받는 쪽 규칙은 작업 지시서 3의 6-3 이에요.');
+    // 가리키는 문서와 장이 저장소에 있다.
+    const doc = readFileSync(join(ROOT, 'docs', '시험_배포_규격.md'), 'utf8');
+    expect(doc.split(/\r?\n/)).toContain('## 3. 받는 쪽 규칙(작업 지시서 3의 6-3)');
+  });
+
   it('README 에 테스트 전용이고 진짜 발행에 쓰지 않는다는 것과, 폴더마다 무엇이고 받는 쪽이 할 일이 적혀 있다', () => {
     const text = readFileSync(join(TESTDATA, 'README.md'), 'utf8');
     expect(text).toContain('이 폴더의 키와 발행물은 모두 테스트 전용이에요.');

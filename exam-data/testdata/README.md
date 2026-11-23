@@ -18,7 +18,7 @@
 
 ## 발행물 네 가지
 
-폴더마다 발행 폴더(dist-exams)와 같은 모양이에요: index.json, index.json.sig, files/<시험 id>.<rev>.json. 받는 쪽 규칙은 작업 지시서 3의 6-3 이에요.
+폴더마다 발행 폴더(dist-exams)와 같은 모양이에요: index.json, index.json.sig, files/<시험 id>.<rev>.json. 받는 쪽 규칙은 docs/시험_배포_규격.md 3장(작업 지시서 3의 6-3)에 있어요.
 
 | 폴더 | index.json | 무엇이 다른지 | 받는 쪽이 할 일 |
 | --- | --- | --- | --- |

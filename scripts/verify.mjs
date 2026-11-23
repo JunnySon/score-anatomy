@@ -6,7 +6,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { APP_WEB_DIR, BRIDGE_VERSION, BUNDLES, buildAll, sha256 } from './app-bundles.mjs';
+import { createHash } from 'node:crypto';
+import { APP_WEB_DIR, BRIDGE_VERSION, BUNDLES, buildAll, INPUTS as APP_INPUTS } from './app-bundles.mjs';
 import { findForbidden, OUT, ROOT } from './lib.mjs';
 
 const require = createRequire(import.meta.url);
@@ -124,19 +125,44 @@ const e2eRun = buildsOk ? run('2~10, 12. 화면 검사(앱용 묶음 포함)', n
 
 // 11. 앱용 묶음: 커밋된 묶음이 지금 코드로 다시 만든 것과 같은지. 두 번 만들어 같은 코드에서 같은 묶음이 나오는지도 본다.
 console.log('\n=== 11. 앱용 묶음 다시 만들어 견주기 ===');
-const appCheck = { ran: false, error: null, rows: [], manifest: null, pkgVersion: null };
+// "커밋된 묶음"은 작업 폴더의 파일이 아니라 HEAD 에 든 파일이다. 세 파일이 추적되고 작업 폴더와 같아야 하고,
+// manifest 의 commit 은 HEAD 의 조상이면서 그 뒤로 묶음에 들어가는 파일(APP_INPUTS)이 바뀌지 않았어야 한다.
+const APP_WEB_REL = 'ios/ScoreAnatomy/Web';
+const gitRun = (args, encoding = 'utf8') => spawnSync('git', args, { cwd: ROOT, encoding, maxBuffer: 64 * 1024 * 1024 });
+const gitOk = (args) => gitRun(args).status === 0;
+const appCheck = {
+  ran: false,
+  error: null,
+  rows: [],
+  manifest: null,
+  pkgVersion: null,
+  tracked: false,
+  clean: false,
+  dirtyFlag: null,
+  ancestor: false,
+  inputsSame: false,
+};
 try {
   const first = buildAll(join(OUT, 'app-check-1'));
   const second = buildAll(join(OUT, 'app-check-2'));
   appCheck.manifest = readJson(join(APP_WEB_DIR, 'manifest.json'));
   appCheck.pkgVersion = readJson(join(ROOT, 'package.json'))?.version ?? null;
+  const committedFiles = [...BUNDLES.map((m) => `${m}/index.html`), 'manifest.json'];
+  appCheck.tracked = committedFiles.every((f) => gitOk(['ls-files', '--error-unmatch', `${APP_WEB_REL}/${f}`]));
+  const status = gitRun(['status', '--porcelain', '--', APP_WEB_REL]);
+  appCheck.clean = status.status === 0 && status.stdout.trim() === '';
+  appCheck.dirtyFlag = appCheck.manifest?.dirty ?? null;
+  const commit = appCheck.manifest?.commit;
+  appCheck.ancestor = typeof commit === 'string' && /^[0-9a-f]{40}$/.test(commit) && gitOk(['merge-base', '--is-ancestor', commit, 'HEAD']);
+  appCheck.inputsSame = appCheck.ancestor && gitOk(['diff', '--quiet', commit, 'HEAD', '--', ...APP_INPUTS]);
   for (const mode of BUNDLES) {
     const key = `${mode}/index.html`;
-    const committedPath = join(APP_WEB_DIR, mode, 'index.html');
+    const shown = gitRun(['show', `HEAD:${APP_WEB_REL}/${key}`], 'buffer');
+    const committed = shown.status === 0 ? shown.stdout : null;
     appCheck.rows.push({
       key,
-      committed: existsSync(committedPath) ? sha256(committedPath) : null,
-      committedBytes: existsSync(committedPath) ? statSync(committedPath).size : null,
+      committed: committed ? createHash('sha256').update(committed).digest('hex') : null,
+      committedBytes: committed ? committed.length : null,
       rebuilt: first[key]?.sha256 ?? null,
       again: second[key]?.sha256 ?? null,
       manifest: appCheck.manifest?.files?.[key]?.sha256 ?? null,
@@ -144,6 +170,9 @@ try {
   }
   appCheck.ran = true;
   for (const r of appCheck.rows) console.log(`${r.key}: 커밋된 것 ${r.committed}, 다시 만든 것 ${r.rebuilt}, 한 번 더 ${r.again}, manifest ${r.manifest}`);
+  console.log(
+    `추적됨 ${appCheck.tracked}, 작업 폴더와 같음 ${appCheck.clean}, manifest dirty ${appCheck.dirtyFlag}, manifest 커밋이 HEAD 의 조상 ${appCheck.ancestor}, 그 뒤로 묶음 재료가 그대로 ${appCheck.inputsSame}`,
+  );
 } catch (e) {
   appCheck.error = e instanceof Error ? e.message : String(e);
   console.log(`앱용 묶음을 만들지 못했어요: ${appCheck.error}`);
@@ -262,13 +291,13 @@ const REQUIRED = {
   shots: 69, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 334, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 123, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 85, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 196, // 통과한 단위 테스트 수의 최소
+  e2eTests: 125, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  unitTests: 202, // 통과한 단위 테스트 수의 최소
   leakChecks: 48, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
   leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
   fitStates: 68, // 작은 화면에서 스크롤 없이 들어와야 하는 답 입력 상태 수의 최소
-  appTests: 13, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
+  appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
 const AUDIT_LISTS = [
@@ -387,15 +416,19 @@ const manifestOk =
   appCheck.manifest !== null &&
   appCheck.manifest.version === appCheck.pkgVersion &&
   appCheck.manifest.bridge === BRIDGE_VERSION &&
-  typeof appCheck.manifest.commit === 'string' &&
-  appCheck.manifest.commit.length === 40;
+  appCheck.dirtyFlag === false &&
+  appCheck.tracked &&
+  appCheck.clean &&
+  appCheck.ancestor &&
+  appCheck.inputsSame;
 const appBuildOk = appRowsOk && manifestOk;
 const appTests = byFile('app.spec.ts');
 const appTestsOk = allOk(appTests) && appTests.length === REQUIRED.appTests;
 const appMetricsOk =
   appFlows.length === 2 &&
   appFlows.every((m) => m.score === 78 && m.steps === 3) &&
-  appFonts.length === 3 &&
+  appFonts.length === 6 &&
+  BUNDLES.every((b) => appFonts.filter((m) => m.bundle === b).length === 3) &&
   appReleaseText !== null &&
   appReleaseText.found === 0 &&
   appReleaseText.checked > 0;
@@ -530,14 +563,14 @@ function buildReport(textOk, textResult) {
       '앱용 묶음이 지금 코드로 다시 만든 것과 같음',
       appBuildOk,
       appCheck.ran
-        ? `${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '파일 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 ${appCheck.manifest?.bridge ?? '없음'}, 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}`
+        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts ${BRIDGE_VERSION}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
         : `만들지 못함: ${appCheck.error ?? '알 수 없음'}`,
     ],
     [
       '12',
       '앱용 묶음 검사(가짜 다리)',
       appOk,
-      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${appFonts.map((m) => `${m.scale}배`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
+      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${BUNDLES.map((b) => `${b} ${appFonts.filter((m) => m.bundle === b).map((m) => `${m.scale}배`).join(', ')}`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
     ],
   ];
   const failed = items.filter((i) => !i[2]);
@@ -639,7 +672,7 @@ function buildReport(textOk, textResult) {
       const list = conditions.filter((c) => c.name === name);
       const loose = list.filter((c) => c.strict === false);
       say(
-        `| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px | ${loose.length > 0 ? `${max(loose, (c) => c.keysCutPx ?? 0)}px(${loose.map((c) => c.label).join(', ')})` : '0px(모든 상태에서 키패드가 화면 안)'} |`,
+        `| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px | ${loose.length > 0 ? `${max(loose, (c) => c.keysCutPx ?? 0)}px(${loose.map((c) => `${c.label} ${c.keysCutPx ?? 0}px`).join(', ')})` : '0px(모든 상태에서 키패드가 화면 안)'} |`,
       );
     }
     say();
@@ -732,6 +765,7 @@ function buildReport(textOk, textResult) {
   say('- 결과 화면을 학생이 바르게 읽는지. 사용성 테스트의 읽기 질문으로 확인해야 해요.');
   say('- 화면 낭독기(VoiceOver, TalkBack)로 실제로 들었을 때의 흐름.');
   say('- 아티팩트 뷰어 안에서의 동작. 뼈대와 비슷한 틀에 넣어 여는 것까지만 확인했어요.');
+  say('- 아이폰 앱 껍데기(WKWebView) 안에서의 동작: 실제 다리, 햅틱의 느낌, 기기 글자 크기 설정, 길게 누르기와 화면 당김이 실제로 막히는지. 앱용 묶음은 가짜 다리를 넣은 Chromium(과 윈도우용 WebKit)에서만 확인했어요(작업 지시서 2에서 맥으로 확인).');
   say();
   return {
     text: L.join('\n'),

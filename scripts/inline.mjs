@@ -15,9 +15,11 @@ export function inlineDir(dir) {
   // 미리 불러오기 표시는 파일이 없어지므로 지운다.
   html = html.replace(/\s*<link rel="modulepreload"[^>]*>/g, '');
 
-  // 외부 CSS 파일을 style 태그로 바꾼다.
+  // 외부 CSS 파일을 style 태그로 바꾼다. CSS 가 data: 가 아닌 파일(그림, 글꼴)을 가리키면 파일 하나로 만들 수 없으므로 실패로 본다.
   html = html.replace(/<link rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/g, (_m, ref) => {
     const css = readAsset(ref).replace(/<\/style/gi, '<\\/style');
+    const refs = css.match(/url\(\s*(?!['"]?(?:data:|#))[^)]*\)/gi);
+    if (refs) throw new Error(`CSS 가 파일 밖의 자산을 가리켜요: ${refs.join(', ')}`);
     return `<style>${css}</style>`;
   });
 

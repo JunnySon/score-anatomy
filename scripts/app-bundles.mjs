@@ -4,13 +4,18 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inlineDir } from './inline.mjs';
 import { ROOT } from './lib.mjs';
 
-/** 다리 규격 번호. docs/앱_다리_규격.md 와 src/platform/app.ts 의 BRIDGE_VERSION 과 같아야 한다. */
-export const BRIDGE_VERSION = 1;
+/** 다리 규격 번호. 웹 코드와 어긋나지 않게 src/platform/app.ts 의 BRIDGE_VERSION 한 곳에서 읽는다. */
+export const BRIDGE_VERSION = (() => {
+  const src = readFileSync(join(ROOT, 'src/platform/app.ts'), 'utf8');
+  const m = src.match(/^export const BRIDGE_VERSION = (\d+);$/m);
+  if (!m) throw new Error('src/platform/app.ts 에서 BRIDGE_VERSION 을 찾지 못했어요.');
+  return Number(m[1]);
+})();
 /** 커밋하는 묶음의 자리. 맥에서는 Node 없이 이 파일만 쓴다. */
 export const APP_WEB_DIR = join(ROOT, 'ios/ScoreAnatomy/Web');
 export const BUNDLES = ['app-test', 'app-release'];
@@ -29,12 +34,22 @@ function viteBuild(mode, outDir) {
   if (r.status !== 0) throw new Error(`vite build --mode ${mode} 이 실패했어요.`);
 }
 
+/** dir 아래 파일의 상대 경로(/ 로 나눔). */
+function listFiles(dir, base = '') {
+  return readdirSync(join(dir, base), { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? listFiles(dir, `${base}${e.name}/`) : [`${base}${e.name}`],
+  );
+}
+
 /** 묶음 하나를 만들어 outRoot/<mode>/index.html 에 쓴다. 만든 파일의 경로를 돌려준다. */
 export function buildBundle(mode, outRoot) {
   const work = join(ROOT, 'verify-out', 'app-build', `${mode}-${process.pid}`);
   rmSync(work, { recursive: true, force: true });
   try {
     viteBuild(mode, work);
+    // 앱에는 index.html 하나만 실린다. 파일 안에 넣을 수 없는 자산(그림, 글꼴 등)이 따로 나오면 실패로 본다.
+    const extra = listFiles(work).filter((f) => f !== 'index.html' && !/^assets\/[^/]+\.(?:js|css)$/.test(f));
+    if (extra.length > 0) throw new Error(`묶음 파일 하나에 넣지 못하는 자산이 있어요: ${extra.join(', ')}`);
     const html = inlineDir(work);
     mkdirSync(join(outRoot, mode), { recursive: true });
     const dest = join(outRoot, mode, 'index.html');
@@ -60,8 +75,8 @@ function git(args) {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
-/** 묶음에 들어가는 것(이 가운데 커밋하지 않은 바뀜이 있으면 manifest 에 dirty 로 적는다). */
-const INPUTS = ['src', 'index.html', 'vite.config.ts', 'package.json', 'package-lock.json', 'scripts/inline.mjs', 'scripts/app-bundles.mjs'];
+/** 묶음에 들어가는 것(이 가운데 커밋하지 않은 바뀜이 있으면 manifest 에 dirty 로 적는다. verify 11번도 쓴다). */
+export const INPUTS = ['src', 'index.html', 'vite.config.ts', 'tsconfig.json', 'package.json', 'package-lock.json', 'scripts/inline.mjs', 'scripts/app-bundles.mjs'];
 
 /** manifest.json: 묶음을 만든 때의 커밋, package.json 의 버전, 다리 규격 번호, 파일별 SHA-256. */
 export function writeManifest(outRoot, files) {

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { checkExam } from '../../src/exams/validate.ts';
 import type { Exam } from '../../src/types.ts';
 import { checkData, looksLikeAnswerNote, runCheck, screenTextProblems } from './check.ts';
-import { examPath } from './data.ts';
+import { bundledExamIds, examPath } from './data.ts';
 import { compareWithPublished, stateEntryOf } from './state.ts';
 import {
   FORBIDDEN_CHANGES,
@@ -224,6 +224,30 @@ describe('발행 도구 exams:check(작업 지시서 3의 6-4)', () => {
     expect(found).toContain('src/Test_Tool.json: id 는 영어 소문자와 숫자를 붙임표(-)로 이은 모양이어야 해요(형식 예시: test-only-exam).');
     expect(found).toContain('src/test-tool-b.json: rev 를 적어야 해요. 발행하는 시험 파일에는 판 번호를 꼭 적어요(처음은 1).');
     expect(found).toContain('src/test-tool-c.json: JSON 으로 읽지 못했어요(3번째 줄 1번째 글자 근처).');
+  });
+
+  it('앱 묶음에 든 시험(src/exams)과 id 가 같은 원본은 check 와 publish 가 거부한다(별도 검토 A2, B1)', () => {
+    // 묶음 안 예시 시험 A와 id 가 같은 테스트 전용 시험(구성과 정답은 이 테스트의 것). 앱에서 판 번호로만 갈려 점수나 답이 엇갈릴 수 있다.
+    expect(bundledExamIds().get('sample-a')).toBe('sample-a.json');
+    expect([...bundledExamIds().keys()].sort()).toEqual(['sample-a', 'sample-b', 'sample-c']);
+    const dir = dataDir();
+    writeExam(dir, releasedExam({ id: 'sample-a' }));
+    const message =
+      'src/sample-a.json: 앱 묶음에 든 시험(src/exams/sample-a.json)과 id 가 같아요(sample-a). 같은 id 의 두 판은 앱에서 판 번호(rev)로만 갈려서, 학생 기기의 점수가 알림 없이 바뀌거나 저장한 답이 다른 문항에 붙을 수 있어요. 발행하는 시험에는 묶음 안 시험과 다른 id 를 써요.';
+    expect(rejections(dir)).toEqual([message]);
+    // 묶음 안 시험이 아닌 id 는 그대로 통과한다(바탕이 맞는지).
+    const other = dataDir();
+    writeExam(other, releasedExam());
+    expect(rejections(other)).toEqual([]);
+    // 실제 Node: check 와 쓰지 않는 publish 가 모두 거부한다(종료 코드 1).
+    const check = runTool(['check', '--data', dir]);
+    expect(check.status).toBe(1);
+    expect(check.stdout).toContain(`  - ${message}`);
+    const before = snapshot(dir);
+    const publish = runTool(['publish', '--dry-run', '--data', dir, '--issued-at', '2030-01-02T17:10']);
+    expect(publish.status).toBe(1);
+    expect(publish.stderr).toContain(`  - ${message}`);
+    expect(snapshot(dir)).toEqual(before);
   });
 
   it('학생 화면에 나오는 글자의 금지 문자, 느낌표, 이모지를 거부한다', () => {

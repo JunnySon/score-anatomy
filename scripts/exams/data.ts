@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // 자료 폴더(기본 exam-data, 작업 지시서 3의 6-1)를 읽고 쓰는 곳.
 // - src/: 발행할 시험 파일의 원본. 사람이 고친다. 도구는 이 폴더의 *.json 만 읽는다. 파일 이름은 시험 id 에 .json 을 붙인 것이다.
@@ -65,6 +66,28 @@ function jsonErrorPlace(text: string, e: unknown): string {
   const line = before.split('\n').length;
   const column = before.length - before.lastIndexOf('\n');
   return `(${line}번째 줄 ${column}번째 글자 근처)`;
+}
+
+/** 앱 묶음에 든 시험 파일이 있는 폴더(저장소의 src/exams). */
+export const BUNDLED_EXAMS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'exams');
+
+/**
+ * 앱 묶음에 든 시험의 id 와 파일 이름(저장소의 src/exams/*.json 가운데 잠금 달력 locks.json 을 뺀 것, 별도 검토 A2, B1).
+ * 발행하는 시험은 이 id 를 쓰지 않는다. 같은 id 의 두 판은 앱에서 판 번호(rev)로만 갈려서, 학생 기기의 점수가 알림 없이 바뀌거나
+ * 저장한 답이 다른 문항에 붙을 수 있다. JSON 으로 읽지 못하거나 id 가 글자가 아닌 파일은 건너뛴다.
+ */
+export function bundledExamIds(dir: string = BUNDLED_EXAMS_DIR): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return out;
+  const names = readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isFile() && d.name.endsWith('.json') && d.name !== 'locks.json')
+    .map((d) => d.name)
+    .sort();
+  for (const name of names) {
+    const file = readJsonFile(join(dir, name), name);
+    if (!file.error && isRecord(file.value) && typeof file.value.id === 'string' && file.value.id !== '') out.set(file.value.id, name);
+  }
+  return out;
 }
 
 /** src 폴더의 *.json 파일 이름을 이름 차례로 돌려준다. 폴더가 없으면 null. 다른 파일(README.md 등)과 하위 폴더는 보지 않는다. */

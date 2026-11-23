@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { answersRevOf, checkExam, revOf, typesReadyOf, validateLocks } from '../../src/exams/validate.ts';
 import type { Exam, LockEntry } from '../../src/types.ts';
-import { EXAM_ID_RE, LOCKS_FILE, SRC_DIR, STATE_FILE, isRecord, listSourceFiles, readJsonFile } from './data.ts';
+import { EXAM_ID_RE, LOCKS_FILE, SRC_DIR, STATE_FILE, bundledExamIds, isRecord, listSourceFiles, readJsonFile } from './data.ts';
 import type { Io } from './io.ts';
 import { compareWithPublished, cutsText, locksSha256, missingExams, nosText, parseState, publishedEntry } from './state.ts';
 import type { ExamState, Finding } from './state.ts';
@@ -104,8 +104,11 @@ export function describeNew(exam: Exam): string {
   return `새 시험이에요. ${parts.join(', ')}.`;
 }
 
-/** 자료 폴더를 읽어 검사한다. 파일을 쓰지 않는다. */
-export function checkData(dataDir: string): CheckReport {
+/**
+ * 자료 폴더를 읽어 검사한다. 파일을 쓰지 않는다.
+ * bundled 는 앱 묶음에 든 시험의 id 와 파일 이름이다(기본은 저장소의 src/exams). 그 id 를 쓴 원본은 거부한다(별도 검토 A2, B1).
+ */
+export function checkData(dataDir: string, bundled: ReadonlyMap<string, string> = bundledExamIds()): CheckReport {
   const errors: string[] = [];
   const warnings: string[] = [];
   const lines: string[] = [];
@@ -157,6 +160,12 @@ export function checkData(dataDir: string): CheckReport {
     if (id !== null && id !== '') {
       if (!EXAM_ID_RE.test(id)) errors.push(`${label}: id 는 영어 소문자와 숫자를 붙임표(-)로 이은 모양이어야 해요(형식 예시: test-only-exam).`);
       else if (`${id}.json` !== name) errors.push(`${label}: 파일 이름은 시험 id 에 .json 을 붙인 ${id}.json 이어야 해요.`);
+      const inBundle = bundled.get(id);
+      if (inBundle !== undefined) {
+        errors.push(
+          `${label}: 앱 묶음에 든 시험(src/exams/${inBundle})과 id 가 같아요(${id}). 같은 id 의 두 판은 앱에서 판 번호(rev)로만 갈려서, 학생 기기의 점수가 알림 없이 바뀌거나 저장한 답이 다른 문항에 붙을 수 있어요. 발행하는 시험에는 묶음 안 시험과 다른 id 를 써요.`,
+        );
+      }
     }
     if (isRecord(raw) && raw.rev === undefined) errors.push(`${label}: rev 를 적어야 해요. 발행하는 시험 파일에는 판 번호를 꼭 적어요(처음은 1).`);
     errors.push(...screenTextProblems(raw).map((e) => `${label}: ${e}`));

@@ -235,8 +235,15 @@ export function verifyFolder(dir: string, publicKey: KeyObject): VerifyResult {
   return result;
 }
 
-/** 주소에서 파일 하나를 받는다. 캐시를 쓰지 않고, 제한 시간을 두고, 다른 주소로 넘기는 응답은 따라가지 않는다. */
-export async function fetchBytes(url: URL, timeoutMs: number): Promise<Fetched> {
+/** 주소에서 받는 파일이 MAX_FILE_BYTES 를 넘을 때의 문장. */
+export const TOO_BIG_WHILE_FETCHING = `파일이 너무 커요. ${MAX_FILE_BYTES / 1024 / 1024}MB 를 넘으면 다 받기 전에 끊어요.`;
+
+/**
+ * 주소에서 파일 하나를 받는다. 캐시를 쓰지 않고, 제한 시간을 두고, 다른 주소로 넘기는 응답은 따라가지 않는다.
+ * 크기는 다 받은 뒤가 아니라 받는 도중에 본다(별도 검토 C5): 길이 머리글(Content-Length)이 MAX_FILE_BYTES 를 넘으면 본문을 받지 않고,
+ * 받는 동안 푼 바이트(gzip 같은 압축을 fetch 가 푼 뒤의 크기)의 합이 넘으면 그 자리에서 끊는다.
+ */
+export async function fetchBytes(url: URL, timeoutMs: number, maxBytes: number = MAX_FILE_BYTES): Promise<Fetched> {
   try {
     const res = await fetch(url, {
       method: 'GET',
@@ -250,8 +257,32 @@ export async function fetchBytes(url: URL, timeoutMs: number): Promise<Fetched> 
       const moved = res.status >= 300 && res.status < 400 ? ' 다른 주소로 넘기는 응답은 따라가지 않아요. 정해진 주소를 그대로 줘요.' : '';
       return { bytes: null, error: `받지 못했어요(HTTP 상태 ${res.status}).${moved}` };
     }
-    const bytes = new Uint8Array(await res.arrayBuffer());
-    if (bytes.byteLength > MAX_FILE_BYTES) return { bytes: null, error: '파일이 너무 커요.' };
+    const declared = Number(res.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > maxBytes) {
+      await res.body?.cancel().catch(() => undefined);
+      return { bytes: null, error: TOO_BIG_WHILE_FETCHING };
+    }
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const reader = res.body?.getReader();
+    if (reader) {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          return { bytes: null, error: TOO_BIG_WHILE_FETCHING };
+        }
+        chunks.push(value);
+      }
+    }
+    const bytes = new Uint8Array(total);
+    let at = 0;
+    for (const c of chunks) {
+      bytes.set(c, at);
+      at += c.byteLength;
+    }
     return { bytes, error: null };
   } catch (e) {
     const name = e instanceof Error || e instanceof DOMException ? e.name : '';

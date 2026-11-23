@@ -5,9 +5,10 @@ import type { IncomingHttpHeaders, Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startServer } from './serve.ts';
-import { parseTarget, verifyUrl } from './verify.ts';
+import { TOO_BIG_WHILE_FETCHING, fetchBytes, parseTarget, verifyUrl } from './verify.ts';
 import { makeDataDir, makeOutDir, makeTempKey, publishTo, releasedExam, removeDir, runToolAsync, startTool, verifyWith, writeExam } from './testkit.ts';
 import type { TempKey } from './testkit.ts';
 
@@ -229,6 +230,59 @@ describe('발행 도구 exams:serve(작업 지시서 3의 6-4)', () => {
       if (host.length >= 4) expect(Object.values(s.headers).some((v) => String(v).includes(host)), s.url).toBe(false);
     }
   });
+
+  it('verify 는 주소의 파일이 5MB 를 넘으면 다 받기 전에 끊는다(길이 머리글, 길이 머리글 없음, gzip, 별도 검토 C5)', async () => {
+    const total = 64 * 1024 * 1024;
+    const chunk = Buffer.alloc(64 * 1024, 0x61);
+    /** 64MB 를 흐름으로 보내는 서버. 받는 쪽이 끊으면 그때까지 보낸 바이트 수를 적는다. */
+    const streaming = async (withLength: boolean) => {
+      const state = { sent: 0, closed: false };
+      const { url } = await listen((_req, res) => {
+        res.writeHead(200, withLength ? { 'Content-Length': String(total) } : {});
+        res.on('close', () => {
+          state.closed = true;
+        });
+        const write = () => {
+          while (!state.closed && state.sent < total) {
+            state.sent += chunk.length;
+            if (!res.write(chunk)) {
+              res.once('drain', write);
+              return;
+            }
+          }
+          if (!state.closed) res.end();
+        };
+        write();
+      });
+      return { url, state };
+    };
+    // 길이 머리글이 5MB 를 넘으면 본문을 받지 않는다.
+    const declared = await streaming(true);
+    const a = await fetchBytes(new URL(`${declared.url}index.json`), 15000);
+    expect(a).toEqual({ bytes: null, error: TOO_BIG_WHILE_FETCHING });
+    expect(TOO_BIG_WHILE_FETCHING).toBe('파일이 너무 커요. 5MB 를 넘으면 다 받기 전에 끊어요.');
+    // 길이 머리글이 없으면 받는 도중에 5MB 를 넘는 자리에서 끊는다(서버가 64MB 를 다 보내지 못한다).
+    const chunked = await streaming(false);
+    const b = await fetchBytes(new URL(`${chunked.url}index.json`), 15000);
+    expect(b).toEqual({ bytes: null, error: TOO_BIG_WHILE_FETCHING });
+    await expect.poll(() => chunked.state.closed).toBe(true);
+    expect(chunked.state.sent).toBeLessThan(total / 2);
+    // gzip 으로 줄여 보내도 푼 크기로 센다(64MB 를 푼 뒤에 견주지 않는다).
+    const zipped = gzipSync(Buffer.alloc(total, 0x61));
+    expect(zipped.length).toBeLessThan(1024 * 1024);
+    const gz = await listen((_req, res) => {
+      res.writeHead(200, { 'Content-Encoding': 'gzip', 'Content-Length': String(zipped.length) }).end(zipped);
+    });
+    const c = await fetchBytes(new URL(`${gz.url}index.json`), 15000);
+    expect(c).toEqual({ bytes: null, error: TOO_BIG_WHILE_FETCHING });
+    // 5MB 안쪽의 파일은 지금처럼 받는다.
+    const small = await listen((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"ok":true}');
+    });
+    const d = await fetchBytes(new URL(`${small.url}index.json`), 15000);
+    expect(d.error).toBeNull();
+    expect(Buffer.from(d.bytes!).toString('utf8')).toBe('{"ok":true}');
+  }, 60000);
 
   it('verify 는 주소의 응답이 없으면 제한 시간 뒤에 실패하고, 다른 주소로 넘기는 응답을 따라가지 않는다', async () => {
     const key = tempKey();

@@ -1,8 +1,8 @@
 {
   "name": "score-anatomy",
-  "commit": "2bdac4a21932bcaaa31f3bc0b530009ecd7c43ab",
+  "commit": "758651d1944953b9a4b8a1bd973305ff3b819370",
   "dirty": false,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "bridge": 1,
   "bridgeMax": 2,
   "files": {

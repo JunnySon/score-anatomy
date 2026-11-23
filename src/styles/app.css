@@ -471,6 +471,10 @@ a {
 .notice .btn--text:active {
   background: var(--bg);
 }
+/* 시험 선택 화면의 받은 시험 자료 안내(작업 지시서 3의 5-4): 정정 알림과 같은 중립 안내 모양이다. 안의 글자 버튼은 누를 때 배경색으로 구분한다. */
+.remote-notice .btn--text:active {
+  background: var(--bg);
+}
 
 /* 고르는 줄(라디오) */
 .opts {

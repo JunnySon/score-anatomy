@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { platform } from '#platform';
+import { RemoteNotice, RemoteRefresh } from '../components/RemoteNotice';
 import { Badge, Message, Option, Screen, TopBar } from '../components/ui';
-import { useCatalog, useExams } from '../exams';
+import { catalog, useCatalog, useExams } from '../exams';
 import { parseYmd } from '../logic/dates';
 import { navigate } from '../router';
 import { startSession } from '../state/hooks';
@@ -29,6 +31,11 @@ export function ExamSelect() {
   const exams = useExams();
   const { remote } = useCatalog();
   const exam = exams.find((e) => e.id === examId) ?? null;
+  // 받은 시험 자료 안내와 "새로 확인"(작업 지시서 3의 5-4): 앱에서 다리 규격 2 이상이고 넘겨받은 자료가 있을 때만 본문 끝에 둔다.
+  // 규격 1 껍데기, 브라우저, 넘겨받은 자료가 없으면 그리지 않아서 지금과 같다.
+  const appText = platform.remoteBridge ? platform.appText : null;
+  // 버튼 상태는 화면을 열 때마다 새로 만든다(화면을 떠났다 오면 결과 문구가 없다).
+  const [refresh] = useState(() => new RemoteRefresh(catalog));
 
   useEffect(() => {
     if (examId) questionRef.current?.scrollIntoView({ block: 'nearest' });
@@ -139,6 +146,8 @@ export function ExamSelect() {
           ) : null}
         </div>
       ) : null}
+
+      {appText && remote ? <RemoteNotice text={appText} remote={remote} refresh={refresh} /> : null}
     </Screen>
   );
 }

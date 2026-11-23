@@ -419,7 +419,8 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await openApp(page, '/anatomy');
   await expect(page.getByTestId('actual')).toHaveText('84점');
   await expect(page.getByTestId('cut-actual')).toHaveText('컷 범위 안이에요.');
-  await expect(page.getByText('컷이 확정되면 이 화면이 바뀌어요.')).toBeVisible();
+  // 추정 컷이라 컷 자료가 바뀌면 화면도 바뀐다고 알린다. 컷이 어떻게 바뀔지는 약속하지 않는다(작업 지시서 3의 4-4).
+  await expect(page.getByText('컷 자료가 바뀌면 이 화면도 바뀌어요.')).toBeVisible();
   await page.getByTestId('cutbox').scrollIntoViewIfNeeded();
   await stop('점수해부-컷범위안');
 

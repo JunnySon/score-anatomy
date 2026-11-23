@@ -252,15 +252,22 @@ export const S = {
     sourceTitle: '등급컷 출처',
     sourceSample: '예시 값이에요',
     source: (s: string) => `출처: ${s}`,
+    // 등급컷 기준. 날짜만 적혀 있으면 적힌 글자 그대로("기준일: 2026-11-22"),
+    // 시각까지 적혀 있으면 시험 목록의 시행일과 같은 날짜 모양에 시각을 붙인다(작업 지시서 3의 4-4).
     asOf: (d: string) => `기준일: ${d}`,
-    sourceConfirmed: '확정된 컷이에요.',
-    sourceEstimate: '추정한 컷이라 범위로 적었어요. 컷이 확정되면 한 숫자로 바뀌어요.',
+    asOfTime: (y: number, m: number, d: number, h: number, mi: number) => `기준: ${dateText(y, m, d)} ${clockText(h, mi)}`,
+    // 출처 시트의 설명(작업 지시서 3의 4-4). "확정"은 주관 기관이 원점수 등급컷을 직접 발표했을 때만 쓴다.
+    sourceConfirmed: '주관 기관이 발표한 컷이에요.',
+    sourceEstimate: '추정한 컷이라 범위로 적었어요. 새 자료가 나오면 고쳐요.',
+    sourceEstimateOne: '추정한 컷이에요. 새 자료가 나오면 고쳐요.',
     actualBelow: (actual: number, from: number, to: number) => [`실제 ${actual}점 기준`, `${rangePoints(from, to)} 남았어요`] as const,
     actualWithinLead: '컷 범위 안이에요.',
-    actualWithinRest: '컷이 확정되면 이 화면이 바뀌어요.',
+    // 추정 컷의 범위 안이거나 컷과 같은 점수일 때 덧붙인다. 컷이 어떻게 바뀔지는 약속하지 않는다(작업 지시서 3의 4-4).
+    actualWithinRest: '컷 자료가 바뀌면 이 화면도 바뀌어요.',
     actualAbove: '컷 범위보다 위예요.',
-    actualEqualConfirmed: '컷과 같은 점수예요.',
-    actualAboveConfirmed: '컷보다 위예요.',
+    // 한 숫자 컷(확정 컷이나 두 값이 같은 추정 컷)일 때.
+    actualEqualSingle: '컷과 같은 점수예요.',
+    actualAboveSingle: '컷보다 위예요.',
     luckBelow: (rounded: number, from: number, to: number) =>
       `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 ${rangePoints(from, to)}이에요`,
     // 첫 줄이 "남았어요"가 아닐 때는 둘째 줄만 읽어도 뜻이 통하게 적는다.
@@ -268,8 +275,8 @@ export const S = {
       `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 ${rangePoints(from, to)} 남았어요`,
     luckWithin: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷 범위 안이에요`,
     luckAbove: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷 범위보다 위예요`,
-    luckEqualConfirmed: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷과 같은 점수예요`,
-    luckAboveConfirmed: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷보다 위예요`,
+    luckEqualSingle: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷과 같은 점수예요`,
+    luckAboveSingle: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷보다 위예요`,
     luckSummary: (rounded: number) => `약 ${rounded}점 설명 보기`,
     luckDetail: (actual: number) =>
       `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요. 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,

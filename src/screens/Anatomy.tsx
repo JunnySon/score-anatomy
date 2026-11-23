@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, BottomSheet, Chip, IconInfo, Message, Screen, TopBar } from '../components/ui';
 import { typesReadyOf } from '../exams/validate';
-import { cutView, gradeKeys } from '../logic/cuts';
+import { cutView, gradeKeys, type CutView } from '../logic/cuts';
 import { analyze, type Grade } from '../logic/scoring';
 import { selectSteps } from '../logic/steps';
-import { actualLine, anatomySentences, luckLine, noCutsText, typesPendingText } from '../logic/text';
+import { actualLine, anatomySentences, asOfLine, cutNote, luckLine, noCutsText, typesPendingText } from '../logic/text';
 import { href, navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { isMarkedAfterGrading, setTargetGrade } from '../state/session';
@@ -13,6 +13,21 @@ import { S } from '../strings';
 
 // (8) 점수 해부 화면. 이 앱의 핵심 화면이다.
 // 주 숫자는 실제 점수 하나뿐이다. 추정값에는 "추정" 배지와 "약"을 붙인다.
+
+/**
+ * 등급컷 출처 시트의 내용: 예시 값인지, 출처, 기준, 설명(작업 지시서 3의 4-4).
+ * 배지를 눌러야 열리는 시트라서, 단위 테스트가 서버 그리기로 글자를 볼 수 있게 따로 내보낸다.
+ */
+export function CutSource({ cv, isSample }: { cv: CutView; isSample: boolean }) {
+  return (
+    <div className="stack gap2" data-testid="cut-source">
+      {isSample ? <p>{S.anatomy.sourceSample}</p> : null}
+      <p>{S.anatomy.source(cv.source)}</p>
+      <p>{asOfLine(cv.asOf)}</p>
+      <p className="sub">{cutNote(cv)}</p>
+    </div>
+  );
+}
 
 export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const { exam, session } = h;
@@ -37,12 +52,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
       layer={
         sourceOpen && cv ? (
           <BottomSheet title={S.anatomy.sourceTitle} onClose={() => setSourceOpen(false)}>
-            <div className="stack gap2" data-testid="cut-source">
-              {exam.isSample ? <p>{S.anatomy.sourceSample}</p> : null}
-              <p>{S.anatomy.source(cv.source)}</p>
-              <p>{S.anatomy.asOf(cv.asOf)}</p>
-              <p className="sub">{cv.confirmed ? S.anatomy.sourceConfirmed : S.anatomy.sourceEstimate}</p>
-            </div>
+            <CutSource cv={cv} isSample={exam.isSample} />
           </BottomSheet>
         ) : null
       }

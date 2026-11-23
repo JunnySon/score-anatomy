@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findExam } from './exams';
 import { exampleAnswers } from './logic/example';
@@ -81,6 +81,30 @@ describe('결정 기록의 번호', () => {
   });
 });
 
+
+/** 폴더 아래의 글자 파일(코드, 설정, 문서)을 모두 모은다. */
+function textFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) out.push(...textFiles(full));
+    else if (/\.(ts|tsx|mjs|md|json|css|html)$/.test(name)) out.push(full);
+  }
+  return out;
+}
+
+describe('확정을 약속하는 문구(작업 지시서 3의 4-4)', () => {
+  it('화면 문구, 코드, 화면 테스트, 문서 어디에도 등급컷의 확정을 약속하는 문장이 없다', () => {
+    const root = process.cwd();
+    // 앱용 묶음(ios)은 npm run build:app 으로 다시 만들 때 바뀌어서 여기서 보지 않는다.
+    const files = [...['src', 'e2e', 'scripts', 'docs'].flatMap((d) => textFiles(resolve(root, d))), resolve(root, 'README.md'), resolve(root, 'index.html')];
+    // 이 파일도 읽으므로 찾는 말("확정" 뒤에 "되면"이나 "이 되면")을 조각으로 나눠 적는다.
+    const promise = new RegExp(['확정', '(이\\s*)?', '되면'].join(''));
+    const hits = files.filter((f) => promise.test(readFileSync(f, 'utf8'))).map((f) => relative(root, f));
+    expect(files.length).toBeGreaterThan(50);
+    expect(hits).toEqual([]);
+  });
+});
 
 describe('앱 다리 규격 번호', () => {
   it('규격 문서 제목, 웹 코드(src/platform/app.ts)의 번호가 같다', () => {

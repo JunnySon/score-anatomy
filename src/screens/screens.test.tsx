@@ -4,13 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { GradedScreen } from '../App';
 import { findExam } from '../exams';
 import { validateExam } from '../exams/validate';
+import { cutView } from '../logic/cuts';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
-import { gradeExam } from '../logic/scoring';
+import { analyze, gradeExam } from '../logic/scoring';
 import { parseHash } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { newSession } from '../state/session';
 import type { Causes as CauseMap, Exam, ExamItem, Marks as MarkMap, Session } from '../types';
-import { Anatomy } from './Anatomy';
+import { Anatomy, CutSource } from './Anatomy';
 import { Causes } from './Causes';
 import { Retry } from './Retry';
 import { Score } from './Score';
@@ -379,5 +380,57 @@ describe('유형 분류가 늦을 때(작업 지시서 3의 4-3)', () => {
     expect(startPreview(pending)?.stepsLine).toBe('유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.');
     expect(startPreview({ ...pending, cuts: undefined })?.stepsLine).toBe('유형 분류를 준비하고 있어요. 점수는 지금 볼 수 있어요.');
     expect(startPreview(pending)?.an.actual).toBe(78);
+  });
+});
+
+describe('등급컷 표시와 문구(작업 지시서 3의 4-4)', () => {
+  /** 예시 시험 A의 등급컷만 바꾼 사본(테스트 전용 자료). 기준은 지시서의 형식 예시(2030-01-02 20:10)와 예시 시험의 날짜만 쓴다. */
+  function withCuts(asOf: string, confirmed: boolean, grades: Record<string, [number, number]>): Exam {
+    return { ...examA, cuts: { source: '예시 값', asOf, confirmed, grades } };
+  }
+
+  /** 등급컷 출처 시트의 글자. 배지를 눌러야 열리는 시트라서 시트 내용만 그린다. */
+  function sheet(exam: Exam, grade: string): string {
+    const h = handleFor(exam, exampleMarks(), exampleCauses(), { targetGrade: grade });
+    const cv = cutView(exam, analyze(exam, gradeExam(exam, h.session)), grade)!;
+    return text(renderToStaticMarkup(<CutSource cv={cv} isSample={exam.isSample} />));
+  }
+
+  it('추정인데 두 값이 같은 컷은 "2등급 컷 82점"처럼 한 숫자로 보이고 배지는 추정이다', () => {
+    const exam = withCuts('2030-01-02T20:10', false, { '2': [82, 82] });
+    expect(validateExam(exam)).toEqual([]);
+    const html = anatomy(handleFor(exam, exampleMarks(), exampleCauses(), { targetGrade: '2' }));
+    expect(html).toContain('data-testid="cut-title">2등급 컷 82점</p>');
+    expect(html).toContain('data-testid="cut-badge" aria-label="추정, 등급컷 출처 보기"');
+    expect(html).not.toContain('확정');
+    const t = text(html);
+    expect(t).toContain('실제 78점 기준 4점 남았어요');
+    expect(t).toContain('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 7점이에요 추정');
+    expect(sheet(exam, '2')).toBe('예시 값이에요 출처: 예시 값 기준: 2030년 1월 2일 오후 8시 10분 추정한 컷이에요. 새 자료가 나오면 고쳐요.');
+    // 컷과 같은 점수면 "범위 안"이 아니라 "컷과 같은 점수"로 적고, 추정 컷이라 컷 자료가 바뀌면 이 화면도 바뀐다고 덧붙인다.
+    const same = withCuts('2030-01-02T20:00', false, { '2': [78, 78] });
+    const t2 = text(anatomy(handleFor(same, exampleMarks(), exampleCauses(), { targetGrade: '2' })));
+    expect(t2).toContain('2등급 컷 78점 추정');
+    expect(t2).toContain('컷과 같은 점수예요. 컷 자료가 바뀌면 이 화면도 바뀌어요.');
+    expect(t2).not.toContain('범위');
+    expect(sheet(same, '2')).toContain('기준: 2030년 1월 2일 오후 8시 추정한 컷이에요.');
+  });
+
+  it('출처 시트: 주관 기관이 발표한 컷, 추정 범위, 추정 한 값의 설명과 기준을 적는다', () => {
+    // 주관 기관이 발표한 컷(confirmed true): 한 숫자와 확정 배지. 컷 자료가 바뀐다고 덧붙이지 않는다.
+    const confirmed = withCuts('2030-01-02T20:10', true, { '2': [78, 78] });
+    expect(validateExam(confirmed)).toEqual([]);
+    const html = anatomy(handleFor(confirmed, exampleMarks(), exampleCauses(), { targetGrade: '2' }));
+    expect(html).toContain('data-testid="cut-badge" aria-label="확정, 등급컷 출처 보기"');
+    expect(text(html)).toContain('2등급 컷 78점 확정 컷과 같은 점수예요.');
+    expect(text(html)).not.toContain('컷 자료가 바뀌면');
+    expect(sheet(confirmed, '2')).toBe('예시 값이에요 출처: 예시 값 기준: 2030년 1월 2일 오후 8시 10분 주관 기관이 발표한 컷이에요.');
+    // 추정 범위(예시 시험 A 그대로): 기준이 날짜만이라 1.1의 글자 그대로다.
+    expect(sheet(examA, '2')).toBe('예시 값이에요 출처: 예시 값 기준일: 2026-11-22 추정한 컷이라 범위로 적었어요. 새 자료가 나오면 고쳐요.');
+    // 추정 범위 안이면 컷 자료가 바뀌면 이 화면도 바뀐다고 덧붙인다.
+    const within = withCuts('2026-11-22', false, { '2': [76, 80] });
+    expect(text(anatomy(handleFor(within, exampleMarks(), exampleCauses(), { targetGrade: '2' })))).toContain('컷 범위 안이에요. 컷 자료가 바뀌면 이 화면도 바뀌어요.');
+    // 예시가 아닌 시험이면 "예시 값이에요"가 없다.
+    expect(sheet({ ...confirmed, isSample: false }, '2')).toBe('출처: 예시 값 기준: 2030년 1월 2일 오후 8시 10분 주관 기관이 발표한 컷이에요.');
   });
 });

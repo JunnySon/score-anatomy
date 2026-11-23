@@ -269,6 +269,19 @@ describe('화면 문구', () => {
     expect(S.anatomy.emptyGuessAllCorrect(60)).toBe('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. 60점 그대로예요.');
     // 4-3: 유형 분류가 늦을 때 계단 대신 보여 주는 안내.
     for (const text of ['유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.']) expect(texts.has(text), text).toBe(true);
+    // 4-4: 등급컷 설명 셋과, 확정을 약속하던 문장 대신 쓰는 문장. 기준에 시각이 있으면 한국 시간으로 적는다.
+    for (const text of [
+      '주관 기관이 발표한 컷이에요.',
+      '추정한 컷이라 범위로 적었어요. 새 자료가 나오면 고쳐요.',
+      '추정한 컷이에요. 새 자료가 나오면 고쳐요.',
+      '컷 자료가 바뀌면 이 화면도 바뀌어요.',
+    ]) {
+      expect(texts.has(text), text).toBe(true);
+    }
+    expect(S.anatomy.asOfTime(2030, 1, 2, 20, 10)).toBe('기준: 2030년 1월 2일 오후 8시 10분');
+    expect(S.anatomy.asOfTime(2030, 1, 2, 20, 0)).toBe('기준: 2030년 1월 2일 오후 8시');
+    expect(S.anatomy.asOf('2026-11-22')).toBe('기준일: 2026-11-22');
+    expect(S.anatomy.cutTitle('2', 82, 82)).toBe('2등급 컷 82점');
   });
 });
 

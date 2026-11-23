@@ -450,10 +450,12 @@ describe('사용성 테스트 측정 기록', () => {
     expect(startedCol).toBeGreaterThan(0);
     expect(csvLines[1]!.split(',')[startedCol]).toBe('');
     expect(JSON.parse(exportJson(rows, 0)).runs[0].startedAtIso).toBe('');
+    expect(JSON.parse(exportJson(rows, 0)).runs[0].startedAt).toBeNull();
     // 멀쩡한 시작 시각은 그대로 적는다.
     const fine = [{ run: { ...r, startedAt: Date.UTC(2026, 10, 22, 1, 2, 3) }, session: null, exam: examA }];
     expect(exportCsv(fine).split('\n')[1]!.split(',')[startedCol]).toBe('2026-11-22T01:02:03.000Z');
     expect(JSON.parse(exportJson(fine, 0)).runs[0].startedAtIso).toBe('2026-11-22T01:02:03.000Z');
+    expect(JSON.parse(exportJson(fine, 0)).runs[0].startedAt).toBe(Date.UTC(2026, 10, 22, 1, 2, 3));
     // 날짜로 쓸 수 없는 시각이 그대로 들어와도 내보내기는 멈추지 않는다.
     const broken = [{ run: { ...r, startedAt: 9e15, screens: [{ screen: 'start', at: 9e15 }] }, session: null, exam: examA }];
     expect(() => exportCsv(broken)).not.toThrow();

@@ -150,6 +150,33 @@ describe('테스트 중의 이어서 보기', () => {
     expect(resumeCandidate(store.get())).toBeNull();
   });
 
+  it('시작 시각을 읽지 못한 측정에서는 앞 참가자의 기록을 이번 참가자의 것으로 보지 않는다', () => {
+    // 앞 참가자가 넣다 만 기록이 기기에 남아 있다.
+    startSession('sample-a', 'not_yet', null);
+    const prev = current()!.id;
+    enter(answersA, [1, 2, 3]);
+    tick(1000);
+    startTestRun('P07', 'keypad', 'sample-a');
+    // 저장 값이 망가져 시작 시각이 0으로 읽힌 경우.
+    store.update((d) => ({ ...d, testRuns: d.testRuns.map((r) => ({ ...r, startedAt: 0 })) }));
+    expect(resumeCandidate(store.get())).toBeNull();
+    // 같은 시험을 골라도 앞 참가자의 기록을 이어 쓰지 않고 새 기록을 만든다.
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    const mine = current()!.id;
+    expect(mine).not.toBe(prev);
+    expect(current()!.answers).toEqual({});
+    expect(activeRun(store.get())!.sessionId).toBe(mine);
+    // 묶인 기록은 이번 참가자의 것이므로 이어 볼 수 있다. 그 기록을 지우면 앞 참가자의 기록은 열지 않는다.
+    store.update((d) => ({ ...d, currentId: null }));
+    expect(resumeCandidate(store.get())!.session.id).toBe(mine);
+    deleteSession(mine);
+    expect(resumeCandidate(store.get())).toBeNull();
+    // 기록 탭에서 앞 참가자의 기록을 열어도 측정은 옮겨 가지 않는다.
+    openSession(prev);
+    expect(activeRun(store.get())!.sessionId).toBe(mine);
+  });
+
   it('이번 참가자의 기록이 여러 건 남아 있으면 가장 최근에 만든 것을 연다', () => {
     startTestRun('P04', 'keypad', 'sample-a');
     tick(1000);

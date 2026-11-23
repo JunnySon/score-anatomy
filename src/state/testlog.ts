@@ -76,9 +76,15 @@ export function isRunDone(run: TestRun, bound: Session | null): boolean {
   return run.firstScoreAt !== null || (bound !== null && bound.firstGradedAt !== null);
 }
 
-/** 이번 참가자가 만든 기록인지: 측정에 묶인 기록이거나, 측정을 시작한 뒤에 만든 기록. */
+/**
+ * 이번 참가자가 만든 기록인지: 측정에 묶인 기록이거나, 측정을 시작한 뒤에 만든 기록.
+ * 시작 시각을 읽지 못한 측정(저장 값이 망가진 경우)은 언제 시작했는지 모르므로 묶인 기록만 이번 참가자의 것으로 본다.
+ * 그러지 않으면 기기에 남은 앞 참가자의 기록이 모두 이번 참가자의 것으로 보인다.
+ */
 export function isMine(run: TestRun, session: Session): boolean {
-  return session.id === run.sessionId || Date.parse(session.createdAt) > run.startedAt;
+  if (session.id === run.sessionId) return true;
+  const start = startOf(run);
+  return start !== null && Date.parse(session.createdAt) > start;
 }
 
 /** 기록 한 건을 보여 주는 화면들. 측정에 묶인 기록이 아닌 기록에서 열리면 이름 앞에 OTHER_PREFIX를 붙여 적는다. */
@@ -249,12 +255,12 @@ export function runMetrics(run: TestRun, session: Session | null, exam: Exam | n
   };
 }
 
-/** 시각을 글자로 적는다. 날짜로 쓸 수 없는 값(저장 값이 망가진 경우)은 비워 둔다. */
 /** 측정의 시작 시각. 저장 값이 망가져 읽지 못했으면(0으로 읽힘) null. */
 export function startOf(run: TestRun): number | null {
   return run.startedAt > 0 ? run.startedAt : null;
 }
 
+/** 시각을 글자로 적는다. 날짜로 쓸 수 없는 값(저장 값이 망가진 경우)은 비워 둔다. */
 function iso(ms: number | null): string {
   if (ms === null) return '';
   const d = new Date(ms);
@@ -281,6 +287,8 @@ export function exportJson(rows: RunExportRow[], exportedAt: number): string {
       exportedAt: iso(exportedAt),
       runs: rows.map(({ run, session, exam }) => ({
         ...run,
+        // 읽지 못한 시작 시각은 0(1970년)이 아니라 빈 값으로 내보낸다.
+        startedAt: startOf(run),
         startedAtIso: iso(startOf(run)),
         metrics: runMetrics(run, session, exam),
         finalAnswers: finalAnswersOf(run, session, exam),

@@ -1,0 +1,17 @@
+{
+  "name": "score-anatomy",
+  "commit": "cd9d1dc959eb5effb1bf59f47a08cdb0c226f6ad",
+  "dirty": false,
+  "version": "0.2.0",
+  "bridge": 1,
+  "files": {
+    "app-test/index.html": {
+      "sha256": "c06663335d290a7e2fc146de839afb349860bf19c43551a3b249dd834462bd64",
+      "bytes": 364284
+    },
+    "app-release/index.html": {
+      "sha256": "665fc0d6f6d02f09726dc3dbefe838f5efee660ec93d1ad8af07568850be2b98",
+      "bytes": 334640
+    }
+  }
+}

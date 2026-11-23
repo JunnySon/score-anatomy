@@ -104,7 +104,7 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     expect(lines('.gitignore')).toContain('dist-exams/');
     expect(lines('.gitattributes')).toContain('exam-data/testdata/** -text');
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-    for (const cmd of ['check']) expect(pkg.scripts[`exams:${cmd}`]).toBe(`node scripts/exams.mjs ${cmd}`);
+    for (const cmd of ['check', 'answers', 'cuts']) expect(pkg.scripts[`exams:${cmd}`]).toBe(`node scripts/exams.mjs ${cmd}`);
   });
 
   it('키를 정렬한 JSON 은 2칸 들여쓰기, LF, 끝 줄바꿈이고 키 차례가 달라도 같은 바이트다', () => {
@@ -205,6 +205,7 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     expect((await run(['nope'])).err[0]).toBe('모르는 명령이에요: nope');
     expect((await run(['check', '--note', '테스트 전용 정정 안내예요.'])).err).toEqual(['check 에는 --note 를 쓰지 않아요.']);
     expect((await run(['check', '--bogus'])).err).toEqual(['모르는 선택지예요: --bogus']);
+    expect((await run(['answers', 'a.txt'])).err).toEqual(['인자가 2개여야 해요: node scripts/exams.mjs answers <정답 파일 1> <정답 파일 2> [--note "<정정 안내>"]']);
     expect((await run(['check', '--data'])).err).toEqual(['--data 다음에 값을 적어 주세요.']);
     expect(parseArgs(['answers', '--data=d', 'a', '--', '--b'])).toEqual({ command: 'answers', args: ['a', '--b'], options: { data: 'd' }, errors: [] });
     const dir = makeDataDir();

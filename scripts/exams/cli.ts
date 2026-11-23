@@ -1,6 +1,8 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runAnswers } from './answers.ts';
 import { runCheck } from './check.ts';
+import { runCuts } from './cuts.ts';
 import { displayPath } from './data.ts';
 import { consoleIo } from './io.ts';
 import type { Io } from './io.ts';
@@ -28,14 +30,19 @@ const COMMON: readonly OptionName[] = ['data', 'out'];
 
 const COMMANDS: Record<string, CommandSpec> = {
   check: { args: 0, options: COMMON, usage: 'check' },
+  answers: { args: 2, options: [...COMMON, 'note'], usage: 'answers <정답 파일 1> <정답 파일 2> [--note "<정정 안내>"]' },
+  cuts: { args: 1, options: COMMON, usage: 'cuts <기관별 추정 컷 파일>' },
 };
 
 /** 작업 지시서 3의 6-4 에 있지만 아직 만들지 않은 명령. */
-const PLANNED = ['answers', 'cuts', 'publish', 'verify', 'keygen', 'serve'];
+const PLANNED = ['publish', 'verify', 'keygen', 'serve'];
 
 const USAGE = [
   '사용법: node scripts/exams.mjs <명령> [인자] [--data <자료 폴더>] [--out <발행 폴더>]',
   '  check                         원본 시험 파일과 잠금 달력을 검사하고 발행한 기록과 견줘요. 파일을 쓰지 않아요.',
+  '  answers <파일 1> <파일 2>     두 사람이 따로 적은 정답 파일이 같을 때만 원본 시험 파일에 정답을 넣어요.',
+  '                                발행한 정답을 고칠 때는 --note "<정정 안내>" 가 있어야 해요.',
+  '  cuts <입력 파일>              기관별 추정 컷으로 원본 시험 파일의 등급컷을 써요.',
   `  ${PLANNED.join(', ')}    아직 만들지 않았어요.`,
   '--data 의 기본값은 exam-data, --out 의 기본값은 dist-exams 예요(저장소 폴더 기준).',
 ];
@@ -117,9 +124,15 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
   const base = process.env.INIT_CWD || process.cwd();
   const dataDir = parsed.options.data === undefined ? join(ROOT, 'exam-data') : resolve(base, parsed.options.data);
   const dataName = displayPath(dataDir, base);
+  const files = parsed.args.map((a) => resolve(base, a));
+  const names = files.map((f) => displayPath(f, base));
   switch (parsed.command) {
     case 'check':
       return runCheck({ dataDir, dataName }, io);
+    case 'answers':
+      return runAnswers({ dataDir, files: [files[0], files[1]], names: [names[0], names[1]], note: parsed.options.note ?? null }, io);
+    case 'cuts':
+      return runCuts({ dataDir, file: files[0], name: names[0] }, io);
     default:
       return usage(2);
   }

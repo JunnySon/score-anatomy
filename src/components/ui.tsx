@@ -117,9 +117,14 @@ interface ScreenProps {
    * 값이 undefined 로 바뀔 때는 막지 않는다.
    */
   shiftKey?: string;
+  /**
+   * shiftKey 가 바뀐 그 그리기에서 true 면 그 0.5초 동안 단답형 숫자 키(data-tap-safe)도 받지 않는다.
+   * 재풀이의 지금 문항이 다른 문항으로 옮겨 갔을 때 쓴다(옮겨 가기 전 문항에 넣던 숫자가 옮겨 온 문항에 들어가지 않게, 별도 검토 2차 P1).
+   */
+  shiftStrict?: boolean;
 }
 
-export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey, shiftKey }: ScreenProps) {
+export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey, shiftKey, shiftStrict }: ScreenProps) {
   const bodyRef = useRef<HTMLElement>(null);
   const onShown = useContext(ScreenShownContext);
   // 화면이 새로 그려지거나 guardKey가 바뀌면, 같은 자리를 연달아 누른 것이 새 버튼에 닿지 않게 한다.
@@ -131,7 +136,8 @@ export function Screen({ top, children, actions, footer, tabs, layer, bodyClass,
   useLayoutEffect(() => {
     if (shiftRef.current === shiftKey) return;
     shiftRef.current = shiftKey;
-    if (shiftKey !== undefined) markContentShifted();
+    if (shiftKey !== undefined) markContentShifted(shiftStrict === true);
+    // shiftStrict 는 shiftKey 가 바뀐 그 그리기의 값만 쓴다(그래서 의존 목록에 넣지 않는다).
   }, [shiftKey]);
   useEffect(() => {
     onShown?.();

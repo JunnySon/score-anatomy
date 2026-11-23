@@ -662,7 +662,7 @@ def network_numbers(rows):
     parts = []
     for r in pick(rows, "network"):
         if r.get("mode") == "blocked":
-            parts.append(f"차단 실행: 하위 자원 요청 10가지(fetch 2, XHR, 그림, 스크립트, 스타일, 비컨, 웹소켓, 서버 이벤트, iframe)와 스크립트의 새 창이 수신기에 닿은 연결 {r.get('connections')}건, 문서 이동까지 모두 닿은 요청 내용 {len(r.get('requests', []))}건, 껍데기가 취소한 이동 {r.get('blockedNavigations')}건과 막은 새 창 {r.get('blockedWindows')}건. 참고: 링크로 가는 이동에서 WebKit 이 내용 없이 미리 맺은 연결 {r.get('preconnects')}건(웹 묶음에는 바깥 링크가 없다)")
+            parts.append(f"차단 실행: 하위 자원 요청 10가지(fetch 2, XHR, 그림, 스크립트, 스타일, 비컨, 웹소켓, 서버 이벤트, iframe)와 스크립트의 새 창이 수신기에 닿은 연결 {r.get('connections')}건, 문서 이동까지 모두 닿은 요청 내용 {len(r.get('requests', []))}건, 껍데기가 취소한 이동 {r.get('blockedNavigations')}건(iframe, 스크립트의 링크와 새 창 링크와 location 과 form, 사람이 누른 링크와 새 창 링크)과 새 창 만들기 단계에서 거절한 것 {r.get('blockedWindows')}건. 참고: 링크로 가는 이동에서 WebKit 이 내용 없이 미리 맺은 연결 {r.get('preconnects')}건(웹 묶음에는 바깥 링크가 없다)")
         else:
             parts.append(f"대조 실행(규칙 없음): 닿은 연결 {r.get('connections')}건, 요청 내용 {r.get('requests')}건")
     return (". " + ". ".join(parts) + ".") if parts else "."

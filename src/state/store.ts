@@ -38,6 +38,8 @@ const isAnswer = (v: unknown): v is Session['answers'][number] => v === 'skip' |
 const isMark = (v: unknown): v is Session['marks'][number] => v === 'doubt' || v === 'guess' || v === 'unsure';
 const isCause = (v: unknown): v is Session['causes'][number] => v === 'slip' || v === 'blank' || v === 'unknown';
 const isTrue = (v: unknown): v is true => v === true;
+/** 정답 보기로 본 인정하는 답의 글자(별도 검토 A5): 0~999 의 정수를 쉼표로 이은 것. */
+const isSeenKey = (v: unknown): v is string => typeof v === 'string' && /^\d{1,3}(?:,\d{1,3})*$/.test(v);
 const isSelfCheck = (v: unknown): v is Session['selfChecks'][number] =>
   isObject(v) && (v.result === 'solved' || v.result === 'stuck') && typeof v.at === 'string';
 const isRetryLike = (v: unknown): v is Record<string, unknown> =>
@@ -95,6 +97,9 @@ function cleanSession(raw: unknown): Session | null {
   };
   // 작업 지시서 3의 4-6에서 더한 칸(채점 흔적). 모양이 맞을 때만 칸을 두고, 없거나 틀리면 칸이 없는 옛 기록으로 읽는다(version 은 그대로 1).
   if (isGradedWith(raw.gradedWith)) session.gradedWith = { answersRev: raw.gradedWith.answersRev, score: raw.gradedWith.score };
+  // 정답 보기로 본 인정하는 답(별도 검토 A5). 모양이 맞는 값만 남기고, 하나도 없으면 칸을 두지 않는다(칸이 없는 옛 기록으로 읽는다).
+  const seen = cleanRecord(raw.answerSeen, isSeenKey);
+  if (Object.keys(seen).length > 0) session.answerSeen = seen;
   // 기록을 시작한 때의 시험 제목(별도 검토 D2). 빈칸이 아닌 글자(200자까지)일 때만 칸을 두고, 아니면 칸이 없는 옛 기록으로 읽는다.
   if (typeof raw.examTitle === 'string' && raw.examTitle.trim() !== '' && raw.examTitle.length <= 200) session.examTitle = raw.examTitle;
   return session;

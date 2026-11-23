@@ -1,6 +1,6 @@
-import { answersRevOf } from '../exams/validate';
+import { acceptedAnswers, answersRevOf } from '../exams/validate';
 import { findMissing, gradeExam, isAnswered, type Grade } from '../logic/scoring';
-import type { AnswerValue, AppData, Cause, Exam, GradedBefore, Mark, RetryRecord, SeenBefore, SelfCheck, Session, TimeFeel } from '../types';
+import type { AnswerValue, AppData, Cause, Exam, ExamItem, GradedBefore, Mark, RetryRecord, SeenBefore, SelfCheck, Session, TimeFeel } from '../types';
 import { newId } from './store';
 
 // 기록 한 건(Session)을 고치는 순수 함수들. 화면은 이 함수들로만 기록을 바꾼다.
@@ -122,10 +122,32 @@ export function setCause(session: Session, no: number, cause: Cause): Session {
   return { ...session, causes: { ...session.causes, [no]: cause } };
 }
 
-/** 정답 보기를 눌렀다는 기록("정답 확인함"). */
-export function viewAnswer(session: Session, no: number): Session {
-  if (session.answerViewed[no]) return session;
-  return { ...session, answerViewed: { ...session.answerViewed, [no]: true } };
+/** 문항의 인정하는 답(answer 와 altAnswers)을 작은 수부터 쉼표로 이은 글자. 정답 보기로 본 답을 적을 때 쓴다(answerSeen). */
+export function acceptedKey(item: ExamItem): string {
+  return [...acceptedAnswers(item)].sort((a, b) => a - b).join(',');
+}
+
+/**
+ * 정답 보기를 눌렀다는 기록("정답 확인함"). item 을 주면 그때 본 인정하는 답도 적는다(answerSeen, 별도 검토 A5).
+ * 정답이 정정된 뒤 다시 누르면 본 답을 지금 정답으로 바꾼다.
+ */
+export function viewAnswer(session: Session, no: number, item?: ExamItem): Session {
+  const key = item ? acceptedKey(item) : null;
+  if (session.answerViewed[no] && (key === null || session.answerSeen?.[no] === key)) return session;
+  const next: Session = { ...session, answerViewed: { ...session.answerViewed, [no]: true } };
+  if (key !== null) next.answerSeen = { ...(session.answerSeen ?? {}), [no]: key };
+  return next;
+}
+
+/**
+ * 학생이 그 문항의 지금 정답을 봤는지(오답 원인 화면의 정답 칸과 "정답 확인함", 재풀이 기록의 answerKnown).
+ * 정답 보기를 누른 뒤 정답이 정정되어 그 문항의 인정하는 답이 바뀌었으면, 지금 정답은 아직 보지 않은 것이다(별도 검토 A5).
+ * 본 답을 적지 않은 옛 기록(answerSeen 칸 없음)은 정답 보기를 누른 문항이면 지금 정답을 본 것으로 본다(지금까지와 같다).
+ */
+export function answerSeenNow(session: Session, item: ExamItem): boolean {
+  if (session.answerViewed[item.no] !== true) return false;
+  const seen = session.answerSeen?.[item.no];
+  return seen === undefined || seen === acceptedKey(item);
 }
 
 export function setTargetGrade(session: Session, grade: string | null): Session {

@@ -4,7 +4,7 @@ import { acceptedAnswers } from '../exams/validate';
 import type { Grade } from '../logic/scoring';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { answerText, setCause, viewAnswer } from '../state/session';
+import { answerSeenNow, answerText, setCause, viewAnswer } from '../state/session';
 import { S } from '../strings';
 import type { Cause } from '../types';
 
@@ -76,7 +76,10 @@ export function Causes({ h, grade }: { h: SessionHandle; grade: Grade }) {
           <ol className="stack gap4 mt4" aria-label={S.causes.listLabel}>
             {wrong.map((w) => {
               const item = exam.items.find((it) => it.no === w.no);
-              const viewed = session.answerViewed[w.no] === true;
+              // 지금 정답을 봤을 때만 정답을 펼친다. 정답 보기를 누른 뒤 정답이 정정되어 그 문항의 정답이 바뀌었으면
+              // 바뀌었다고 적고 "정답 보기"를 다시 둔다(별도 검토 A5). 학생이 누르기 전에는 새 정답을 보여 주지 않는다.
+              const viewed = item ? answerSeenNow(session, item) : false;
+              const changedAfterView = session.answerViewed[w.no] === true && !viewed;
               const accepted = item ? acceptedAnswers(item) : [];
               return (
                 <li key={w.no} className="card" data-testid={`wrong-${w.no}`}>
@@ -99,15 +102,22 @@ export function Causes({ h, grade }: { h: SessionHandle; grade: Grade }) {
                   {viewed && accepted.length > 0 ? (
                     <AnswerShown no={w.no} accepted={accepted} />
                   ) : (
-                    <button
-                      type="button"
-                      className="btn btn--text btn--left mt2"
-                      data-testid={`show-answer-${w.no}`}
-                      aria-label={S.causes.showAnswerOf(w.no)}
-                      onClick={() => h.update((s) => viewAnswer(s, w.no))}
-                    >
-                      {S.causes.showAnswer}
-                    </button>
+                    <>
+                      {changedAfterView ? (
+                        <p className="sub mt3" data-testid={`answer-changed-${w.no}`}>
+                          {S.causes.answerChanged}
+                        </p>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn--text btn--left mt2"
+                        data-testid={`show-answer-${w.no}`}
+                        aria-label={S.causes.showAnswerOf(w.no)}
+                        onClick={() => h.update((s) => viewAnswer(s, w.no, item))}
+                      >
+                        {S.causes.showAnswer}
+                      </button>
+                    </>
                   )}
                 </li>
               );

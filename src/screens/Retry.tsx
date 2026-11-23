@@ -9,7 +9,7 @@ import { rankTypes, retryTarget } from '../logic/steps';
 import { retryLabel, retrySentence, selfCheckLabel, selfCheckSentence } from '../logic/text';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { currentRetry, recordRetry, setSelfCheck } from '../state/session';
+import { answerSeenNow, currentRetry, recordRetry, setSelfCheck } from '../state/session';
 import { S } from '../strings';
 import type { RetryRecord, SelfCheck } from '../types';
 
@@ -57,7 +57,8 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   const itemResult = grade.items.find((it) => it.no === no)!;
   const selfMode = itemResult.correct;
   // 정답을 먼저 봤거나(정답 보기) "이미 했어요" 경로면 정답을 아는 상태로 적는다(지시서 8장 (10)).
-  const answerKnown = session.answerViewed[no] === true || session.gradedBefore === 'already';
+  // 정답 보기를 누른 뒤 정답이 정정되어 이 문항의 정답이 바뀌었으면 지금 정답은 아직 보지 않은 것이다(별도 검토 A5).
+  const answerKnown = answerSeenNow(session, item) || session.gradedBefore === 'already';
   const isLast = index >= nos.length - 1;
   const result: RetryRecord | null = !selfMode && checked ? currentRetry(session, no, exam) : null;
   const self = selfMode ? (session.selfChecks[no] ?? null) : null;

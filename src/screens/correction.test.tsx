@@ -11,6 +11,7 @@ import { gradeExam } from '../logic/scoring';
 import { fillOldGradedRecords, type SessionHandle } from '../state/hooks';
 import {
   acknowledgeCorrection,
+  answerSeenNow,
   correctionNotice,
   correctionOf,
   currentRetry,
@@ -19,6 +20,7 @@ import {
   newSession,
   recordRetry,
   setAnswer,
+  viewAnswer,
 } from '../state/session';
 import { defaultData, parseStored, store } from '../state/store';
 import { formatDate } from '../strings';
@@ -489,6 +491,44 @@ describe('정답 정정 알림의 세부(4-6)', () => {
     expect(html).toContain(`aria-label="${examA.title} 기록 열기, ${detail}"`);
     // 그 뒤 정정 판이 다시 쓰이면 정정 알림으로 알린다(정답 판 번호가 채점 흔적보다 커서).
     expect(correctionOf(acked, up(), gradeExam(up(), acked))).toEqual({ kind: 'changed', from: 78, to: 82, note: NOTE });
+  });
+
+  it('정답 보기를 누른 뒤 정정으로 그 문항의 정답이 바뀌면, 오답 원인 화면이 바뀌었다고 적고 "정답 보기"를 다시 두며 다시 풀기는 정답을 아는 상태로 적지 않는다(별도 검토 A5)', () => {
+    const item = (exam: Exam, no: number) => exam.items.find((it) => it.no === no)!;
+    // 11번(정답 2)과 15번(정답 3)의 정답 보기를 누른 기록. 그때 본 인정하는 답을 함께 적는다.
+    let s = graded();
+    s = viewAnswer(s, 11, item(examA, 11));
+    s = viewAnswer(s, 15, item(examA, 15));
+    expect(s.answerViewed).toEqual({ 11: true, 15: true });
+    expect(s.answerSeen).toEqual({ 11: '2', 15: '3' });
+    expect(answerSeenNow(s, item(examA, 11))).toBe(true);
+    // 11번 정답만 3으로 정정한 판: 11번은 지금 정답을 아직 보지 않았고, 정답이 그대로인 15번은 본 것이다.
+    const fixed = same();
+    expect(answerSeenNow(s, item(fixed, 11))).toBe(false);
+    expect(answerSeenNow(s, item(fixed, 15))).toBe(true);
+    const html = renderToStaticMarkup(<Causes h={handleOf(s, fixed).h} grade={gradeExam(fixed, s)} />);
+    expect(html).toContain('<p class="sub mt3" data-testid="answer-changed-11">정답을 확인한 뒤 이 문항의 정답이 정정됐어요.</p>');
+    expect(html).toContain('data-testid="show-answer-11"');
+    expect(html).not.toContain('data-testid="answer-11"');
+    expect(html).toContain('data-testid="answer-15"');
+    expect(html).not.toContain('answer-changed-15');
+    // 다시 누르면 지금 정답을 본 것으로 적고 정답을 펼친다.
+    const again = viewAnswer(s, 11, item(fixed, 11));
+    expect(again.answerSeen).toEqual({ 11: '3', 15: '3' });
+    expect(answerSeenNow(again, item(fixed, 11))).toBe(true);
+    const after = renderToStaticMarkup(<Causes h={handleOf(again, fixed).h} grade={gradeExam(fixed, again)} />);
+    expect(text(after)).toContain('정답 3 정답 확인함');
+    expect(after).not.toContain('answer-changed-11');
+    // 본 답을 적지 않은 옛 기록은 지금처럼 정답 보기를 누른 문항이면 정답을 본 것으로 본다.
+    const legacy: Session = { ...graded(), answerViewed: { 11: true } };
+    expect(answerSeenNow(legacy, item(fixed, 11))).toBe(true);
+    // 저장한 글자에서 다시 읽어도 남고, 모양이 틀린 값은 버린다.
+    const stored = parseStored(JSON.stringify({ version: 1, sessions: [{ ...s, answerSeen: { 11: '2', 15: '3,5', 16: 'x', 17: 3, 0: '1' } }], currentId: s.id }))!;
+    expect(stored.sessions[0]!.answerSeen).toEqual({ 11: '2', 15: '3,5' });
+    expect('answerSeen' in parseStored(JSON.stringify({ version: 1, sessions: [{ ...s, answerSeen: { 11: 'x' } }], currentId: s.id }))!.sessions[0]!).toBe(false);
+    // 다시 풀기 화면은 이 판정으로 정답을 아는 상태인지 정한다(정답 보기를 누른 기록만 보지 않는다).
+    const retrySource = readFileSync(resolve(process.cwd(), 'src/screens/Retry.tsx'), 'utf8');
+    expect(retrySource).toContain('const answerKnown = answerSeenNow(session, item)');
   });
 
   it('예시 결과에는 알림을 보여 주지 않는다', () => {

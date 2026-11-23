@@ -143,6 +143,12 @@ export interface Session {
   answersEditedAfterGrading: number[];
   causes: Causes;
   answerViewed: Record<number, true>;
+  /**
+   * 정답 보기를 누른 때 본 인정하는 답(작은 수부터 쉼표로 이은 글자, 형식 예시 "3" 또는 "3,5"). 문항 번호가 열쇠다(별도 검토 A5).
+   * 그 뒤 정답이 정정되어 그 문항의 인정하는 답이 바뀌면, 지금 정답은 아직 보지 않은 것으로 다룬다(src/state/session.ts 의 answerSeenNow).
+   * 이 칸이 없는 옛 기록도 그대로 읽는다(저장 형식의 version 은 1 그대로). 칸이 없으면 정답 보기를 누른 문항은 지금 정답을 본 것으로 본다.
+   */
+  answerSeen?: Record<number, string>;
   targetGrade: string | null;
   retries: Record<number, RetryRecord>;
   /** 찍었다고 표시하고 맞은 문항의 스스로 확인한 결과. 이 칸이 없는 옛 기록도 빈 값으로 읽는다. */

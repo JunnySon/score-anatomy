@@ -1,6 +1,6 @@
 import { platform } from '#platform';
 import type { StorageBackend } from '../platform/types';
-import type { AppData, InputMode, RunPart, Session, TestRun } from '../types';
+import type { AppData, GradedWith, InputMode, RetryRecord, RunPart, Session, TestRun } from '../types';
 
 // 상태 저장소. 기록은 이 기기에만 둔다(브라우저는 localStorage, 아이폰 앱은 다리로 앱 전용 파일. src/platform).
 // 읽기와 쓰기를 try/catch로 감싸고, 저장이 안 돼도 화면은 메모리 상태로 동작한다.
@@ -42,17 +42,25 @@ const isSelfCheck = (v: unknown): v is Session['selfChecks'][number] =>
   isObject(v) && (v.result === 'solved' || v.result === 'stuck') && typeof v.at === 'string';
 const isRetryLike = (v: unknown): v is Record<string, unknown> =>
   isObject(v) && typeof v.correct === 'boolean' && typeof v.attempts === 'number' && typeof v.answerKnown === 'boolean' && typeof v.at === 'string';
+/** 정답 판 번호(작업 지시서 3의 4-1, 4-2)로 쓸 수 있는 값: 1 이상의 정수. */
+const isAnswersRev = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
+/** 채점 흔적(작업 지시서 3의 4-6)의 모양: 정답 판 번호는 1 이상의 정수, 점수는 0 이상의 정수. */
+const isGradedWith = (v: unknown): v is GradedWith =>
+  isObject(v) && isAnswersRev(v.answersRev) && typeof v.score === 'number' && Number.isInteger(v.score) && v.score >= 0;
 
 function cleanRetries(raw: unknown): Session['retries'] {
   const out: Session['retries'] = {};
   for (const [k, v] of Object.entries(cleanRecord(raw, isRetryLike))) {
-    out[Number(k)] = {
+    const rec: RetryRecord = {
       correct: v.correct as boolean,
       attempts: v.attempts as number,
       firstCorrectAttempt: typeof v.firstCorrectAttempt === 'number' ? v.firstCorrectAttempt : v.correct === true ? (v.attempts as number) : null,
       answerKnown: v.answerKnown as boolean,
       at: v.at as string,
     };
+    // 작업 지시서 3의 4-6에서 더한 칸. 2 이상일 때만 남긴다(없거나 1이면 정답 판 번호 1, 모양이 틀리면 버리고 1로 본다).
+    if (isAnswersRev(v.answersRev) && v.answersRev >= 2) rec.answersRev = v.answersRev;
+    out[Number(k)] = rec;
   }
   return out;
 }
@@ -61,7 +69,7 @@ function cleanSession(raw: unknown): Session | null {
   if (!isObject(raw)) return null;
   if (typeof raw.id !== 'string' || typeof raw.examId !== 'string') return null;
   const gradedAt = typeof raw.gradedAt === 'string' ? raw.gradedAt : null;
-  return {
+  const session: Session = {
     id: raw.id,
     examId: raw.examId,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
@@ -85,6 +93,9 @@ function cleanSession(raw: unknown): Session | null {
     // 1.1에서 더한 칸. 없는 옛 기록도 빈 값으로 읽는다(저장 형식의 version 은 그대로 1이다).
     selfChecks: cleanRecord(raw.selfChecks, isSelfCheck),
   };
+  // 작업 지시서 3의 4-6에서 더한 칸(채점 흔적). 모양이 맞을 때만 칸을 두고, 없거나 틀리면 칸이 없는 옛 기록으로 읽는다(version 은 그대로 1).
+  if (isGradedWith(raw.gradedWith)) session.gradedWith = { answersRev: raw.gradedWith.answersRev, score: raw.gradedWith.score };
+  return session;
 }
 
 /** 날짜로 쓸 수 있는 시각만 받는다(절댓값 8.64e15 이하). */

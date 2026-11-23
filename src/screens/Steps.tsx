@@ -7,6 +7,7 @@ import { selectSteps, type Step } from '../logic/steps';
 import { retryLabel, selfCheckLabel, stepReasons, typesPendingText } from '../logic/text';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
+import { currentRetry } from '../state/session';
 import { S } from '../strings';
 
 // (9) 계단 화면. 먼저 고칠 유형을 내 기록만으로 정해 보여 준다.
@@ -18,6 +19,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
   const coordLines = step.coords.map((c) => S.steps.coord(c.label, c.itemNo));
   // 다시 푼 기록: 틀린 문항은 다시 넣은 답의 결과, 찍었다고 표시하고 맞은 문항은 스스로 확인한 결과.
   // 찍음 표시 정답에 1.0에서 남긴 답 기록(다시 풀어 맞힘)이 있어도 보여 주지 않는다.
+  // 정답이 정정되기 전의 판에서 남긴 답 기록은 그때의 정답으로 맞춰 본 것이라 보여 주지 않는다(작업 지시서 3의 4-6, 기록은 지우지 않는다).
   const statusOf = (no: number): string | null => {
     const result = grade.items.find((it) => it.no === no);
     if (!result) return null;
@@ -25,7 +27,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
       const self = session.selfChecks[no];
       return self ? selfCheckLabel(self.result) : null;
     }
-    const rec = session.retries[no];
+    const rec = currentRetry(session, no, exam);
     return rec ? retryLabel(rec, result.cause) : null;
   };
   const retried = step.retryNos.map((no) => ({ no, label: statusOf(no) })).filter((r): r is { no: number; label: string } => r.label !== null);

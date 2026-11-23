@@ -98,6 +98,20 @@ export interface RetryRecord {
   /** 다시 풀기 전에 정답을 알 수 있었는지. 정답 보기를 눌렀거나, "이미 했어요" 경로인 경우. */
   answerKnown: boolean;
   at: string;
+  /**
+   * 이 기록을 남긴 때의 정답 판 번호(시험의 answersRev). 2 이상일 때만 적고, 칸이 없으면 1이다(작업 지시서 3의 4-6).
+   * 지금 시험의 정답 판 번호와 다르면 그때의 정답으로 맞춰 본 기록이라 지우지 않고 화면에서만 뺀다(src/state/session.ts 의 currentRetry).
+   */
+  answersRev?: number;
+}
+
+/**
+ * 채점 흔적(작업 지시서 3의 4-6): 채점한 때의 정답 판 번호(시험의 answersRev)와 실제 점수.
+ * 정답이 정정된 판(answersRev 가 더 큰 판)을 받으면 이 값과 견줘 바뀐 것을 알린다.
+ */
+export interface GradedWith {
+  answersRev: number;
+  score: number;
 }
 
 /** 찍었다고 표시하고 맞은 문항을 다시 볼 때 학생이 스스로 고른 결과. solved는 "끝까지 풀었어요", stuck은 "풀어 봤는데 막혀요". */
@@ -133,6 +147,11 @@ export interface Session {
   retries: Record<number, RetryRecord>;
   /** 찍었다고 표시하고 맞은 문항의 스스로 확인한 결과. 이 칸이 없는 옛 기록도 빈 값으로 읽는다. */
   selfChecks: Record<number, SelfCheckRecord>;
+  /**
+   * 채점 흔적(작업 지시서 3의 4-6). 채점할 때와 정정 알림의 "확인했어요"를 누를 때 지금 값으로 적는다.
+   * 이 칸이 없는 옛 기록도 그대로 읽는다(저장 형식의 version 은 1 그대로). 정답 판 번호가 1인 시험의 옛 채점 기록에는 앱이 시작할 때 조용히 채운다.
+   */
+  gradedWith?: GradedWith;
 }
 
 /** 사용성 테스트 한 번의 측정 기록. 이 기기 안에만 둔다. */

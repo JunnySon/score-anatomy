@@ -3,7 +3,7 @@ import { findExam } from '../exams';
 import { findMissing, gradeExam, type Grade } from '../logic/scoring';
 import type { AnswerValue, AppData, Exam, GradedBefore, InputMode, SeenBefore, Session, TestRun } from '../types';
 import { demoStore } from './demo';
-import { newSession, setAnswer } from './session';
+import { fillGradedWith, newSession, setAnswer } from './session';
 import { store } from './store';
 import { activeRun, bindRun, isMine, isRunDone, logAnswer, logScreen, newRun, screenLogName, withActiveRun, withFinalAnswers } from './testlog';
 
@@ -193,6 +193,15 @@ export function deleteSession(id: string): void {
 /** 시험 기록을 모두 지운다. 테스트 측정 기록은 테스트 진행자용 화면에서 따로 지운다. */
 export function deleteAllSessions(): void {
   store.update((d) => ({ ...d, testRuns: keepFinalAnswers(d, null), sessions: [], currentId: null }));
+}
+
+/**
+ * 채점 흔적(gradedWith)이 없는 옛 채점 기록 가운데 시험의 정답 판 번호가 1인 기록에 지금 값을 조용히 채운다(작업 지시서 3의 4-6).
+ * 앱이 시작할 때(src/main.tsx) 부른다. 시험 목록이 바뀌면(넘겨받은 시험, 작업 지시서 3의 5부) 그때도 불러야 한다.
+ * 채울 것이 없으면 기록을 바꾸지 않아서 저장도 하지 않는다.
+ */
+export function fillOldGradedRecords(): void {
+  store.update((d) => fillGradedWith(d, findExam));
 }
 
 /** 앱: 기록 화면이 보관 안내를 보여 줬으면 기록에 남은 표시를 지운다. */

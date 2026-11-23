@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { DigitPad, EntryBox, McPad } from '../components/pads';
 import { Badge, IconCross, IconRing, LiveRegion, Message, Option, Screen, TopBar } from '../components/ui';
-import { choicesOf } from '../exams/validate';
+import { answersRevOf, choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, pressDigit, type DigitEntry } from '../logic/entry';
 import { isCorrectResponse, type Grade } from '../logic/scoring';
 import { rankTypes } from '../logic/steps';
 import { retryLabel, retrySentence, selfCheckLabel, selfCheckSentence } from '../logic/text';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { recordRetry, setSelfCheck } from '../state/session';
+import { currentRetry, recordRetry, setSelfCheck } from '../state/session';
 import { S } from '../strings';
 import type { RetryRecord, SelfCheck } from '../types';
 
@@ -43,7 +43,7 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   // 정답을 먼저 봤거나(정답 보기) "이미 했어요" 경로면 정답을 아는 상태로 적는다(지시서 8장 (10)).
   const answerKnown = session.answerViewed[no] === true || session.gradedBefore === 'already';
   const isLast = index >= nos.length - 1;
-  const result: RetryRecord | null = !selfMode && checked ? (session.retries[no] ?? null) : null;
+  const result: RetryRecord | null = !selfMode && checked ? currentRetry(session, no, exam) : null;
   const self = selfMode ? (session.selfChecks[no] ?? null) : null;
 
   const check = () => {
@@ -55,7 +55,8 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
     setMsg(null);
     // 맞춰 보기도 채점과 같은 판정을 쓴다. 복수 정답이면 인정하는 답 가운데 하나면 맞힌 것이다(작업 지시서 3의 4-2).
     const correct = isCorrectResponse(item, value);
-    h.update((s) => recordRetry(s, no, correct, answerKnown, new Date().toISOString()));
+    // 기록에는 지금 정답 판 번호를 함께 남긴다. 정답이 정정되면 그 전의 기록은 화면에서만 빠진다(작업 지시서 3의 4-6).
+    h.update((s) => recordRetry(s, no, correct, answerKnown, new Date().toISOString(), answersRevOf(exam)));
     setChecked(true);
   };
 

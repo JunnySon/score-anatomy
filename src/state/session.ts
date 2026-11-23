@@ -1,5 +1,6 @@
-import { findMissing, gradeExam, isAnswered } from '../logic/scoring';
-import type { AnswerValue, Cause, Exam, GradedBefore, Mark, SeenBefore, SelfCheck, Session, TimeFeel } from '../types';
+import { answersRevOf } from '../exams/validate';
+import { findMissing, gradeExam, isAnswered, type Grade } from '../logic/scoring';
+import type { AnswerValue, AppData, Cause, Exam, GradedBefore, Mark, RetryRecord, SeenBefore, SelfCheck, Session, TimeFeel } from '../types';
 import { newId } from './store';
 
 // 기록 한 건(Session)을 고치는 순수 함수들. 화면은 이 함수들로만 기록을 바꾼다.
@@ -91,15 +92,20 @@ export function isMarkedAfterGrading(session: Session): boolean {
 }
 
 /**
- * 채점 시각을 남긴다. 미입력이 있거나 정답 공개 전이면 gradeExam이 오류를 던진다.
- * 더는 틀린 문항이 아닌 문항의 원인은 지운다.
+ * 채점 시각과 채점 흔적(gradedWith: 지금 정답 판 번호와 실제 점수, 작업 지시서 3의 4-6)을 남긴다.
+ * 미입력이 있거나 정답 공개 전이면 gradeExam이 오류를 던진다.
+ * 오답 원인은 지우지 않는다. 답을 고친 문항의 원인은 답을 고칠 때(setAnswer) 이미 지웠고, 정답 정정으로 맞게 된 문항의 원인은
+ * 기록에 남긴 채 화면에서만 빠진다(맞은 문항의 채점 결과에는 원인이 붙지 않는다).
  */
 export function markGraded(session: Session, exam: Exam, nowIso: string): Session {
   const grade = gradeExam(exam, session);
-  const wrongNos = new Set(grade.wrong.map((w) => w.no));
-  const causes: Session['causes'] = {};
-  for (const [k, v] of Object.entries(session.causes)) if (wrongNos.has(Number(k))) causes[Number(k)] = v;
-  return { ...session, gradedAt: nowIso, firstGradedAt: session.firstGradedAt ?? nowIso, savedAt: null, causes };
+  return {
+    ...session,
+    gradedAt: nowIso,
+    firstGradedAt: session.firstGradedAt ?? nowIso,
+    savedAt: null,
+    gradedWith: { answersRev: answersRevOf(exam), score: grade.actual },
+  };
 }
 
 /** 정답 공개 전 시험의 답을 저장해 둔다. */
@@ -122,23 +128,38 @@ export function setTargetGrade(session: Session, grade: string | null): Session 
   return { ...session, targetGrade: grade };
 }
 
-/** 재풀이 결과를 남긴다. 가장 최근 결과가 기록이 된다. */
-export function recordRetry(session: Session, no: number, correct: boolean, answerKnown: boolean, nowIso: string): Session {
-  const prev = session.retries[no];
+/** 재풀이 기록을 남긴 때의 정답 판 번호. 칸이 없으면 1이다. */
+function retryRevOf(rec: RetryRecord): number {
+  return rec.answersRev ?? 1;
+}
+
+/**
+ * 재풀이 결과를 남긴다. 가장 최근 결과가 기록이 된다. answersRev 는 지금 시험의 정답 판 번호다(작업 지시서 3의 4-6).
+ * 정답 판 번호가 다른 판에서 남긴 기록은 그때의 정답으로 맞춰 본 것이라 이어 세지 않고 처음부터 센다.
+ */
+export function recordRetry(session: Session, no: number, correct: boolean, answerKnown: boolean, nowIso: string, answersRev = 1): Session {
+  const old = session.retries[no];
+  const prev = old && retryRevOf(old) === answersRev ? old : undefined;
   const attempts = (prev?.attempts ?? 0) + 1;
-  return {
-    ...session,
-    retries: {
-      ...session.retries,
-      [no]: {
-        correct,
-        attempts,
-        firstCorrectAttempt: prev?.firstCorrectAttempt ?? (correct ? attempts : null),
-        answerKnown: answerKnown || (prev?.answerKnown ?? false),
-        at: nowIso,
-      },
-    },
+  const rec: RetryRecord = {
+    correct,
+    attempts,
+    firstCorrectAttempt: prev?.firstCorrectAttempt ?? (correct ? attempts : null),
+    answerKnown: answerKnown || (prev?.answerKnown ?? false),
+    at: nowIso,
   };
+  // 정답 판 번호는 2 이상일 때만 적는다(칸이 없으면 1이라 지금까지의 기록과 모양이 같다).
+  if (answersRev >= 2) rec.answersRev = answersRev;
+  return { ...session, retries: { ...session.retries, [no]: rec } };
+}
+
+/**
+ * 지금 정답 판에서 남긴 재풀이 기록(작업 지시서 3의 4-6). 정답이 정정되기 전의 판에서 남긴 기록은 그때의 정답으로 맞춰 본 것이라
+ * 지우지 않고 화면에서만 뺀다(null). 어느 문항의 정답이 바뀌었는지는 기록에 없어서 판이 다르면 모두 뺀다.
+ */
+export function currentRetry(session: Session, no: number, exam: Exam): RetryRecord | null {
+  const rec = session.retries[no];
+  return rec && retryRevOf(rec) === answersRevOf(exam) ? rec : null;
 }
 
 /**
@@ -186,4 +207,87 @@ export function answerText(v: AnswerValue | undefined, skipLabel: string): strin
 /** 첫 미입력 문항의 순번(0부터). 전부 넣었으면 -1. */
 export function firstMissingIndex(exam: Exam, session: Session): number {
   return exam.items.findIndex((it) => !isAnswered(it, session.answers[it.no]));
+}
+
+// 정답 정정(작업 지시서 3의 4-6). 점수는 저장하지 않고 늘 지금 시험 파일로 다시 계산하므로, 정정된 판을 받으면 점수는 저절로
+// 지금 정답 기준이 된다. 채점 흔적(gradedWith)은 그 전에 본 점수를 알려 주려고 남긴다. 학생이 넣은 답과 표시는 바꾸지 않는다.
+
+/**
+ * 채점된 기록의 정답 정정 상태.
+ * - none: 알릴 것이 없다.
+ * - fill: 채점 흔적이 없는 옛 기록이고 시험의 정답 판 번호가 1이다. 알리지 않고 채운다(fillGradedWith).
+ * - changed, same: 채점한 뒤에 정답이 정정됐다. 다시 계산한 점수가 달라졌는지에 따라 나눈다.
+ * - noPrevious: 채점 흔적이 없는 옛 기록인데 정답이 정정된 판(정답 판 번호 2 이상)이라 예전 점수를 알 수 없다.
+ * note 는 시험 파일의 정정 안내(answersNote)이고 알림의 다음 줄에 그대로 보인다.
+ */
+export type Correction =
+  | { kind: 'none' }
+  | { kind: 'fill' }
+  | { kind: 'changed'; from: number; to: number; note: string }
+  | { kind: 'same'; score: number; note: string }
+  | { kind: 'noPrevious'; note: string };
+
+/** 알림을 보여 주는 정정(점수 화면과 점수 해부 화면 위쪽, 기록 화면의 "정답 정정으로 다시 채점됨"). */
+export type CorrectionNotice = Extract<Correction, { note: string }>;
+
+/**
+ * 기록의 정답 정정 상태를 정한다. grade 는 지금 시험 파일로 계산한 채점 결과다.
+ * 채점 흔적의 정답 판 번호보다 시험의 정답 판 번호가 클 때만 정정으로 본다. 같거나 작으면 알리지 않는다.
+ * 채점 시각이 비어 있으면(채점한 뒤 답을 고쳐 다시 채점해야 하는 기록) 점수를 보여 주지 않으므로 알리지 않는다.
+ */
+export function correctionOf(session: Session, exam: Exam, grade: Grade): Correction {
+  if (session.gradedAt === null) return { kind: 'none' };
+  const rev = answersRevOf(exam);
+  const note = exam.answersNote ?? '';
+  const prev = session.gradedWith;
+  if (!prev) return rev === 1 ? { kind: 'fill' } : { kind: 'noPrevious', note };
+  if (rev <= prev.answersRev) return { kind: 'none' };
+  return prev.score === grade.actual ? { kind: 'same', score: grade.actual, note } : { kind: 'changed', from: prev.score, to: grade.actual, note };
+}
+
+/** 알림을 보여 줄 정정이면 그 정정, 아니면 null. */
+export function correctionNotice(c: Correction): CorrectionNotice | null {
+  return c.kind === 'changed' || c.kind === 'same' || c.kind === 'noPrevious' ? c : null;
+}
+
+/**
+ * 정정 알림의 "확인했어요": 채점 흔적(gradedWith)만 지금 정답 판 번호와 지금 점수로 바꾼다.
+ * 답, 표시, 원인, 재풀이 기록, 채점 시각은 그대로다. 지금 채점할 수 없으면(미입력, 정답 공개 전) 기록을 바꾸지 않는다.
+ */
+export function acknowledgeCorrection(session: Session, exam: Exam): Session {
+  let score: number;
+  try {
+    score = gradeExam(exam, session).actual;
+  } catch {
+    return session;
+  }
+  const answersRev = answersRevOf(exam);
+  const prev = session.gradedWith;
+  if (prev && prev.answersRev === answersRev && prev.score === score) return session;
+  return { ...session, gradedWith: { answersRev, score } };
+}
+
+/**
+ * 채점 흔적이 없는 옛 채점 기록 가운데 시험의 정답 판 번호가 1인 기록에 지금 값(정답 판 번호 1, 지금 점수)을 조용히 채운다.
+ * 정답이 정정된 판(2 이상)의 옛 기록은 예전 점수를 알 수 없어서 채우지 않고 알림으로 알린다(noPrevious).
+ * 시험을 찾지 못하거나 채점된 기록이 아니면 건너뛴다. 채울 것이 없으면 받은 객체를 그대로 돌려준다(저장하지 않게).
+ * 앱이 시작할 때 부르고(src/state/hooks.ts 의 fillOldGradedRecords), 시험 목록이 바뀔 때도 부른다.
+ */
+export function fillGradedWith(data: AppData, find: (examId: string) => Exam | null): AppData {
+  let sessions: Session[] | null = null;
+  for (let i = 0; i < data.sessions.length; i += 1) {
+    const s = data.sessions[i]!;
+    if (s.gradedWith) continue;
+    const exam = find(s.examId);
+    if (!exam || answersRevOf(exam) !== 1 || stageOf(s, exam) !== 'graded') continue;
+    let score: number;
+    try {
+      score = gradeExam(exam, s).actual;
+    } catch {
+      continue;
+    }
+    sessions ??= data.sessions.slice();
+    sessions[i] = { ...s, gradedWith: { answersRev: 1, score } };
+  }
+  return sessions ? { ...data, sessions } : data;
 }

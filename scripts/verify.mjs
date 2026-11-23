@@ -1,6 +1,7 @@
 // npm run verify
 // 작업 지시서 10장의 자동 검증(1~10번)과 작업 지시서 1의 앱용 묶음 검증(11, 12번)을 전부 실행하고 결과를 docs/검증결과.md 에 남긴다.
-// 12번에는 작업 지시서 3의 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts)도 들어 있다.
+// 12번에는 작업 지시서 3의 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts)와
+// 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts)도 들어 있다.
 // 실행해서 확인한 수치만 적는다.
 
 import { spawnSync } from 'node:child_process';
@@ -316,14 +317,15 @@ const REQUIRED = {
   shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 142, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 341, // 통과한 단위 테스트 수의 최소
+  e2eTests: 145, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  unitTests: 345, // 통과한 단위 테스트 수의 최소
   leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
   leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
   fitStates: 68, // 작은 화면에서 스크롤 없이 들어와야 하는 답 입력 상태 수의 최소
   appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
   appRemoteTests: 16, // 넘겨받기 화면 테스트(e2e/appRemote.spec.ts, 가짜 다리 규격 2, 작업 지시서 3의 8장) 수
+  appStyleTests: 3, // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
 const AUDIT_LISTS = [
@@ -454,6 +456,10 @@ const appTestsOk = allOk(appTests) && appTests.length === REQUIRED.appTests;
 // 넘겨받기 화면 테스트도 정해 둔 수와 같아야 한다(파일 이름이 app.spec.ts 로 끝나지 않아 위의 수에는 들지 않는다).
 const appRemoteTests = byFile('appRemote.spec.ts');
 const appRemoteOk = allOk(appRemoteTests) && appRemoteTests.length === REQUIRED.appRemoteTests;
+// 배포용 묶음의 모양 비교 화면 테스트도 정해 둔 수와 같아야 한다. 일반 화면이 쓰는 CSS 규칙이 도구 모듈 옆 파일에 들어가
+// 배포용 묶음에서만 빠지는 일(작업 지시서 3의 3부 앞에서 고친 결함)을 화면에서 잡는다.
+const appStyleTests = byFile('appStyle.spec.ts');
+const appStyleOk = allOk(appStyleTests) && appStyleTests.length === REQUIRED.appStyleTests;
 const appMetricsOk =
   appFlows.length === 2 &&
   appFlows.every((m) => m.score === 78 && m.steps === 3) &&
@@ -465,7 +471,7 @@ const appMetricsOk =
 const webkitOk =
   !webkitInstalled ||
   (webkitRun.ok && webkitMetric !== null && webkitMetric.score === 78 && netWebkit.length === 1 && netWebkit.every((n) => Array.isArray(n.external) && n.external.length === 0));
-const appOk = appTestsOk && appRemoteOk && appMetricsOk && webkitOk;
+const appOk = appTestsOk && appRemoteOk && appStyleOk && appMetricsOk && webkitOk;
 
 // ---------- 보고서 ----------
 // 실행 자체가 실패로 끝난 단계. 항목이 모두 통과로 보여도 이 가운데 하나라도 있으면 전체는 실패다.
@@ -600,7 +606,7 @@ function buildReport(textOk, textResult) {
       '12',
       '앱용 묶음 검사(가짜 다리)',
       appOk,
-      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts) ${appRemoteTests.length}개 가운데 ${appRemoteTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appRemoteTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${BUNDLES.map((b) => `${b} ${appFonts.filter((m) => m.bundle === b).map((m) => `${m.scale}배`).join(', ')}`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
+      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts) ${appRemoteTests.length}개 가운데 ${appRemoteTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appRemoteTests}개). 모양 비교 화면 테스트(배포용 묶음과 시험용 묶음을 같은 기록, 같은 화면 상태로 열어 계산된 모양을 견줌, e2e/appStyle.spec.ts) ${appStyleTests.length}개 가운데 ${appStyleTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appStyleTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${BUNDLES.map((b) => `${b} ${appFonts.filter((m) => m.bundle === b).map((m) => `${m.scale}배`).join(', ')}`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
     ],
   ];
   const failed = items.filter((i) => !i[2]);
@@ -784,7 +790,7 @@ function buildReport(textOk, textResult) {
   say();
   say('만든 쪽이 캡처를 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
   say();
-  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 작은 화면에서 스크롤 없이 들어와야 하는 상태 ${REQUIRED.fitStates}개 이상(이번 ${fitAudits.length}개), 앱용 묶음 화면 테스트는 꼭 ${REQUIRED.appTests}개(이번 ${appTests.length}개)와 넘겨받기 화면 테스트는 꼭 ${REQUIRED.appRemoteTests}개(이번 ${appRemoteTests.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지거나 검사 기록에 결과 칸이 비어 있으면 해당 항목이 실패로 적혀요.`);
+  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 작은 화면에서 스크롤 없이 들어와야 하는 상태 ${REQUIRED.fitStates}개 이상(이번 ${fitAudits.length}개), 앱용 묶음 화면 테스트는 꼭 ${REQUIRED.appTests}개(이번 ${appTests.length}개), 넘겨받기 화면 테스트는 꼭 ${REQUIRED.appRemoteTests}개(이번 ${appRemoteTests.length}개)와 모양 비교 화면 테스트는 꼭 ${REQUIRED.appStyleTests}개(이번 ${appStyleTests.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지거나 검사 기록에 결과 칸이 비어 있으면 해당 항목이 실패로 적혀요.`);
   say();
   say('화면 검사는 실행할 때마다 지금 폴더의 빌드로 서버를 새로 띄워요. 쓰려는 포트(기본 4173, 4174)에 이미 떠 있는 서버가 있으면 그 서버를 다시 쓰지 않고 실패로 끝나요(떠 있는 서버를 다시 쓰는 스위치 SA_REUSE_SERVER 는 verify 에서는 따르지 않아요).');
   if (!e2eRun.ok) say('이번 실행은 화면 검사가 실패로 끝났어요. 포트가 이미 쓰이고 있어서 서버를 띄우지 못한 것일 수 있어요. 콘솔 출력의 오류를 확인해 주세요.');

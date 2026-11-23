@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { checkExam } from '../../src/exams/validate.ts';
 import type { Exam } from '../../src/types.ts';
 import { canonicalJson, sha256Hex } from './canonical.ts';
+import { startServer } from './serve.ts';
+import type { ServeHandle } from './serve.ts';
 import { keyFingerprint, publicKeyText, signatureText } from './sign.ts';
 import { examFileText } from './state.ts';
 import { parseTarget } from './verify.ts';
@@ -339,6 +341,60 @@ describe('발행 도구 exams:verify(작업 지시서 3의 6-2, 6-4)', () => {
     expect(now.out).toContain('자료 폴더의 마지막 발행(seq 2, issuedAt 2030-01-02T20:10)과 같아요.');
     expect(now.out.some((line) => line.startsWith('알림'))).toBe(false);
   });
+
+  it('주소를 확인할 때(올린 뒤) 발행물이 자료 폴더의 마지막 발행과 다르면 실패로 보고 까닭을 적는다(별도 검토 C2)', async () => {
+    const key = tempKey();
+    const { dir, out } = published(key, testExam());
+    const older = copyOf(out);
+    const stale = dataDir();
+    cpSync(dir, stale, { recursive: true });
+    // 다시 발행하면 자료 폴더의 마지막 발행은 seq 2 다. 복사해 둔 자료 폴더(stale)는 seq 1 에 머문다.
+    writeExam(dir, releasedExam({ rev: 2 }));
+    expect(publishTo(dir, out, key.keyFile, { issuedAt: '2030-01-02T20:10' }).code).toBe(0);
+    const servers: ServeHandle[] = [];
+    try {
+      const at = async (folder: string) => {
+        const s = await startServer({ dir: folder, port: 0 });
+        servers.push(s);
+        return { kind: 'url' as const, url: new URL(s.url) };
+      };
+      const oldUrl = await at(older);
+      const newUrl = await at(out);
+      const head = '결과: 주소의 발행물이 자료 폴더의 마지막 발행과 달라요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:';
+      // 아직 올라가지 않았거나 캐시가 남음: 주소의 발행물이 예전 것이다.
+      const behind = await verifyWith(oldUrl, key.publicFile, dir);
+      expect(behind.code).toBe(1);
+      expect(behind.out).toContain('서명이 맞아요(index.json.sig).');
+      expect(behind.err).toEqual([
+        head,
+        '  - 주소의 발행물(seq 1, issuedAt 2030-01-02T17:10)이 자료 폴더의 마지막 발행(seq 2, issuedAt 2030-01-02T20:10)보다 예전 것이에요. 새 발행물이 아직 올라가지 않았거나 캐시가 남아 있을 수 있어요. 올리기를 마친 뒤 다시 확인해요.',
+      ]);
+      // 최신이 아닌 자료 폴더: 주소의 발행물이 더 새롭다(다른 곳에서 발행한 뒤 git pull 을 하지 않음).
+      const ahead = await verifyWith(newUrl, key.publicFile, stale);
+      expect(ahead.code).toBe(1);
+      expect(ahead.err[1]).toBe(
+        '  - 주소의 발행물(seq 2, issuedAt 2030-01-02T20:10)이 자료 폴더의 마지막 발행(seq 1, issuedAt 2030-01-02T17:10)보다 새로워요. 자료 폴더가 최신이 아닐 수 있어요. git pull 로 자료 폴더를 받은 뒤 다시 확인하고, 그 전에는 발행하지 않아요.',
+      );
+      // 같은 seq 의 다른 발행물: 최신이 아닌 자료 폴더에서 다른 내용으로 seq 2 를 발행했다.
+      writeExam(stale, releasedExam({ rev: 2, title: '테스트 전용 시험(발행 도구, 다른 곳)' }));
+      const otherOut = outDir();
+      expect(publishTo(stale, otherOut, key.keyFile, { issuedAt: '2030-01-02T20:10' }).code).toBe(0);
+      const twin = await verifyWith(await at(otherOut), key.publicFile, dir);
+      expect(twin.code).toBe(1);
+      expect(twin.err[1]).toBe(
+        '  - 주소의 발행물(seq 2, issuedAt 2030-01-02T20:10)은 seq 와 issuedAt 이 자료 폴더의 마지막 발행(seq 2, issuedAt 2030-01-02T20:10)과 같은데 시험 목록이나 시험 파일의 SHA-256 이 state.json 과 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.',
+      );
+      // 마지막 발행과 같으면 지금처럼 통과하고 같다고 적는다. 폴더를 확인할 때는 지금처럼 알리기만 한다.
+      const same = await verifyWith(newUrl, key.publicFile, dir);
+      expect(same.code).toBe(0);
+      expect(same.out).toContain('자료 폴더의 마지막 발행(seq 2, issuedAt 2030-01-02T20:10)과 같아요.');
+      expect((await verifyWith(older, key.publicFile, dir)).code).toBe(0);
+      // 발행한 적이 없는 자료 폴더(seq 0)로는 견주지 않는다(테스트 전용 발행물 확인과 같음).
+      expect((await verifyWith(oldUrl, key.publicFile, dataDir())).code).toBe(0);
+    } finally {
+      for (const s of servers) await s.close();
+    }
+  }, 60000);
 
   it('확인할 곳의 인자: 폴더, http(s) 주소, 끝이 index.json 인 주소, 계정이나 쿼리가 든 주소', () => {
     const base = makeOutDir();

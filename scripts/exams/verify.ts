@@ -302,30 +302,59 @@ export interface VerifyOptions {
   /** 공개 키 파일과 출력에 쓰는 이름. */
   keyFile: string;
   keyName: string;
-  /** 자료 폴더. state.json 의 마지막 발행과 견줘 알린다(발행은 막지 않음). */
+  /**
+   * 자료 폴더. state.json 의 마지막 발행과 견준다. 폴더를 확인할 때 다르면 알리고, 주소를 확인할 때(올린 뒤) 다르면 실패로 본다.
+   */
   dataDir: string;
   timeoutMs?: number;
 }
 
-/** 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준다. 줄(같을 때)과 알림(다를 때)을 돌려준다. */
-function compareWithState(dataDir: string, result: VerifyResult): { lines: string[]; warnings: string[] } {
+/**
+ * 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준 결과. 견주지 않았으면(state.json 이 없음, 발행한 적이 없음, seq 를 읽지 못함)
+ * lines, warnings 가 비고 differs 가 null 이다. 다르면 warnings 에 폴더 확인의 알림을, differs 에 주소 확인(올린 뒤)의 실패 이유를 둔다.
+ */
+interface StateCompare {
+  lines: string[];
+  warnings: string[];
+  differs: string | null;
+}
+
+/** 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준다. */
+function compareWithState(dataDir: string, result: VerifyResult): StateCompare {
+  const none: StateCompare = { lines: [], warnings: [], differs: null };
   const file = readJsonFile(join(dataDir, STATE_FILE), STATE_FILE);
-  if (file.error) return { lines: [], warnings: [] };
+  if (file.error) return none;
   const state = parseState(file.value).state;
-  if (state === null || state.seq === 0 || result.seq === null) return { lines: [], warnings: [] };
+  if (state === null || state.seq === 0 || result.seq === null) return none;
   const last = `자료 폴더의 마지막 발행(seq ${state.seq}, issuedAt ${state.issuedAt ?? '없음'})`;
+  const here = `주소의 발행물(seq ${result.seq}, issuedAt ${result.issuedAt ?? '틀림'})`;
   if (result.seq !== state.seq || result.issuedAt !== state.issuedAt) {
+    let differs: string;
+    if (result.seq > state.seq) {
+      differs = `${here}이 ${last}보다 새로워요. 자료 폴더가 최신이 아닐 수 있어요. git pull 로 자료 폴더를 받은 뒤 다시 확인하고, 그 전에는 발행하지 않아요.`;
+    } else if (result.seq < state.seq) {
+      differs = `${here}이 ${last}보다 예전 것이에요. 새 발행물이 아직 올라가지 않았거나 캐시가 남아 있을 수 있어요. 올리기를 마친 뒤 다시 확인해요.`;
+    } else {
+      differs = `${here}은 seq 가 ${last}과 같은데 issuedAt 이 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.`;
+    }
     return {
       lines: [],
       warnings: [`이 발행물(seq ${result.seq}, issuedAt ${result.issuedAt ?? '틀림'})은 ${last}과 달라요. 올린 뒤라면 새 발행물이 아직 올라가지 않았거나 캐시가 남아 있을 수 있어요.`],
+      differs,
     };
   }
   const ids = Object.keys(state.exams).sort();
   const same =
     ids.length === result.entries.length &&
     result.entries.every((e) => Object.prototype.hasOwnProperty.call(state.exams, e.id) && state.exams[e.id].sha256 === e.sha256 && state.exams[e.id].file === e.file);
-  if (!same) return { lines: [], warnings: [`seq 는 ${last}과 같은데 시험 목록이나 시험 파일의 SHA-256 이 state.json 과 달라요.`] };
-  return { lines: [`${last}과 같아요.`], warnings: [] };
+  if (!same) {
+    return {
+      lines: [],
+      warnings: [`seq 는 ${last}과 같은데 시험 목록이나 시험 파일의 SHA-256 이 state.json 과 달라요.`],
+      differs: `${here}은 seq 와 issuedAt 이 ${last}과 같은데 시험 목록이나 시험 파일의 SHA-256 이 state.json 과 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.`,
+    };
+  }
+  return { lines: [`${last}과 같아요.`], warnings: [], differs: null };
 }
 
 /** exams:verify 를 돌린다. 발행물이 맞으면 0, 맞지 않거나 확인하지 못했으면 1을 돌려준다. */
@@ -363,10 +392,16 @@ export async function runVerify(opts: VerifyOptions, io: Io): Promise<number> {
   }
   const state = compareWithState(opts.dataDir, result);
   for (const line of [...result.lines, ...state.lines]) io.out(line);
-  const warnings = [...result.warnings, ...state.warnings];
+  // 주소를 확인할 때(올린 뒤) 자료 폴더의 마지막 발행과 다르면 알림이 아니라 실패로 본다(별도 검토 C2). 결과 줄이나 종료 코드만 보고
+  // 올리기를 마친 것으로 아는 일을 막고, 최신이 아닌 자료 폴더로 다음 발행을 하기 전에 알아채게 한다. 폴더 확인은 지금처럼 알리기만 한다.
+  const urlDiffers = opts.target.kind === 'url' && result.ok ? state.differs : null;
+  const warnings = [...result.warnings, ...(urlDiffers === null ? state.warnings : [])];
   if (warnings.length > 0) {
     io.out(`알림 ${warnings.length}개`);
     for (const w of warnings) io.out(`  - ${w}`);
+  }
+  if (urlDiffers !== null) {
+    return fail(['결과: 주소의 발행물이 자료 폴더의 마지막 발행과 달라요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:', `  - ${urlDiffers}`]);
   }
   if (result.ok) {
     io.out('결과: 발행물이 맞아요. 서명, 시험 파일의 SHA-256 과 검사, 잠금 달력이 모두 맞아요.');

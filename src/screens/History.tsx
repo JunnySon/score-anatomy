@@ -56,13 +56,9 @@ export function History() {
         confirm ? (
           <ConfirmDialog
             title={confirm.kind === 'all' ? S.history.confirmAll : S.history.confirmOne}
-            body={
-              confirm.kind === 'one'
-                ? S.history.confirmOneBody(confirm.title, confirm.detail)
-                : __SA_TOOLS__ && data.testRuns.length > 0
-                  ? S_TOOLS.confirmAllBodyWithRuns
-                  : S.history.confirmBody
-            }
+            // "모두 지우기"는 측정 기록이 없을 때만 보이므로(측정 중이면 숨기고, 측정 기록만 남아 있으면 테스트 기기 안내만 보여요)
+            // 측정 기록을 따로 지우라는 말은 필요 없다.
+            body={confirm.kind === 'one' ? S.history.confirmOneBody(confirm.title, confirm.detail) : S.history.confirmBody}
             yes={S.history.confirmYes}
             no={S.history.confirmNo}
             onNo={() => setConfirm(null)}

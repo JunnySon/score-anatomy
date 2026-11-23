@@ -508,7 +508,9 @@ test.describe('같은 화면 안에서 누른 자리의 내용이 바뀌는 경�
     await doubleTap(page, showAll, 120);
     await page.waitForTimeout(300);
     await expectHash(page, '/input');
-    await expect(page.getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+    await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+    // 받지 않은 둘째 누름은 알린다.
+    await expect(page.getByTestId('tap-notice')).toBeVisible();
     // 0.5초가 지난 뒤에 누르면 넘어간다.
     await page.waitForTimeout(600);
     await tap(page, showAll);

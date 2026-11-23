@@ -90,7 +90,7 @@ test('바텀시트가 막 열렸을 때 같은 자리를 다시 눌러도 답이
   await expect(page.locator('main [data-cell="26"] .cell__val')).toHaveText('24');
 });
 
-test('"없어요"는 붙여 둔 표시를 지우고 표시 없이 채점한다', async ({ page }) => {
+test('채점 버튼은 하나이고, 붙여 둔 표시를 지우지 않고 그대로 채점한다', async ({ page }) => {
   const exam = loadExam('a');
   const answers = exampleAnswers(exam);
   await openApp(page, '/?input=keypad');
@@ -99,14 +99,18 @@ test('"없어요"는 붙여 둔 표시를 지우고 표시 없이 채점한다',
   await enterKeypad(page, exam, answers);
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
   await expectHash(page, '/marks');
+  await expect(page.getByTestId('grade')).toHaveText('없어요, 채점하기');
   await setMarks(page, exampleMarks());
-  await page.getByRole('button', { name: '없어요' }).click();
+  // 표시를 붙인 뒤에는 같은 자리의 같은 버튼이 "채점하기"다. "없어요"만 있는 버튼은 없다.
+  await expect(page.getByTestId('grade')).toHaveText('채점하기');
+  await expect(page.getByRole('button', { name: '없어요', exact: true })).toHaveCount(0);
+  await page.getByTestId('grade').click();
   await expectHash(page, '/score');
   await expect(page.getByTestId('score')).toHaveText('78점');
   await page.getByRole('button', { name: '점수 해부 바로 보기' }).click();
-  await expect(page.getByTestId('row-guess-empty')).toHaveText('표시한 문항이 없어서 나눠 볼 것이 없어요. 78점 그대로예요.');
+  await expect(page.getByTestId('row-guess')).toContainText('7점');
   const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'));
-  expect(stored.sessions[0].marks).toEqual({});
+  expect(stored.sessions[0].marks).toEqual(exampleMarks());
 });
 
 test('채점한 뒤에 답을 고치면 다시 채점해야 점수가 바뀌고, 고친 문항이 적힌다', async ({ page }) => {
@@ -117,7 +121,7 @@ test('채점한 뒤에 답을 고치면 다시 채점해야 점수가 바뀌고,
   await chooseExam(page, 'sample-a');
   await enterKeypad(page, exam, answers);
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expect(page.getByTestId('score')).toHaveText('78점');
 
   // 입력 고치기로 11번을 4에서 2로 바꾼다.
@@ -162,7 +166,7 @@ test('지금 보던 기록을 지운 뒤 뒤로 가도 다른 시험의 결과�
   await openApp(page, '/input?input=rows');
   await enterRows(page, examA, answers);
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await page.getByRole('button', { name: '점수 해부 바로 보기' }).click();
   await expectHash(page, '/anatomy');
   await page.getByRole('link', { name: '기록', exact: true }).click();
@@ -204,8 +208,11 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   await enterKeypad(page, exam, answers);
   await expectHash(page, '/review');
 
-  // 키패드 방식 26번(24): 숫자를 다 지워도 "다음"을 누르기 전에는 저장된 답이 그대로다.
+  // 다 찬 채로 답 입력 화면을 열면 잠근 채로 시작한다.
   await openApp(page, '/input?input=keypad');
+  await expect(page.getByTestId('pad-panel')).toContainText('빈칸이 없어요. 고칠 문항을 눌러 주세요.');
+  await expect(page.locator('[data-key="1"]')).toHaveAttribute('aria-disabled', 'true');
+  // 키패드 방식 26번(24): 숫자를 다 지워도 "다음"을 누르기 전에는 저장된 답이 그대로다.
   await page.locator('[data-cell="26"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('26번');
   await expect(page.getByTestId('entry')).toContainText('24');
@@ -217,7 +224,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   expect(await answerOf(26)).toBe(24);
   // 다 지운 채 다른 칸으로 가면 지운 것이 들어가지 않았다고 알리고, 답은 그대로 남는다.
   await page.locator('[data-cell="27"]').click();
-  await expect(page.getByRole('status')).toHaveText("26번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("26번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
   expect(await answerOf(26)).toBe(24);
 
   // 다 지우고 "다음"을 누르면 그때 저장된 답이 지워지고, "비어 있어요"라는 안내문이 사실과 맞다.
@@ -225,7 +232,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   await tapKey(page, 'erase');
   await tapKey(page, 'erase');
   await tapKey(page, 'go');
-  await expect(page.getByRole('status')).toHaveText("26번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
+  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("26번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
   await expect(page.getByTestId('now-no')).toHaveText('26번');
   await expect(page.locator('[data-cell="26"] .cell__val')).toHaveText('');
   await expect(page.getByTestId('entered-count')).toHaveText('29문항 입력');
@@ -233,20 +240,24 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   // 이제 다른 칸을 눌러도 "들어가지 않았어요"라는 말은 나오지 않는다(확정하지 않은 숫자가 없다).
   await page.locator('[data-cell="27"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('27번');
-  await expect(page.getByRole('status')).toHaveCount(0);
+  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText('27번을 고치는 중이에요.');
+  // 빈칸이 된 26번을 직접 눌러 채우면 빈칸이 없어져 입력 확인으로 넘어간다.
   await page.locator('[data-cell="26"]').click();
   await tapKey(page, 2);
   await tapKey(page, 4);
   await tapKey(page, 'go');
+  await expectHash(page, '/review');
   expect(await answerOf(26)).toBe(24);
 
   // 27번(146)에 99를 누르고 "다음" 없이 "전체 보기"를 누르면, 버린 숫자를 알리고 머문다. 다시 누르면 넘어간다.
+  await openApp(page, '/input?input=keypad');
+  await page.locator('[data-cell="27"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('27번');
   await tapKey(page, 9);
   await tapKey(page, 9);
   await page.getByRole('button', { name: '전체 보기' }).click();
   await expectHash(page, '/input');
-  await expect(page.getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
   await expect(page.getByTestId('entry')).toContainText('146');
   expect(await answerOf(27)).toBe(146);
   await page.getByRole('button', { name: '전체 보기' }).click();
@@ -260,7 +271,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   await tapKey(page, 1);
   await page.getByRole('button', { name: '뒤로' }).click();
   await expectHash(page, '/input');
-  await expect(page.getByRole('status')).toHaveText("29번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("29번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
   expect(await answerOf(29)).toBe(275);
   await page.getByRole('button', { name: '뒤로' }).click();
   await expectHash(page, '/exams');

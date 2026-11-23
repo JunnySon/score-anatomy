@@ -372,7 +372,6 @@ export const S_TOOLS = {
     { name: '점수대별 정답률', note: '응답이 모이면 열려요.' },
   ],
   tester: '테스트 진행자용',
-  confirmAllBodyWithRuns: '지우면 되돌릴 수 없어요. 테스트 측정 기록은 테스트 진행자용 화면에서 따로 지워요.',
   testDevice: '테스트 기기예요. 기록은 진행자용 화면에서 확인해요.',
 } as const;
 

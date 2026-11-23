@@ -56,7 +56,9 @@ describe('사용성 테스트 진행 안내의 답지', () => {
 describe('결정 기록의 번호', () => {
   const record = readFileSync(resolve(process.cwd(), 'docs/결정기록.md'), 'utf8');
   const mine = record.slice(record.indexOf('## 2. 내가 정한 것'), record.indexOf('## 3. 제안'));
-  const proposals = record.slice(record.indexOf('## 3. 제안'));
+  // 제안은 3장 안에서만 센다. 4장(1.1에서 바꾼 것), 5장(앱용 묶음)은 표로 적는다.
+  const after = record.indexOf('\n## 4.');
+  const proposals = record.slice(record.indexOf('## 3. 제안'), after < 0 ? undefined : after);
   const numbers = (text: string) => [...text.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
 
   it('내가 정한 것은 1번부터 빠지거나 겹치는 번호가 없다', () => {

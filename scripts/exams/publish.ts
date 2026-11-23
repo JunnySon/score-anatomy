@@ -6,7 +6,7 @@ import { answersRevOf } from '../../src/exams/validate.ts';
 import { isValidYmdHm, kstText } from '../../src/logic/dates.ts';
 import type { Exam, LockEntry } from '../../src/types.ts';
 import { checkData } from './check.ts';
-import { STATE_FILE, writeTextFile } from './data.ts';
+import { STATE_FILE, commandHint, writeTextFile } from './data.ts';
 import type { Io } from './io.ts';
 import { FILES_DIR, INDEX_FILE, SIG_FILE, buildRelease } from './release.ts';
 import type { ReleaseFile } from './release.ts';
@@ -50,6 +50,9 @@ export interface PublishOptions {
   now?: () => number;
   /** 테스트가 도중 실패를 흉내 낼 때만 쓴다. 단계 이름을 받고, 던지면 그 단계에서 멈춘다. */
   interrupt?: (step: PublishStep) => void;
+  /** 다음 차례 안내에 붙일 --data 와 발행 폴더의 값(기본 폴더가 아닐 때만). 없으면 붙이지 않는다(별도 검토 D5). */
+  dataArg?: string | null;
+  outArg?: string | null;
 }
 
 /** 자료 폴더가 저장소의 진짜 자료 폴더(<저장소>/exam-data)인지. 두 경로가 서로의 안이면 같은 폴더다. */
@@ -318,6 +321,7 @@ export function runPublish(opts: PublishOptions, io: Io): number {
   io.out(`발행 폴더를 새로 만들었어요: ${opts.outName}(${INDEX_FILE}, ${SIG_FILE}, 시험 파일 ${release.files.length}개). 그 전 발행의 파일은 남기지 않았어요.`);
   if (leftover) io.out(`  그 전 발행 폴더(${backup})를 지우지 못했어요. 확인한 뒤 지워 주세요.`);
   io.out(`state.json 을 고쳤어요(seq ${state.seq}에서 ${ro(seq)}).`);
-  io.out('다음 차례: npm run exams:verify 로 발행 폴더를 확인하고, 정해진 주소에 올린 뒤 그 주소로 한 번 더 확인해요.');
+  const verifyHint = commandHint('verify', opts.outArg ? [opts.outArg] : [], [['--data', opts.dataArg ?? null]]);
+  io.out(`다음 차례: ${verifyHint} 로 발행 폴더를 확인하고, 정해진 주소에 올린 뒤 그 주소로 한 번 더 확인해요.`);
   return 0;
 }

@@ -10,7 +10,7 @@ import type { Io } from './io.ts';
 import { runKeygen } from './keygen.ts';
 import { runPublish } from './publish.ts';
 import { SERVE_PORT, runServe } from './serve.ts';
-import { PUBLIC_KEY_FILE } from './sign.ts';
+import { PUBLIC_KEY_FILE, isInside } from './sign.ts';
 import { TESTDATA_DIR, runTestdata } from './testdata.ts';
 import { parseTarget, runVerify } from './verify.ts';
 
@@ -168,13 +168,16 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
   const outName = displayPath(outDir, base);
   const files = parsed.args.map((a) => resolve(base, a));
   const names = files.map((f) => displayPath(f, base));
+  // 다음 차례 안내에 붙일 값: --data, --out 을 기본이 아닌 폴더로 줬을 때만(별도 검토 D5). 리허설에서 안내를 그대로 쳐도 같은 폴더를 보게 한다.
+  const dataArg = isInside(dataDir, join(ROOT, 'exam-data')) && isInside(join(ROOT, 'exam-data'), dataDir) ? null : dataName;
+  const outArg = isInside(outDir, join(ROOT, 'dist-exams')) && isInside(join(ROOT, 'dist-exams'), outDir) ? null : outName;
   switch (parsed.command) {
     case 'check':
       return runCheck({ dataDir, dataName }, io);
     case 'answers':
-      return runAnswers({ dataDir, files: [files[0], files[1]], names: [names[0], names[1]], note: parsed.options.note ?? null }, io);
+      return runAnswers({ dataDir, files: [files[0], files[1]], names: [names[0], names[1]], note: parsed.options.note ?? null, dataArg }, io);
     case 'cuts':
-      return runCuts({ dataDir, file: files[0], name: names[0] }, io);
+      return runCuts({ dataDir, file: files[0], name: names[0], dataArg }, io);
     case 'publish':
       return runPublish(
         {
@@ -188,6 +191,8 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
           env: process.env,
           base,
           root: ROOT,
+          dataArg,
+          outArg,
         },
         io,
       );

@@ -1,7 +1,7 @@
 import { validateCutGrades } from '../../src/exams/validate.ts';
 import { parseAsOf, isValidYmdHm } from '../../src/logic/dates.ts';
 import type { ExamCuts } from '../../src/types.ts';
-import { EXAM_ID_RE, isRecord, readJsonFile, withKey } from './data.ts';
+import { EXAM_ID_RE, commandHint, isRecord, readJsonFile, withKey } from './data.ts';
 import { EXAM_KEYS_BEFORE, bumpRevForEdit, loadEditTarget, writeEdit } from './edit.ts';
 import type { Io } from './io.ts';
 
@@ -123,6 +123,8 @@ export interface CutsOptions {
   /** 입력 파일의 경로와 출력에 쓰는 이름. */
   file: string;
   name: string;
+  /** 다음 차례 안내에 붙일 --data 의 값(기본 자료 폴더가 아닐 때만). 없으면 붙이지 않는다(별도 검토 D5). */
+  dataArg?: string | null;
 }
 
 /** exams:cuts 를 돌린다. 등급컷을 썼거나 이미 같으면 0, 쓰지 않았으면 1을 돌려준다. */
@@ -169,6 +171,6 @@ export function runCuts(opts: CutsOptions, io: Io): number {
   for (const [g, [lo, hi]] of Object.entries(cuts.grades)) io.out(lo === hi ? `  ${g}등급 컷 ${lo}점` : `  ${g}등급 컷 ${lo}~${hi}점`);
   for (const n of built.notes) io.out(`  ${n}`);
   if (bumped.note) io.out(`  ${bumped.note}`);
-  io.out('다음 차례: npm run exams:check 로 검사해요.');
+  io.out(`다음 차례: ${commandHint('check', [], [['--data', opts.dataArg ?? null]])} 로 검사해요.`);
   return 0;
 }

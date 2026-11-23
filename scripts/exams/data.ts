@@ -111,6 +111,17 @@ export function writeTextFile(path: string, text: string): void {
   }
 }
 
+/**
+ * 다음 차례로 칠 명령의 글자(별도 검토 D5). 위치 인자와 선택지(값이 null 이면 뺌)가 없으면 "npm run exams:<명령>" 만이고,
+ * 있으면 "npm run exams:verify -- out --data data"(형식 예시)처럼 붙인다. 빈칸이나 셸이 다르게 읽는 글자가 든 값은 큰따옴표로 감싼다.
+ * 리허설처럼 --data, --out 을 준 실행에서 안내를 그대로 치면 저장소의 진짜 폴더를 보게 되는 일을 막는다.
+ */
+export function commandHint(command: string, positional: readonly string[], options: readonly (readonly [string, string | null])[]): string {
+  const quote = (v: string) => (/^[A-Za-z0-9_./:-]+$/.test(v) ? v : `"${v}"`);
+  const args = [...positional.map(quote), ...options.flatMap(([name, value]) => (value === null ? [] : [name, quote(value)]))];
+  return args.length === 0 ? `npm run exams:${command}` : `npm run exams:${command} -- ${args.join(' ')}`;
+}
+
 /** 출력에 쓰는 경로. base 안이면 base 기준의 상대 경로(/ 로 구분), 밖이면 절대 경로다. */
 export function displayPath(path: string, base: string): string {
   const rel = relative(base, path);

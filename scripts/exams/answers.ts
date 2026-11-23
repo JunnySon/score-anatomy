@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import type { ExamItem } from '../../src/types.ts';
 import { choicesOf, SHORT_MAX, SHORT_MIN } from '../../src/exams/validate.ts';
-import { isRecord, withKey } from './data.ts';
+import { commandHint, isRecord, withKey } from './data.ts';
 import { looksLikeAnswerNote, screenTextProblems } from './check.ts';
 import { EXAM_KEYS_BEFORE, bumpRevForEdit, loadEditTarget, writeEdit } from './edit.ts';
 import type { Io } from './io.ts';
@@ -162,6 +162,8 @@ export interface AnswersOptions {
   names: [string, string];
   /** --note 로 받은 정정 안내. 없으면 null. */
   note: string | null;
+  /** 다음 차례 안내에 붙일 --data 의 값(기본 자료 폴더가 아닐 때만). 없으면 붙이지 않는다(별도 검토 D5). */
+  dataArg?: string | null;
 }
 
 function readText(path: string): string | null {
@@ -269,6 +271,6 @@ export function runAnswers(opts: AnswersOptions, io: Io): number {
   const all = specs.filter((s) => s === '*').length;
   io.out(`${target.label} 에 정답을 넣었어요. 문항 ${specs.length}개(복수 정답 ${multi}문항, 모두 정답 처리 ${all}문항), answerReleased true.`);
   for (const n of notes) io.out(`  ${n}`);
-  io.out('다음 차례: npm run exams:check 로 검사해요.');
+  io.out(`다음 차례: ${commandHint('check', [], [['--data', opts.dataArg ?? null]])} 로 검사해요.`);
   return 0;
 }

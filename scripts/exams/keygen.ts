@@ -1,6 +1,7 @@
 import { existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import type { Io } from './io.ts';
+import { isRepoDataDir } from './publish.ts';
 import { KEY_ENV, PUBLIC_KEY_FILE, generateSigningKey, keyFingerprint, keyPlaceProblem, publicKeyText } from './sign.ts';
 
 // exams:keygen(작업 지시서 3의 6-4): Ed25519 키 쌍을 만든다. 진짜 키는 사람이 만든다(이번 작업에서는 테스트 안에서 임시 폴더로만 돌린다).
@@ -72,6 +73,11 @@ export function runKeygen(opts: KeygenOptions, io: Io): number {
       ? '  윈도우에서는 이 도구가 파일 권한을 바꾸지 못해요. 비밀 키는 본인만 열 수 있는 폴더에 둬요.'
       : '  비밀 키 파일은 본인만 읽고 쓸 수 있게(권한 600) 만들었어요.',
   );
-  io.out(`공개 키를 썼어요: ${publicName}(지문 ${keyFingerprint(key)}). 이 파일은 커밋하고 앱 껍데기에 넣어요.`);
+  // 커밋하고 앱 껍데기에 넣는 것은 저장소의 진짜 자료 폴더(exam-data)의 공개 키뿐이다(별도 검토 D5). 리허설의 임시 자료 폴더면 그렇게 적지 않는다.
+  io.out(
+    isRepoDataDir(opts.dataDir, opts.root)
+      ? `공개 키를 썼어요: ${publicName}(지문 ${keyFingerprint(key)}). 이 파일은 커밋하고 앱 껍데기에 넣어요.`
+      : `공개 키를 썼어요: ${publicName}(지문 ${keyFingerprint(key)}). 이 자료 폴더는 저장소의 exam-data 가 아니라서 커밋하지 않아요. 리허설이면 끝난 뒤 임시 폴더를 지워요.`,
+  );
   return 0;
 }

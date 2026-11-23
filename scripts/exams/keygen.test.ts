@@ -61,7 +61,11 @@ describe('발행 도구 exams:keygen(작업 지시서 3의 6-4)', () => {
     // 출력에는 키 내용이 없고 공개 키의 지문만 있다.
     expect(leakCount(`${run.stdout}\n${run.stderr}`, keySecrets(pem))).toBe(0);
     const fp = keyFingerprint(createPrivateKey(pem));
-    expect(run.stdout).toContain(`공개 키를 썼어요: ${join(dir, 'public-key.txt')}(지문 ${fp}). 이 파일은 커밋하고 앱 껍데기에 넣어요.`);
+    // 저장소의 exam-data 가 아닌 자료 폴더(리허설과 테스트)라서 커밋하라고 하지 않는다(별도 검토 D5).
+    expect(run.stdout).toContain(
+      `공개 키를 썼어요: ${join(dir, 'public-key.txt')}(지문 ${fp}). 이 자료 폴더는 저장소의 exam-data 가 아니라서 커밋하지 않아요. 리허설이면 끝난 뒤 임시 폴더를 지워요.`,
+    );
+    expect(run.stdout).not.toContain('커밋하고 앱 껍데기에 넣어요');
     expect(run.stdout).toContain(`비밀 키를 썼어요: ${keyFile}. 이 파일은 저장소 밖에 두고 다른 사람과 나누지 않아요. 발행할 때 SA_EXAM_KEY_FILE 에 이 경로를 넣어요.`);
 
     // 그 키로 발행하면 자료 폴더의 공개 키와 짝인지 확인하고, verify 는 --key 없이 <자료 폴더>/public-key.txt 로 통과한다.
@@ -77,6 +81,9 @@ describe('발행 도구 exams:keygen(작업 지시서 3의 6-4)', () => {
     expect(verified.status).toBe(0);
     expect(verified.stdout).toContain(`공개 키: ${join(dir, 'public-key.txt')}(지문 ${fp}).`);
     expect(verified.stdout).toContain('결과: 발행물이 맞아요. 서명, 시험 파일의 SHA-256 과 검사, 잠금 달력이 모두 맞아요.');
+    // 다음 차례 안내도 준 자료 폴더와 발행 폴더를 붙여 적는다(그대로 치면 같은 폴더를 본다, 별도 검토 D5).
+    const q = (v: string) => (/^[A-Za-z0-9_./:-]+$/.test(v) ? v : `"${v}"`);
+    expect(published.stdout).toContain(`다음 차례: npm run exams:verify -- ${q(o.out)} --data ${q(dir)} 로 발행 폴더를 확인하고, 정해진 주소에 올린 뒤 그 주소로 한 번 더 확인해요.`);
     expect(leakCount(`${published.stdout}${published.stderr}${verified.stdout}${verified.stderr}`, keySecrets(pem))).toBe(0);
     // 저장소의 exam-data 는 그대로다(진짜 공개 키 자리를 만들지 않음).
     expect(snapshot(join(ROOT, 'exam-data'))).toEqual(repoData);

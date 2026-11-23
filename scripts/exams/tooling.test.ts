@@ -1,13 +1,14 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
 import { dirname, join, relative, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { validateLocks } from '../../src/exams/validate.ts';
+import { runAnswers } from './answers.ts';
 import { canonicalJson } from './canonical.ts';
 import { main, parseArgs } from './cli.ts';
-import { listSourceFiles, sourceJson, withKey } from './data.ts';
+import { commandHint, listSourceFiles, sourceJson, withKey } from './data.ts';
 import { parseState, ro, stateText } from './state.ts';
-import { ROOT, collectIo, makeDataDir, removeDir, runTool } from './testkit.ts';
+import { ROOT, SHEET, collectIo, makeDataDir, removeDir, runTool, testExam, writeExam } from './testkit.ts';
 
 // 발행 도구의 바탕(작업 지시서 3의 6-1, 6-4): 자료 폴더의 처음 모양, 키를 정렬한 JSON, 원본 시험 파일의 모양, 명령과 인자,
 // 그리고 Node 가 타입 지우기로 바로 읽을 수 있는 TypeScript 인지(상대 경로는 '.ts' 까지, 타입만 가져올 때는 import type 문).
@@ -247,6 +248,30 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     const ok = await run(['check', '--data', dir]);
     expect(ok.code).toBe(0);
     expect(ok.out[ok.out.length - 1]).toBe('결과: 검사를 통과했어요. 이 검사는 파일을 쓰지 않아요.');
+  });
+
+  it('다음 차례 안내는 기본이 아닌 자료 폴더와 발행 폴더를 붙여 적고, 기본 폴더면 지금처럼 적는다(리허설에서 그대로 쳐도 같은 폴더를 봄, 별도 검토 D5)', () => {
+    expect(commandHint('check', [], [['--data', null]])).toBe('npm run exams:check');
+    expect(commandHint('check', [], [['--data', 'data']])).toBe('npm run exams:check -- --data data');
+    expect(commandHint('verify', ['out dir'], [['--data', 'C:\\data']])).toBe('npm run exams:verify -- "out dir" --data "C:\\data"');
+    // 실제 Node: 임시 자료 폴더(--data)로 정답을 넣으면 다음 차례의 check 에 그 폴더를 붙인다.
+    const dir = makeDataDir();
+    dirs.push(dir);
+    writeExam(dir, testExam());
+    writeFileSync(join(dir, 'a.txt'), SHEET);
+    writeFileSync(join(dir, 'b.txt'), SHEET);
+    const run = runTool(['answers', join(dir, 'a.txt'), join(dir, 'b.txt'), '--data', dir]);
+    expect(run.stderr).toBe('');
+    expect(run.status).toBe(0);
+    const q = (v: string) => (/^[A-Za-z0-9_./:-]+$/.test(v) ? v : `"${v}"`);
+    expect(run.stdout).toContain(`다음 차례: npm run exams:check -- --data ${q(dir)} 로 검사해요.`);
+    // 기본 자료 폴더(--data 를 주지 않음)면 지금처럼 붙이지 않는다. 함수로 불러 확인한다(저장소의 exam-data 를 쓰지 않게).
+    const fresh = makeDataDir();
+    dirs.push(fresh);
+    writeExam(fresh, testExam());
+    const c = collectIo();
+    expect(runAnswers({ dataDir: fresh, files: [join(dir, 'a.txt'), join(dir, 'b.txt')], names: ['a.txt', 'b.txt'], note: null }, c.io)).toBe(0);
+    expect(c.out).toContain('다음 차례: npm run exams:check 로 검사해요.');
   });
 
   it('npm run exams:check 와 같은 길(node scripts/exams.mjs)로 빈 자료 폴더를 검사하면 통과한다', () => {

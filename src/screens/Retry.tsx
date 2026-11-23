@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { DigitPad, EntryBox, McPad } from '../components/pads';
 import { Badge, IconCross, IconRing, LiveRegion, Message, Option, Screen, TopBar } from '../components/ui';
+import { examShiftKey } from '../exams/merge';
 import { answersRevOf, choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, pressDigit, type DigitEntry } from '../logic/entry';
 import { isCorrectResponse, type Grade } from '../logic/scoring';
-import { rankTypes } from '../logic/steps';
+import { rankTypes, retryTarget } from '../logic/steps';
 import { retryLabel, retrySentence, selfCheckLabel, selfCheckSentence } from '../logic/text';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
@@ -17,18 +18,28 @@ import type { RetryRecord, SelfCheck } from '../types';
 // - 찍었다고 표시하고 맞은 문항: 넣었던 답이 맞았다는 것을 학생이 이미 알아서, 답을 다시 받지 않고
 //   풀이를 끝까지 써 봤는지 스스로 고르게 한다. 정답 대조가 아니므로 정답색, 오답색, 맞음과 틀림 기호를 쓰지 않는다.
 
+/** 지금 문항에 넣는 중인 것. 문항 번호(no)와 함께 들어서, 다른 문항으로 옮기면 쓰지 않는다. */
+interface Held {
+  no: number | null;
+  pick: number | null;
+  entry: DigitEntry;
+  checked: boolean;
+  msg: string | null;
+}
+
+const EMPTY_ENTRY: DigitEntry = { text: '', fresh: false };
+
 export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; typeId: string | null }) {
   const { exam, session } = h;
   const step = rankTypes(exam, grade).find((s) => s.typeId === typeId) ?? null;
   const nos = step?.retryNos ?? [];
-  const [index, setIndex] = useState(0);
-  const [pick, setPick] = useState<number | null>(null);
-  const [entry, setEntry] = useState<DigitEntry>({ text: '', fresh: false });
-  const [checked, setChecked] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  // 지금 문항은 차례가 아니라 문항 번호로 든다. 화면이 열린 채 넘겨받은 새 판(정답 정정, 유형 재분류)으로 다시 풀 목록이 바뀌어도
+  // 고른 답이 다른 문항의 기록으로 들어가지 않게 한다(작업 지시서 3의 별도 검토 A1, B4).
+  const [held, setHeld] = useState<Held>(() => ({ no: nos[0] ?? null, pick: null, entry: EMPTY_ENTRY, checked: false, msg: null }));
   const stepsPath = h.path('/steps');
+  const target = retryTarget(nos, held.no);
 
-  if (!step || nos.length === 0) {
+  if (!step || !target) {
     return (
       <Screen top={<TopBar back={stepsPath} title={S.steps.top} />} tabs="current">
         <p>{S.retry.nothing}</p>
@@ -36,7 +47,12 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
     );
   }
 
-  const no = nos[Math.min(index, nos.length - 1)]!;
+  const { no, index, moved } = target;
+  // 들고 있던 문항이 목록에서 빠져 다른 문항으로 옮겼으면, 그 문항에 넣던 답과 맞춰 본 상태는 쓰지 않는다.
+  const input: Held = moved ? { no, pick: null, entry: EMPTY_ENTRY, checked: false, msg: null } : held;
+  const { pick, entry, checked, msg } = input;
+  /** 지금 문항의 넣는 중인 것을 바꾼다. 늘 지금 문항 번호와 함께 적어서, 옮겨 온 문항이면 그때부터 그 문항의 것이 된다. */
+  const put = (patch: Partial<Held>) => setHeld({ ...input, ...patch, no });
   const item = exam.items.find((it) => it.no === no)!;
   const itemResult = grade.items.find((it) => it.no === no)!;
   const selfMode = itemResult.correct;
@@ -49,15 +65,14 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   const check = () => {
     const value = item.kind === 'mc' ? pick : entryValue(entry);
     if (value === null) {
-      setMsg(S.retry.needAnswer);
+      put({ msg: S.retry.needAnswer });
       return;
     }
-    setMsg(null);
     // 맞춰 보기도 채점과 같은 판정을 쓴다. 복수 정답이면 인정하는 답 가운데 하나면 맞힌 것이다(작업 지시서 3의 4-2).
     const correct = isCorrectResponse(item, value);
     // 기록에는 지금 정답 판 번호를 함께 남긴다. 정답이 정정되면 그 전의 기록은 화면에서만 빠진다(작업 지시서 3의 4-6).
     h.update((s) => recordRetry(s, no, correct, answerKnown, new Date().toISOString(), answersRevOf(exam)));
-    setChecked(true);
+    put({ checked: true, msg: null });
   };
 
   const next = () => {
@@ -65,11 +80,7 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       navigate(stepsPath);
       return;
     }
-    setIndex(index + 1);
-    setPick(null);
-    setEntry({ text: '', fresh: false });
-    setChecked(false);
-    setMsg(null);
+    setHeld({ no: nos[index + 1]!, pick: null, entry: EMPTY_ENTRY, checked: false, msg: null });
   };
 
   /** 스스로 확인한 결과를 고른다. "아직 안 풀어 봤어요"는 기록을 남기지 않고(앞서 남긴 것도 지우고) 다음으로 넘어간다. */
@@ -81,6 +92,7 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       return;
     }
     h.update((s) => setSelfCheck(s, no, choice, nowIso));
+    put({});
   };
 
   let pad = null;
@@ -102,12 +114,9 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       <McPad
         choices={choicesOf(item)}
         selected={pick}
-        onPick={(n) => {
-          setPick(n);
-          setMsg(null);
-        }}
+        onPick={(n) => put({ pick: n, msg: null })}
         fn={[
-          { key: 'erase', label: S.common.erase, onPress: () => setPick(null) },
+          { key: 'erase', label: S.common.erase, onPress: () => put({ pick: null }) },
           { key: 'go', label: S.retry.check, onPress: check },
         ]}
       />
@@ -118,13 +127,9 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
         goLabel={S.retry.check}
         onDigit={(d) => {
           const r = pressDigit(entry, d);
-          setEntry(r.entry);
-          setMsg(r.overflow ? S.common.shortRange : null);
+          put({ entry: r.entry, msg: r.overflow ? S.common.shortRange : null });
         }}
-        onErase={() => {
-          setEntry(eraseDigit(entry));
-          setMsg(null);
-        }}
+        onErase={() => put({ entry: eraseDigit(entry), msg: null })}
         onGo={check}
       />
     );
@@ -136,8 +141,11 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   return (
     <Screen
       top={<TopBar back={stepsPath} title={S.retry.top(step.name)} />}
-      // 결과가 뜨거나 다음 문항으로 넘어갈 때 같은 자리를 연달아 눌러 건너뛰지 않게 한다.
-      guardKey={`${index}-${done ? 'result' : 'entry'}`}
+      // 결과가 뜨거나 다음 문항으로 넘어갈 때 같은 자리를 연달아 눌러 건너뛰지 않게 한다. 열쇠에 문항 번호를 넣어
+      // 넘겨받은 새 판으로 지금 문항이 바뀐 때도 막는다.
+      guardKey={`${no}-${done ? 'result' : 'entry'}`}
+      // 넘겨받은 새 판으로 다시 풀 목록이나 지금 문항이 바뀌면 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={`${examShiftKey(exam)}/${nos.join(',')}`}
       footer={
         pad ? (
           <>
@@ -161,6 +169,14 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
         </p>
         {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
       </div>
+      {/* 넘겨받은 새 판으로 들고 있던 문항이 다시 풀 목록에서 빠졌으면 그 사실을 알린다. 그 문항에 넣던 답은 기록하지 않았다. */}
+      {moved && held.no !== null ? (
+        <div className="mt2">
+          <Message plain testId="retry-moved">
+            {S.retry.moved(held.no, !held.checked && (held.pick !== null || held.entry.text !== ''))}
+          </Message>
+        </div>
+      ) : null}
       <div className="now">
         <div className="now__main" aria-live="polite">
           <span className="cap">{selfMode ? S.retry.selfNowLabel : S.retry.nowLabel}</span>

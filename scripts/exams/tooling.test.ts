@@ -106,7 +106,7 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     expect(lines('.gitignore')).toContain('dist-exams.*/');
     expect(lines('.gitattributes')).toContain('exam-data/testdata/** -text');
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-    for (const cmd of ['check', 'answers', 'cuts', 'publish', 'verify', 'keygen', 'serve']) expect(pkg.scripts[`exams:${cmd}`]).toBe(`node scripts/exams.mjs ${cmd}`);
+    for (const cmd of ['check', 'answers', 'cuts', 'publish', 'verify', 'keygen', 'serve', 'testdata']) expect(pkg.scripts[`exams:${cmd}`]).toBe(`node scripts/exams.mjs ${cmd}`);
   });
 
   it('키를 정렬한 JSON 은 2칸 들여쓰기, LF, 끝 줄바꿈이고 키 차례가 달라도 같은 바이트다', () => {
@@ -189,7 +189,7 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     expect(run.stdout).toBe('');
   });
 
-  it('명령과 인자: 사용법, 아직 만들지 않은 명령, 모르는 명령과 선택지, 인자 수', async () => {
+  it('명령과 인자: 사용법, 모르는 명령과 선택지, 인자 수', async () => {
     const run = async (argv: string[]) => {
       const c = collectIo();
       const code = await main(argv, c.io);
@@ -198,11 +198,16 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     const none = await run([]);
     expect(none.code).toBe(2);
     expect(none.err[0]).toBe('사용법: node scripts/exams.mjs <명령> [인자] [--data <자료 폴더>] [--out <발행 폴더>]');
-    expect((await run(['help'])).code).toBe(0);
-    // 6-5 의 테스트 전용 발행물을 만드는 명령은 다음 단계에서 더한다.
-    const planned = await run(['testdata']);
-    expect(planned.code).toBe(2);
-    expect(planned.err).toEqual(['testdata 는 아직 만들지 않은 명령이에요(작업 지시서 3의 6-5, 다음 단계에서 더해요).']);
+    const help = await run(['help']);
+    expect(help.code).toBe(0);
+    // 사용법에 모든 명령이 있고, 아직 만들지 않은 명령은 없다(작업 지시서 3의 6-5 의 testdata 까지 만들었다).
+    for (const cmd of ['check', 'answers', 'cuts', 'publish', 'verify', 'keygen', 'serve', 'testdata']) {
+      expect(help.out.some((line) => line.startsWith(`  ${cmd} `)), cmd).toBe(true);
+    }
+    expect(help.out.join('\n')).not.toContain('아직 만들지 않았어요');
+    // testdata 는 위치 인자를 받지 않고 --data 만 받는다.
+    expect((await run(['testdata', 'x'])).err).toEqual(['인자가 0개여야 해요: node scripts/exams.mjs testdata [--data <자료 폴더>]']);
+    expect((await run(['testdata', '--out', 'x'])).err).toEqual(['testdata 에는 --out 를 쓰지 않아요.']);
     expect((await run(['nope'])).err[0]).toBe('모르는 명령이에요: nope');
     expect((await run(['check', '--note', '테스트 전용 정정 안내예요.'])).err).toEqual(['check 에는 --note 를 쓰지 않아요.']);
     expect((await run(['check', '--bogus'])).err).toEqual(['모르는 선택지예요: --bogus']);

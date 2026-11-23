@@ -9,7 +9,7 @@ import { STATE_FILE, isRecord, readJsonFile } from './data.ts';
 import type { Io } from './io.ts';
 import { INDEX_FILE, RELEASE_FORMAT, SIG_FILE } from './release.ts';
 import type { ReleaseEntry } from './release.ts';
-import { checkSignature, keyFingerprint, parsePublicKeyText } from './sign.ts';
+import { checkSignature, isTestOnlyKey, keyFingerprint, parsePublicKeyText } from './sign.ts';
 import { parseState } from './state.ts';
 
 // exams:verify(작업 지시서 3의 6-2, 6-4): 발행 폴더나 http(s) 주소의 발행물을 공개 키로 확인한다. 발행 직후와 올린 뒤에 쓴다.
@@ -350,6 +350,7 @@ export async function runVerify(opts: VerifyOptions, io: Io): Promise<number> {
   const parsed = parsePublicKeyText(keyText);
   if (parsed.key === null) return fail([`${opts.keyName}: ${parsed.error ?? '공개 키로 읽지 못했어요.'}`, '확인하지 못했어요.']);
   io.out(`공개 키: ${opts.keyName}(지문 ${keyFingerprint(parsed.key)}).`);
+  if (isTestOnlyKey(parsed.key)) io.out('  이 공개 키는 테스트 전용 키예요(exam-data/testdata, 작업 지시서 3의 6-5). 진짜 발행물은 이 키로 확인하지 않아요.');
 
   let result: VerifyResult;
   if (opts.target.kind === 'folder') {

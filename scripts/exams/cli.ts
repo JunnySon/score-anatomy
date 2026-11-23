@@ -11,6 +11,7 @@ import { runKeygen } from './keygen.ts';
 import { runPublish } from './publish.ts';
 import { SERVE_PORT, runServe } from './serve.ts';
 import { PUBLIC_KEY_FILE } from './sign.ts';
+import { TESTDATA_DIR, runTestdata } from './testdata.ts';
 import { parseTarget, runVerify } from './verify.ts';
 
 // 발행 도구의 명령과 인자(작업 지시서 3의 6-4). 진입점은 scripts/exams.mjs 이고 npm run exams:<명령> 으로 부른다.
@@ -49,10 +50,8 @@ const COMMANDS: Record<string, CommandSpec> = {
   verify: { minArgs: 0, maxArgs: 1, options: ['data', 'key'], usage: 'verify [<발행 폴더 또는 http(s) 주소>] [--key <공개 키 파일>]' },
   keygen: { minArgs: 1, maxArgs: 1, options: ['data'], usage: 'keygen <비밀 키를 쓸 경로(저장소 밖)>' },
   serve: { minArgs: 0, maxArgs: 0, options: ['dir', 'port'], usage: 'serve [--dir <발행 폴더>] [--port <번호>]' },
+  testdata: { minArgs: 0, maxArgs: 0, options: ['data'], usage: 'testdata [--data <자료 폴더>]' },
 };
-
-/** 아직 만들지 않은 명령(작업 지시서 3의 6-5 의 테스트 전용 발행물을 만드는 명령, 다음 단계). */
-const PLANNED = ['testdata'];
 
 const USAGE = [
   '사용법: node scripts/exams.mjs <명령> [인자] [--data <자료 폴더>] [--out <발행 폴더>]',
@@ -68,7 +67,7 @@ const USAGE = [
   `                                --key 의 기본값은 <자료 폴더>/${PUBLIC_KEY_FILE} 예요.`,
   `  keygen <비밀 키 경로>         키 쌍을 만들어요. 비밀 키는 저장소 밖 경로에, 공개 키는 <자료 폴더>/${PUBLIC_KEY_FILE} 에 써요.`,
   `  serve                         발행 폴더를 이 컴퓨터(127.0.0.1)에서 내줘요(리허설용). --dir 의 기본값은 dist-exams, --port 는 ${SERVE_PORT} 예요.`,
-  `  ${PLANNED.join(', ')}                      아직 만들지 않았어요.`,
+  `  testdata                      테스트 전용 키와 발행물 네 가지를 <자료 폴더>/${TESTDATA_DIR} 에 만들어요(작업 지시서 3의 6-5). 진짜 발행에는 쓰지 않아요.`,
   '--data 의 기본값은 exam-data, --out 의 기본값은 dist-exams 예요(저장소 폴더 기준).',
 ];
 
@@ -138,10 +137,6 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
   };
   if (parsed.command === null) return usage(2);
   if (parsed.command === 'help' || parsed.command === '-h') return usage(0);
-  if (PLANNED.includes(parsed.command)) {
-    io.err(`${parsed.command} 는 아직 만들지 않은 명령이에요(작업 지시서 3의 6-5, 다음 단계에서 더해요).`);
-    return 2;
-  }
   const spec = Object.prototype.hasOwnProperty.call(COMMANDS, parsed.command) ? COMMANDS[parsed.command] : undefined;
   if (spec === undefined) {
     io.err(`모르는 명령이에요: ${parsed.command}`);
@@ -213,6 +208,8 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
       const dir = parsed.options.dir === undefined ? join(ROOT, 'dist-exams') : resolve(base, parsed.options.dir);
       return runServe({ dir, dirName: displayPath(dir, base), port }, io);
     }
+    case 'testdata':
+      return runTestdata({ dataDir, dataName }, io);
     default:
       return usage(2);
   }

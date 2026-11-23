@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, sign, verify } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -6,6 +6,7 @@ import { sha256Hex } from './canonical.ts';
 
 // 발행물의 서명(작업 지시서 3의 6-2, 6-4). Ed25519 와 SHA-256 은 Node 에 든 기능(node:crypto)만 쓴다.
 // - 비밀 키는 환경 변수 SA_EXAM_KEY_FILE 이 가리키는 파일(PEM, PKCS#8)에서만 읽는다. 그 파일의 실제 경로가 저장소 폴더 안이면 거부한다.
+//   테스트 전용 키(작업 지시서 3의 6-5, 아래 testOnlySigningKey)도 거부한다.
 // - 서명은 index.json 파일의 바이트 그대로에 대한 Ed25519 서명 64바이트를 표준 base64(패딩 포함) 한 줄과 LF 로 적은 것이다.
 // - 공개 키는 Ed25519 공개 키 32바이트(JWK 의 x)를 표준 base64(패딩 포함) 한 줄과 LF 로 적은 것이다.
 // 키 내용과, 키 내용이 섞일 수 있는 오류 원문(OpenSSL 의 문장 등)은 어디에도 출력하지 않는다. 오류는 이 파일이 정한 한국어 문장만 돌려준다.
@@ -122,13 +123,58 @@ export function loadSigningKey(
   }
   const parsed = parsePrivateKeyPem(bytes.toString('utf8'));
   if (parsed.key === null) return { key: null, errors: [parsed.error ?? '비밀 키 파일을 비밀 키로 읽지 못했어요.'] };
+  if (isTestOnlyKey(parsed.key)) {
+    return {
+      key: null,
+      errors: [
+        `${KEY_ENV} 이 가리키는 비밀 키가 테스트 전용 키예요(exam-data/testdata 의 test-only-private-key.pem 과 같은 키). 이 키는 저장소에 들어 있어 누구나 가질 수 있어서 진짜 발행에는 쓰지 않아요.`,
+      ],
+    };
+  }
   return { key: parsed.key, errors: [] };
 }
 
 /** 새 Ed25519 키 쌍. 비밀 키는 PEM(PKCS#8) 글자로 돌려준다. */
 export function generateSigningKey(): { key: KeyObject; pem: string } {
   const { privateKey } = generateKeyPairSync('ed25519');
-  return { key: privateKey, pem: String(privateKey.export({ type: 'pkcs8', format: 'pem' })) };
+  return { key: privateKey, pem: privateKeyPem(privateKey) };
+}
+
+/** 비밀 키의 PEM(PKCS#8) 글자. 줄바꿈은 LF 이고 끝에 줄바꿈이 하나 있다. */
+export function privateKeyPem(key: KeyObject): string {
+  return String(key.export({ type: 'pkcs8', format: 'pem' }));
+}
+
+// 테스트 전용 키(작업 지시서 3의 6-5). 고정된 이름의 SHA-256 을 씨앗(Ed25519 비밀 키 32바이트)으로 써서, 다시 만들어도 같은 키가 나온다.
+// 테스트 전용 발행물(exam-data/testdata)을 만들 때만 쓴다(scripts/exams/testdata.ts). 그 비밀 키는 일부러 저장소에 두므로 누구나 가질 수 있다.
+// 그래서 진짜 발행에는 쓰지 않는다: loadSigningKey 가 거부하고, exams:verify 는 이 공개 키로 확인할 때 테스트 전용이라고 알린다.
+
+/** Ed25519 비밀 키의 PKCS#8 DER 에서 씨앗 32바이트 앞에 오는 머리(RFC 8410). */
+const ED25519_PKCS8_HEAD = Buffer.from('302e020100300506032b657004220420', 'hex');
+
+/** 테스트 전용 키를 만드는 이름. 첫째는 exam-data/testdata 에 두는 키, 둘째는 서명이 틀린 발행물에만 쓰는 다른 키(파일로 두지 않음)다. */
+export const TEST_ONLY_KEY_NAMES: readonly string[] = ['score-anatomy/test-only-signing-key/v1', 'score-anatomy/test-only-other-key/v1'];
+
+/** 이름의 SHA-256 을 씨앗으로 만든 Ed25519 비밀 키. 같은 이름이면 늘 같은 키다. 테스트 전용 키에만 쓴다. */
+export function seededSigningKey(name: string): KeyObject {
+  const seed = createHash('sha256').update(name, 'utf8').digest();
+  return createPrivateKey({ key: Buffer.concat([ED25519_PKCS8_HEAD, seed]), format: 'der', type: 'pkcs8' });
+}
+
+/** exam-data/testdata 에 두는 테스트 전용 비밀 키. */
+export function testOnlySigningKey(): KeyObject {
+  return seededSigningKey(TEST_ONLY_KEY_NAMES[0]);
+}
+
+/** 서명이 틀린 테스트 전용 발행물에 쓰는 다른 키. */
+export function otherTestOnlyKey(): KeyObject {
+  return seededSigningKey(TEST_ONLY_KEY_NAMES[1]);
+}
+
+/** 테스트 전용 키(비밀 키나 공개 키)인지. 공개 키 32바이트로 견준다. */
+export function isTestOnlyKey(key: KeyObject): boolean {
+  const pub = publicKeyBytes(key);
+  return TEST_ONLY_KEY_NAMES.some((name) => publicKeyBytes(seededSigningKey(name)).equals(pub));
 }
 
 /** Ed25519 공개 키 32바이트. 비밀 키를 주면 그 짝의 공개 키다. */

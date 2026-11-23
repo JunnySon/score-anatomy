@@ -29,6 +29,9 @@ import { resumePath } from './state/session';
 import { activeRun } from './state/testlog';
 import { S } from './strings';
 import { addDiscardListener } from './tapGuard';
+import { platform } from '#platform';
+import { store } from './state/store';
+import { showFloatingNotice } from './tapNotice';
 import { tools } from '#tools';
 
 // 주소(#/...)에 맞는 화면을 고른다. 기록 상태와 맞지 않는 주소는 알맞은 화면으로 돌려보낸다.
@@ -94,7 +97,8 @@ function Routes({ route, screenKey }: { route: Route; screenKey: string }) {
   const data = useAppData();
   const current = useCurrentHandle();
   const demo = useDemoHandle();
-  const run = activeRun(data);
+  // 사용성 테스트 도구가 없는 빌드(앱 배포용)에는 측정 기록 코드가 실리지 않는다.
+  const run = __SA_TOOLS__ ? activeRun(data) : null;
 
   // 주소의 input 값(keypad, rows)으로 입력 방식을 바꾼다.
   // 테스트가 진행 중이면 진행자가 고른 방식이 우선이다. 사용성 테스트 도구가 없는 빌드(앱 배포용)는 늘 키패드 방식이다.
@@ -170,6 +174,21 @@ export function App() {
   const onShown = useCallback(() => {
     if (logName) logScreenEvent(logName);
   }, [logName]);
+
+  // 앱: 기록을 저장하지 못하면(껍데기의 storeFailed, 다리를 쓸 수 없음) 지금 화면에서도 한 번 알린다.
+  // 이 실행에서 한 번만 띄우고, 기록 화면에는 저장하지 못한 동안 계속 보인다.
+  useEffect(() => {
+    const text = platform.appText?.storageFailed;
+    if (!text) return undefined;
+    let shown = false;
+    const check = () => {
+      if (shown || store.getStatus().ok) return;
+      shown = true;
+      showFloatingNotice(text, 'store-notice');
+    };
+    check();
+    return store.subscribeStatus(check);
+  }, []);
 
   // 측정 중에 연달아 누르기 보호가 버린 누름을 센다(진행자용 화면, 예시 결과, 측정에 묶이지 않은 기록의 화면은 빼고).
   const routeRef = useRef(route);

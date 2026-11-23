@@ -179,17 +179,17 @@ export function parseStored(text: string | null): AppData | null {
   const activeRunId =
     __SA_TOOLS__ && typeof raw.activeRunId === 'string' && testRuns.some((r) => r.id === raw.activeRunId) ? raw.activeRunId : null;
   const inputMode: InputMode = raw.inputMode === 'rows' ? 'rows' : 'keypad';
-  return { version: STORE_VERSION, sessions, currentId, inputMode, testRuns, activeRunId };
+  const data: AppData = { version: STORE_VERSION, sessions, currentId, inputMode, testRuns, activeRunId };
+  if (raw.archiveNotice === true) data.archiveNotice = true;
+  return data;
 }
 
 export type StorageLike = StorageBackend;
 
-/** 저장소의 상태. 화면(기록 화면)이 안내문을 고를 때 쓴다. 바뀔 때마다 새 객체가 된다. */
+/** 저장소의 상태. 화면(기록 화면, 앱의 저장 실패 알림)이 안내문을 고를 때 쓴다. 바뀔 때마다 새 객체가 된다. */
 export interface StoreStatus {
-  /** 마지막 저장이 성공했는지(앱은 껍데기가 storeFailed 를 알리면 false). */
+  /** 마지막 저장이 성공했는지(앱은 껍데기가 storeFailed 를 알리면 false, 다음 저장을 보내면 다시 true). */
   ok: boolean;
-  /** 받은 기록을 읽지 못해 따로 보관해 달라고 하고 새로 시작했는지(앱만). */
-  archived: boolean;
 }
 
 export class Store {
@@ -197,12 +197,15 @@ export class Store {
   private listeners = new Set<() => void>();
   private statusListeners = new Set<() => void>();
   private storage: StorageLike | null;
-  private status: StoreStatus = { ok: true, archived: false };
+  private status: StoreStatus = { ok: true };
+  /** 앱: 받은 기록을 읽지 못해 보관을 요청했다. 새로 시작한 기록을 곧바로 저장한다(보관 안내 표시를 남기려고). */
+  private archivedOnRead = false;
 
   constructor(storage: StorageLike | null = platform.storage(), onFailed: (fn: () => void) => () => void = platform.onStoreFailed) {
     this.storage = storage;
     this.data = this.read() ?? defaultData();
     onFailed(() => this.setStatus({ ok: false }));
+    if (this.archivedOnRead) this.write();
   }
 
   /** 마지막 저장이 성공했는지. 실패해도 화면은 메모리 상태로 동작한다. */
@@ -212,7 +215,7 @@ export class Store {
 
   private setStatus(change: Partial<StoreStatus>): void {
     const next = { ...this.status, ...change };
-    if (next.ok === this.status.ok && next.archived === this.status.archived) return;
+    if (next.ok === this.status.ok) return;
     this.status = next;
     for (const l of this.statusListeners) l();
   }
@@ -234,12 +237,21 @@ export class Store {
     if (parsed === null && this.storage.archive) {
       // 앱: 받은 기록을 통째로 읽지 못했거나 더 새 형식이면 덮어쓰지 않는다. 따로 보관해 달라고 한 뒤 새로 시작한다.
       // (브라우저는 지금처럼 처음 상태로 열고, 다음 저장이 그 자리를 쓴다.)
+      let sent = false;
       try {
-        this.storage.archive();
+        sent = this.storage.archive();
       } catch {
-        // 보관 요청이 실패해도 화면은 처음 상태로 연다.
+        sent = false;
       }
-      this.setStatus({ archived: true });
+      if (!sent) {
+        // 보관 요청을 보내지 못했으면 읽지 못한 기록을 덮어쓰지 않게 이 실행 동안 저장하지 않는다(화면은 처음 상태로 쓴다).
+        this.storage = null;
+        this.setStatus({ ok: false });
+        return null;
+      }
+      // 기록 화면이 보관 안내를 보여 줄 때까지 안내 표시를 새 기록에 남긴다(앱을 끄고 다시 켜도 한 번은 보이게).
+      this.archivedOnRead = true;
+      return { ...defaultData(), archiveNotice: true };
     }
     return parsed;
   }

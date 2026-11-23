@@ -1,10 +1,10 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { platform } from '#platform';
 import { Badge, ConfirmDialog, Message, Screen } from '../components/ui';
 import { findExam } from '../exams';
 import { gradeExam } from '../logic/scoring';
 import { navigate } from '../router';
-import { deleteAllSessions, deleteSession, isTestDevice, openSession, useAppData } from '../state/hooks';
+import { clearArchiveNotice, deleteAllSessions, deleteSession, isTestDevice, openSession, useAppData } from '../state/hooks';
 import { resumePath, stageOf } from '../state/session';
 import { store } from '../state/store';
 import { activeRun, isMine } from '../state/testlog';
@@ -37,8 +37,14 @@ export function History() {
   const data = useAppData();
   const Extras = tools.HistoryExtras;
   const status = useSyncExternalStore(store.subscribeStatus, store.getStatus, store.getStatus);
+  // 앱: 앞서 저장된 기록을 읽지 못해 보관했다는 안내. 기록에 남은 표시로 보여 주고(앱을 끄고 다시 켜도 한 번은 보이게),
+  // 이번에 기록 화면을 연 동안은 그대로 두고 기록에서는 표시를 지운다.
+  const [archivedNotice] = useState(() => data.archiveNotice === true);
+  useEffect(() => {
+    if (archivedNotice) clearArchiveNotice();
+  }, [archivedNotice]);
   const [confirm, setConfirm] = useState<{ kind: 'one'; id: string; title: string; detail: string } | { kind: 'all' } | null>(null);
-  const run = activeRun(data);
+  const run = __SA_TOOLS__ ? activeRun(data) : null;
   const testDevice = isTestDevice(data);
   const sessions = [...data.sessions]
     .filter((s) => (run ? isMine(run, s) : !testDevice))
@@ -74,7 +80,7 @@ export function History() {
       }
     >
       <h1 className="title">{S.history.title}</h1>
-      {status.archived && platform.appText ? (
+      {archivedNotice && platform.appText ? (
         <div className="mt3" data-testid="history-archived">
           <Message plain>{platform.appText.archived}</Message>
         </div>

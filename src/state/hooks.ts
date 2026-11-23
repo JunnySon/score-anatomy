@@ -33,7 +33,8 @@ function updateCurrent(fn: (s: Session) => Session, log?: (run: TestRun, prev: S
       sessions[idx] = next;
       nd = { ...d, sessions };
     }
-    if (log) nd = withActiveRun(nd, (run) => (run.sessionId === prev.id ? log(run, prev, next) : run));
+    // 사용성 테스트 도구가 없는 빌드(앱 배포용)에는 측정 기록 코드가 실리지 않는다.
+    if (__SA_TOOLS__ && log) nd = withActiveRun(nd, (run) => (run.sessionId === prev.id ? log(run, prev, next) : run));
     return nd;
   });
 }
@@ -71,7 +72,7 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
   const now = Date.now();
   updateCurrent(
     (s) => setAnswer(s, no, value),
-    value !== undefined
+    __SA_TOOLS__ && value !== undefined
       ? (run, prev, next) => logAnswer(run, no, where, prev !== next, findMissing(h.exam, next.answers).length === 0, now)
       : undefined,
   );
@@ -87,7 +88,7 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
 export function startSession(examId: string, gradedBefore: GradedBefore, seenBefore: SeenBefore | null): void {
   const nowIso = new Date().toISOString();
   store.update((d) => {
-    const run = activeRun(d);
+    const run = __SA_TOOLS__ ? activeRun(d) : null;
     const reusable = isTestDevice(d)
       ? undefined
       : d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && (!run || isMine(run, s)));
@@ -100,7 +101,8 @@ export function startSession(examId: string, gradedBefore: GradedBefore, seenBef
       session = newSession(examId, gradedBefore, seenBefore, nowIso);
       sessions = [session, ...sessions];
     }
-    return rebind({ ...d, sessions, currentId: session.id }, session);
+    const nd: AppData = { ...d, sessions, currentId: session.id };
+    return __SA_TOOLS__ ? rebind(nd, session) : nd;
   });
 }
 
@@ -130,7 +132,7 @@ export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | 
     return s && exam ? { session: s, exam } : null;
   };
   const current = pick(d.sessions.find((s) => s.id === d.currentId));
-  const run = activeRun(d);
+  const run = __SA_TOOLS__ ? activeRun(d) : null;
   if (run) {
     // 테스트 중: 지금 보는 기록이 이번 참가자의 것이면 그 기록, 아니면 측정에 묶인 기록.
     if (current && isMine(run, current.session)) return current;
@@ -162,7 +164,7 @@ export function openSession(id: string): void {
     const session = d.sessions.find((s) => s.id === id);
     if (!session) return d;
     const nd: AppData = { ...d, currentId: id };
-    const run = activeRun(d);
+    const run = __SA_TOOLS__ ? activeRun(d) : null;
     if (run && isMine(run, session) && session.firstGradedAt === null) return rebind(nd, session);
     return nd;
   });
@@ -170,6 +172,7 @@ export function openSession(id: string): void {
 
 /** 시험 기록이 사라지기 전에, 그 기록에 묶인 측정 기록에 최종 답을 옮겨 둔다. 이미 끝난 측정은 건드리지 않는다. */
 function keepFinalAnswers(d: AppData, ids: Set<string> | null): TestRun[] {
+  if (!__SA_TOOLS__) return d.testRuns;
   return d.testRuns.map((r) => {
     if (r.endedAt !== null || r.sessionId === null || (ids !== null && !ids.has(r.sessionId))) return r;
     const session = d.sessions.find((s) => s.id === r.sessionId) ?? null;
@@ -192,13 +195,23 @@ export function deleteAllSessions(): void {
   store.update((d) => ({ ...d, testRuns: keepFinalAnswers(d, null), sessions: [], currentId: null }));
 }
 
+/** 앱: 기록 화면이 보관 안내를 보여 줬으면 기록에 남은 표시를 지운다. */
+export function clearArchiveNotice(): void {
+  store.update((d) => {
+    if (!d.archiveNotice) return d;
+    const next = { ...d };
+    delete next.archiveNotice;
+    return next;
+  });
+}
+
 export function setInputMode(mode: InputMode): void {
   store.update((d) => (d.inputMode === mode ? d : { ...d, inputMode: mode }));
 }
 
 /** 화면 진입 시각을 남긴다. 테스트가 진행 중일 때만 기록된다. */
 export function logScreenEvent(name: string): void {
-  if (!store.get().activeRunId) return;
+  if (!__SA_TOOLS__ || !store.get().activeRunId) return;
   const now = Date.now();
   store.update((d) =>
     withActiveRun(d, (run) => {
@@ -218,7 +231,7 @@ export function logScreenEvent(name: string): void {
 }
 
 export function logReviewConfirm(): void {
-  if (!store.get().activeRunId) return;
+  if (!__SA_TOOLS__ || !store.get().activeRunId) return;
   const now = Date.now();
   // 측정에 묶인 기록의 입력 확인만 적는다.
   store.update((d) =>

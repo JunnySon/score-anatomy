@@ -12,8 +12,8 @@ export interface StorageBackend {
   getItem(key: string): string | null;
   /** 저장한다. 실패하면 예외를 던지거나(브라우저) 나중에 알린다(앱의 storeFailed). */
   setItem(key: string, value: string): void;
-  /** 읽지 못한 파일을 지우지 않고 따로 보관해 달라고 한다. 앱에만 있다. */
-  archive?(): void;
+  /** 읽지 못한 파일을 지우지 않고 따로 보관해 달라고 한다. 요청을 보냈으면 true. 앱에만 있다. */
+  archive?(): boolean;
 }
 
 export interface Platform {

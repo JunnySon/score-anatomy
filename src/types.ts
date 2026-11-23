@@ -150,4 +150,6 @@ export interface AppData {
   inputMode: InputMode;
   testRuns: TestRun[];
   activeRunId: string | null;
+  /** 앱: 앞서 저장된 기록을 읽지 못해 보관해 달라고 한 뒤, 기록 화면이 그 안내를 아직 보여 주지 않았다. 없어도 읽힌다(version 1 그대로). */
+  archiveNotice?: true;
 }

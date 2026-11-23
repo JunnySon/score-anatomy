@@ -15,6 +15,8 @@ import { addAcceptListener, addDiscardListener, INTERACTIVE_SELECTOR, type Disca
 // - 뜨고 사라지는 것은 "화면이 바뀜"으로 세지 않는다(보호를 다시 걸지 않는다).
 
 export const TAP_NOTICE_MS = 2000;
+/** 앱에서 기록을 저장하지 못했을 때 지금 화면에 띄우는 알림의 시간. */
+export const FLOATING_NOTICE_MS = 4000;
 
 let box: HTMLDivElement | null = null;
 /** 앱이 시작할 때 문서 끝에 붙여 두는 알림 영역. */
@@ -93,15 +95,14 @@ export function hideTapNotice(): void {
   live = null;
 }
 
-export function showTapNotice(info: DiscardInfo): void {
-  if (!info.interactive || info.guardId === shownFor) return;
-  shownFor = info.guardId;
+/** 알림 상자를 띄우고 화면 낭독기에 전한다. 늘 하나만 둔다. */
+function present(text: string, ms: number, testId: string): void {
   hideTapNotice();
   box = document.createElement('div');
   box.className = 'tap-notice';
-  box.dataset.testid = 'tap-notice';
+  box.dataset.testid = testId;
   box.setAttribute('aria-hidden', 'true');
-  box.textContent = S.common.tapDiscarded;
+  box.textContent = text;
   document.body.appendChild(box);
   place(box);
   // 미리 붙여 둔 알림 영역을 비운 뒤, 다음 그림 차례에 글자를 넣어야 화면 낭독기가 바뀐 것으로 읽는다.
@@ -110,10 +111,25 @@ export function showTapNotice(info: DiscardInfo): void {
   if (target) {
     target.textContent = '';
     frame = window.requestAnimationFrame(() => {
-      target.textContent = S.common.tapDiscarded;
+      target.textContent = text;
     });
   }
-  timer = window.setTimeout(hideTapNotice, TAP_NOTICE_MS);
+  timer = window.setTimeout(hideTapNotice, ms);
+}
+
+export function showTapNotice(info: DiscardInfo): void {
+  if (!info.interactive || info.guardId === shownFor) return;
+  shownFor = info.guardId;
+  present(S.common.tapDiscarded, TAP_NOTICE_MS, 'tap-notice');
+}
+
+/**
+ * 지금 화면 위쪽에 잠깐 띄우는 알림(앱에서 기록을 저장하지 못했을 때). 버린 누름 알림과 같은 자리, 같은 모양이고
+ * 누름을 받지 않으며 받아들인 누름이 오면 닫힌다.
+ */
+export function showFloatingNotice(text: string, testId: string): void {
+  if (!installed) return;
+  present(text, FLOATING_NOTICE_MS, testId);
 }
 
 /** 앱이 시작될 때 한 번 부른다. */

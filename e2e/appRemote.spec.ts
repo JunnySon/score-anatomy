@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../src/logic/example';
 import { S, S_APP, S_TEST } from '../src/strings';
-import type { Exam, ExamCuts } from '../src/types';
+import type { Exam } from '../src/types';
 import {
   BUNDLES,
   bridgeLog,
@@ -20,8 +20,10 @@ import { chooseCauses, chooseExam, enterKeypad, expect, expectHash, loadExam, se
 import {
   AT_0840,
   AT_1710,
-  AT_1745,
   AT_2010,
+  CONFIRMED_CUTS,
+  ESTIMATE_CUTS,
+  TEST_LOCK,
   TEST_NOTE,
   correctedExam,
   itemsWith,
@@ -29,6 +31,7 @@ import {
   sessionRecord,
   storeOf,
   testExam,
+  typesPendingExam,
   unreleasedExam,
 } from './remoteData';
 
@@ -38,10 +41,7 @@ import {
 // 콘솔 오류는 테스트 공통 준비(e2e/helpers.ts)가 실패로 센다. 넘겨받은 자료에서 버린 것의 이유는 경고(console.warn)라서 실패가 아니다.
 // 이 파일은 앱용 묶음 흐름의 지표(kind app)를 남기지 않는다(verify 12번이 그 수를 같음으로 견준다).
 
-/** 등급컷(테스트 전용, 출처는 "예시 값"). 값은 예시 시험 A의 예시 컷과 작업 지시서 3의 형식 예시("2등급 컷 82점")에서 가져왔다. */
-const ESTIMATE_CUTS: ExamCuts = { source: '예시 값', asOf: AT_2010, confirmed: false, grades: { '1': [88, 92], '2': [82, 82], '3': [72, 76] } };
-/** 주관 기관이 원점수 등급컷을 발표한 것으로 지은 테스트 전용 확정 컷. 기준은 날짜만 적었다. */
-const CONFIRMED_CUTS: ExamCuts = { source: '예시 값', asOf: '2030-01-02', confirmed: true, grades: { '1': [88, 88], '2': [82, 82], '3': [72, 72] } };
+// 등급컷(ESTIMATE_CUTS, CONFIRMED_CUTS)과 잠금 항목(TEST_LOCK)은 화면 코스(e2e/tour.ts)도 쓰므로 e2e/remoteData.ts 에 있다.
 /** 기록을 넣은 때(e2e/remoteData.ts 의 CREATED_AT)의 날짜 글자(기기 시간대는 한국 시간, playwright.config.ts). */
 const CREATED_DATE = '2030년 1월 2일';
 const TITLE = '테스트 전용 시험 A';
@@ -242,11 +242,9 @@ for (const bundle of BUNDLES) {
 }
 
 test('app-test: 유형 분류 전(typesReady false) 판이면 계단 자리에 안내가 나오고 다시 풀기 주소는 계단 자리로 가며, 유형 분류가 끝난 판이 오면 그 자리에서 계단과 "고칠 것" 버튼이 나온다', async ({ page }) => {
-  // 유형 분류 전 판: 자리만 채우는 유형 하나("분류 중", 작업 지시서 3의 4-3 형식 예시)를 모든 문항이 가리킨다.
-  const placeholder = { t00: { name: '분류 중' } };
-  const pendingItems = testExam().items.map((it) => ({ ...it, typeId: 't00' }));
-  const pending = testExam({ rev: 2, typesReady: false, types: placeholder, items: pendingItems });
-  const pendingWithCuts = testExam({ rev: 3, typesReady: false, types: placeholder, items: pendingItems, cuts: ESTIMATE_CUTS });
+  // 유형 분류 전 판: 자리만 채우는 유형 하나("분류 중", 작업 지시서 3의 4-3 형식 예시)를 모든 문항이 가리킨다(e2e/remoteData.ts 의 typesPendingExam).
+  const pending = typesPendingExam({ rev: 2 });
+  const pendingWithCuts = typesPendingExam({ rev: 3, cuts: ESTIMATE_CUTS });
   const ready = testExam({ rev: 4, cuts: ESTIMATE_CUTS });
   const record = sessionRecord('s-types', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
   await openBundle(page, 'app-test', { bridge: 2, store: storeOf([record]), remote: remoteData(1, AT_1710, [pending]) });
@@ -764,7 +762,7 @@ test('app-test: 넘겨받은 시험의 기록을 그 자료 없이 다시 열면
 });
 
 test('app-test: 진행자용 화면의 풀이 잠금 한 줄은 넘겨받은 잠금 항목을 합친 달력으로 판정한다(지금 잠김, 끝나는 시각부터 열림)', async ({ page }) => {
-  const lock = { id: 'test-lock-a', label: '테스트 전용 잠금 항목', start: AT_0840, end: AT_1745 };
+  const lock = TEST_LOCK;
   // 시계를 한국 시간 2030년 1월 2일 오전 8시 40분(형식 예시)으로 고정한다. 판정은 기기 시간대를 쓰지 않는다.
   await page.clock.setFixedTime(new Date('2030-01-02T08:40:00+09:00'));
   await openBundle(page, 'app-test', { bridge: 2, remote: remoteData(1, AT_0840, []) }, '/test');

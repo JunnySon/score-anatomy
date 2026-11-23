@@ -1,8 +1,9 @@
 import { exampleAnswers, exampleCauses, exampleMarks } from '../src/logic/example';
-import type { Exam, ExamItem } from '../src/types';
+import type { Exam, ExamCuts, ExamItem, LockEntry } from '../src/types';
 import { loadExam } from './helpers';
 
-// 앱 화면 테스트(e2e/appRemote.spec.ts)가 가짜 껍데기로 넘겨주는 시험 자료(다리 규격 2의 remote)와, 껍데기가 넣어 주는 기록(store)을 만든다.
+// 앱 화면 테스트(e2e/appRemote.spec.ts)와 화면 코스(e2e/tour.ts 의 끝, 앱 시험용 묶음)가 가짜 껍데기로 넘겨주는
+// 시험 자료(다리 규격 2의 remote)와, 껍데기가 넣어 주는 기록(store)을 만든다.
 // 넘겨받는 시험은 모두 예시 시험 A(src/exams/sample-a.json)의 사본으로 지은 테스트 전용 시험이다.
 // id 는 예시 시험과 겹치지 않는 test-remote-*, isSample 은 true, 제목은 "테스트 전용 시험 A" 같은 이름이다.
 // 날짜와 시각은 작업 지시서 3의 형식 예시(2030-01-02, 08:40, 17:10, 17:45, 20:10)만 쓰고, 등급컷의 출처는 "예시 값"만 쓴다.
@@ -16,6 +17,14 @@ export const AT_2010 = '2030-01-02T20:10';
 
 /** 테스트 전용 정정 안내(answersNote). 정답 값을 담지 않는다. */
 export const TEST_NOTE = '테스트 전용 정정 안내예요.';
+
+/** 등급컷(테스트 전용, 출처는 "예시 값"). 값은 예시 시험 A의 예시 컷과 작업 지시서 3의 형식 예시("2등급 컷 82점")에서 가져왔다. */
+export const ESTIMATE_CUTS: ExamCuts = { source: '예시 값', asOf: AT_2010, confirmed: false, grades: { '1': [88, 92], '2': [82, 82], '3': [72, 76] } };
+/** 주관 기관이 원점수 등급컷을 발표한 것으로 지은 테스트 전용 확정 컷. 기준은 날짜만 적었다. */
+export const CONFIRMED_CUTS: ExamCuts = { source: '예시 값', asOf: '2030-01-02', confirmed: true, grades: { '1': [88, 88], '2': [82, 82], '3': [72, 72] } };
+
+/** 테스트 전용 잠금 항목 하나(작업 지시서 3의 4-5 형식 예시: 2030-01-02T08:40부터 17:45까지). */
+export const TEST_LOCK: LockEntry = { id: 'test-lock-a', label: '테스트 전용 잠금 항목', start: AT_0840, end: AT_1745 };
 
 /** 껍데기가 넘겨주는 시험 자료(docs/앱_다리_규격.md 7장의 remote). */
 export interface RemoteData {
@@ -48,6 +57,15 @@ export function unreleasedExam(more: Partial<Exam> = {}): Exam {
 /** 문항의 칸을 바꾼 문항 목록. changes 는 문항 번호마다 바꿀 칸이다. */
 export function itemsWith(changes: Record<number, Partial<ExamItem>>): ExamItem[] {
   return testExam().items.map((it) => (changes[it.no] ? { ...it, ...changes[it.no] } : it));
+}
+
+/**
+ * 유형 분류 전 판(typesReady false). 자리만 채우는 유형 하나("분류 중", 작업 지시서 3의 4-3 형식 예시)를 모든 문항이 가리킨다.
+ * more 로 칸을 바꾼다(items 를 주면 그 문항들이 자리만 채우는 유형을 가리키게 바꿔 쓴다).
+ */
+export function typesPendingExam(more: Partial<Exam> = {}): Exam {
+  const items = (more.items ?? testExam().items).map((it) => ({ ...it, typeId: 't00' }));
+  return testExam({ ...more, typesReady: false, types: { t00: { name: '분류 중' } }, items });
 }
 
 /**

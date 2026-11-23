@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { CorrectionNotice } from '../components/CorrectionNotice';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, BottomSheet, Chip, IconInfo, Message, Screen, TopBar } from '../components/ui';
 import { typesReadyOf } from '../exams/validate';
@@ -8,7 +9,7 @@ import { selectSteps } from '../logic/steps';
 import { actualLine, anatomySentences, asOfLine, cutNote, luckLine, noCutsText, typesPendingText } from '../logic/text';
 import { href, navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { isMarkedAfterGrading, setTargetGrade } from '../state/session';
+import { acknowledgeCorrection, correctionNotice, correctionOf, isMarkedAfterGrading, setTargetGrade } from '../state/session';
 import { S } from '../strings';
 
 // (8) 점수 해부 화면. 이 앱의 핵심 화면이다.
@@ -44,11 +45,15 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const badgeText = cv?.confirmed ? S.common.confirmed : S.common.estimate;
   const line1 = cv ? actualLine(cv, an.actual) : null;
   const line2 = cv ? luckLine(cv, an.luckAverageRounded) : null;
+  // 정답 정정 알림(작업 지시서 3의 4-6). 점수 화면과 같은 알림이다. 예시 결과에는 보여 주지 않는다.
+  const notice = h.isDemo ? null : correctionNotice(correctionOf(session, exam, grade));
 
   return (
     <Screen
       top={<TopBar back={h.isDemo ? '/' : '/score'} title={S.anatomy.top} />}
       tabs="current"
+      // 알림이 닫히면 아래 내용이 위로 올라오므로, 같은 자리를 연달아 누른 것이 올라온 요소에 닿지 않게 한다.
+      guardKey={notice ? 'correction' : 'plain'}
       layer={
         sourceOpen && cv ? (
           <BottomSheet title={S.anatomy.sourceTitle} onClose={() => setSourceOpen(false)}>
@@ -68,6 +73,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
         )
       }
     >
+      {notice ? <CorrectionNotice notice={notice} onAck={() => h.update((s) => acknowledgeCorrection(s, exam))} /> : null}
       <div className="inline">
         <p className="sub">{exam.title}</p>
         {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}

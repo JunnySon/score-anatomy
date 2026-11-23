@@ -286,6 +286,11 @@ describe('화면 문구', () => {
     expect(S.solutionLock.notice(17, 45)).toBe('지금은 시험 시간이라 풀이는 잠시 쉬어요. 오후 5시 45분부터 다시 볼 수 있어요. 답 입력은 지금도 할 수 있어요.');
     expect(S_TEST.lockOpen).toBe('풀이 잠금: 지금 열림');
     expect(S_TEST.lockClosed(17, 45)).toBe('풀이 잠금: 지금 잠김(오후 5시 45분까지)');
+    // 4-6: 정답 정정 알림(점수 화면과 점수 해부 화면 위쪽), "확인했어요", 기록 화면의 표시. 점수는 지시서의 형식 예시 그대로다.
+    expect(S.correction.changed(76, 79)).toBe('정답이 정정돼서 다시 채점했어요. 76점에서 79점으로 바뀌었어요.');
+    expect(S.correction.same(76)).toBe('정답이 정정됐지만 점수는 76점 그대로예요.');
+    for (const text of ['정답이 정정돼서 지금 정답으로 채점했어요.', '확인했어요', '정답 정정으로 다시 채점됨']) expect(texts.has(text), text).toBe(true);
+    expect(S.history.openCorrected('예시 시험 A', '2026년 11월 22일, 79점')).toBe('예시 시험 A 기록 열기, 2026년 11월 22일, 79점, 정답 정정으로 다시 채점됨');
   });
 });
 

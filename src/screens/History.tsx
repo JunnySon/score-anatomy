@@ -5,7 +5,7 @@ import { findExam } from '../exams';
 import { gradeExam } from '../logic/scoring';
 import { navigate } from '../router';
 import { clearArchiveNotice, deleteAllSessions, deleteSession, isTestDevice, openSession, useAppData } from '../state/hooks';
-import { resumePath, stageOf } from '../state/session';
+import { correctionNotice, correctionOf, resumePath, stageOf } from '../state/session';
 import { store } from '../state/store';
 import { activeRun, isMine } from '../state/testlog';
 import { formatDate, formatTime, S, S_TOOLS } from '../strings';
@@ -17,20 +17,25 @@ import type { Session } from '../types';
 // - 측정이 진행 중이면 이번 참가자의 기록만 보이고, "이 기기의 기록 모두 지우기"는 숨긴다.
 // - 측정 기록이 남아 있는데 진행 중인 측정이 없으면 기록을 보여 주지 않고 안내만 한다.
 
-function scoreText(session: Session): string {
+/**
+ * 기록 한 건의 점수 글자와, 정답 정정 알림을 아직 확인하지 않았는지(작업 지시서 3의 4-6).
+ * 점수는 지금 시험 파일로 계산한 값이다. 정정 알림이 남아 있으면 "정답 정정으로 다시 채점됨"을 붙인다.
+ */
+function summaryOf(session: Session): { score: string; corrected: boolean } {
   const exam = findExam(session.examId);
-  if (!exam) return S.history.inProgress;
+  if (!exam) return { score: S.history.inProgress, corrected: false };
   const stage = stageOf(session, exam);
   if (stage === 'graded') {
     try {
-      return S.common.points(gradeExam(exam, session).actual);
+      const grade = gradeExam(exam, session);
+      return { score: S.common.points(grade.actual), corrected: correctionNotice(correctionOf(session, exam, grade)) !== null };
     } catch {
-      return S.history.inProgress;
+      return { score: S.history.inProgress, corrected: false };
     }
   }
   // 저장해 둔 기록: 정답 공개 전이면 "정답 공개 전", 공개된 뒤에는 "채점 전".
-  if (stage === 'saved') return exam.answerReleased ? S.history.readyToGrade : S.common.unreleased;
-  return S.history.inProgress;
+  if (stage === 'saved') return { score: exam.answerReleased ? S.history.readyToGrade : S.common.unreleased, corrected: false };
+  return { score: S.history.inProgress, corrected: false };
 }
 
 export function History() {
@@ -49,6 +54,8 @@ export function History() {
   const sessions = [...data.sessions]
     .filter((s) => (run ? isMine(run, s) : !testDevice))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  const summaries = new Map(sessions.map((s) => [s.id, summaryOf(s)]));
+  const scoreText = (s: Session) => summaries.get(s.id)?.score ?? S.history.inProgress;
 
   const open = (s: Session) => {
     const exam = findExam(s.examId);
@@ -114,14 +121,27 @@ export function History() {
               );
               const sameMinute = twins.some((o) => formatTime(o.createdAt) === formatTime(s.createdAt));
               const detail = twins.length > 0 ? `${formatDate(s.createdAt)} ${formatTime(s.createdAt, sameMinute)}, ${scoreText(s)}` : plain;
+              // 정답 정정 알림을 아직 확인하지 않은 기록에는 표시를 붙이고 열기 버튼의 이름에도 넣는다.
+              // 구분에 쓰는 글자(detail)와 지우기 버튼, 삭제 확인의 글자는 그대로 둔다.
+              const corrected = summaries.get(s.id)?.corrected === true;
               return (
                 <li key={s.id} className="hitem" data-testid="history-item">
-                  <button type="button" className="hitem__open" aria-label={S.history.open(title, detail)} onClick={() => open(s)}>
+                  <button
+                    type="button"
+                    className="hitem__open"
+                    aria-label={corrected ? S.history.openCorrected(title, detail) : S.history.open(title, detail)}
+                    onClick={() => open(s)}
+                  >
                     <span className="inline">
                       <span className="strong">{title}</span>
                       {exam?.isSample ? <Badge>{S.common.sample}</Badge> : null}
                     </span>
                     <span className="sub">{detail}</span>
+                    {corrected ? (
+                      <span className="sub" data-testid="history-corrected">
+                        {S.history.corrected}
+                      </span>
+                    ) : null}
                   </button>
                   <button
                     type="button"

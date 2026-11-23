@@ -1,4 +1,5 @@
 import { typesReadyOf } from '../exams/validate';
+import type { CorrectionNotice } from '../state/session';
 import { S } from '../strings';
 import type { Cause, Exam, RetryRecord, SelfCheck } from '../types';
 import { gradeKeys, type CutView, type Gap } from './cuts';
@@ -19,6 +20,16 @@ export function typesPendingText(exam: Exam): string {
 /** 등급컷 자료가 없을 때 등급컷 상자의 문장. 유형 분류 전에는 고칠 것(계단)을 볼 수 없어서 그 말을 빼고 적는다. */
 export function noCutsText(exam: Exam): string {
   return typesReadyOf(exam) ? S.anatomy.noCuts : S.anatomy.noCutsTypesPending;
+}
+
+/**
+ * 정답 정정 알림의 첫 줄(작업 지시서 3의 4-6). 점수가 달라졌으면 예전 점수와 지금 점수를, 같으면 그대로라는 것을,
+ * 채점 흔적이 없는 옛 기록이면 지금 정답으로 채점했다는 것만 적는다. 다음 줄의 정정 안내(answersNote)는 화면이 그대로 붙인다.
+ */
+export function correctionText(n: CorrectionNotice): string {
+  if (n.kind === 'changed') return S.correction.changed(n.from, n.to);
+  if (n.kind === 'same') return S.correction.same(n.score);
+  return S.correction.noPrevious;
 }
 
 /** 점수 해부 화면의 문장. 표시가 없는 부분은 말하지 않는다. */

@@ -464,6 +464,13 @@ a {
 .msg--plain {
   border-left-color: var(--outline);
 }
+/* 정답 정정 알림(작업 지시서 3의 4-6): 중립 안내 모양으로 화면 맨 위에 두고 아래 내용과 띄운다. 안의 글자 버튼은 누를 때 배경색으로 구분한다. */
+.notice {
+  margin-bottom: var(--s4);
+}
+.notice .btn--text:active {
+  background: var(--bg);
+}
 
 /* 고르는 줄(라디오) */
 .opts {

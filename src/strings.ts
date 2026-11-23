@@ -192,6 +192,16 @@ export const S = {
     fix: '입력 고치기',
   },
 
+  // 정답 정정 알림(작업 지시서 3의 4-6). 점수 화면과 점수 해부 화면 위쪽에 두고, 다음 줄에 시험 파일의 정정 안내(answersNote)를 그대로 붙인다.
+  // 사실만 적는다. 점수는 지금 정답으로 다시 계산한 값이다.
+  correction: {
+    changed: (from: number, to: number) => `정답이 정정돼서 다시 채점했어요. ${from}점에서 ${to}점으로 바뀌었어요.`,
+    same: (score: number) => `정답이 정정됐지만 점수는 ${score}점 그대로예요.`,
+    // 채점 흔적이 없는 옛 기록이라 예전 점수를 알 수 없을 때.
+    noPrevious: '정답이 정정돼서 지금 정답으로 채점했어요.',
+    ack: '확인했어요',
+  },
+
   causes: {
     top: '오답 원인',
     title: '틀린 문항을 살펴봐요',
@@ -370,6 +380,9 @@ export const S = {
     remove: '지우기',
     removeOf: (title: string, detail: string) => `${title} 기록 지우기, ${detail}`,
     open: (title: string, detail: string) => `${title} 기록 열기, ${detail}`,
+    // 정답 정정 알림을 아직 확인하지 않은 기록(작업 지시서 3의 4-6). 보이는 표시와 열기 버튼의 이름에 붙인다.
+    corrected: '정답 정정으로 다시 채점됨',
+    openCorrected: (title: string, detail: string) => `${title} 기록 열기, ${detail}, 정답 정정으로 다시 채점됨`,
     removeAll: '이 기기의 기록 모두 지우기',
     confirmOne: '이 기록을 지울까요?',
     confirmAll: '이 기기의 기록을 모두 지울까요?',

@@ -149,7 +149,7 @@ export function mergeExams(bundled: readonly Exam[], remoteExams: readonly unkno
     }
     if (!sameStructure(mine, exam)) {
       warn(`넘겨받은 ${nameOf(raw, i)}을 쓰지 않았어요.`, [
-        '앱에 든 같은 id 의 시험과 문항 구성(문항 수, no, kind, choices)이 달라요. 저장한 답이 다른 문항에 붙지 않게 앱에 든 시험을 써요.',
+        '앱에 든 같은 id 의 시험과 문항 구성(문항 수, no, kind, choices)이 달라요. 저장한 답이 엇갈려 붙지 않게 앱에 든 시험을 써요.',
       ]);
       continue;
     }

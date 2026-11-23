@@ -157,7 +157,7 @@ describe('넘겨받은 시험 합치기(mergeExams, 작업 지시서 3의 5-2)',
       expect(warned, name).toEqual([
         {
           message: '넘겨받은 1번째 시험(id: test-remote-a)을 쓰지 않았어요.',
-          reasons: ['앱에 든 같은 id 의 시험과 문항 구성(문항 수, no, kind, choices)이 달라요. 저장한 답이 다른 문항에 붙지 않게 앱에 든 시험을 써요.'],
+          reasons: ['앱에 든 같은 id 의 시험과 문항 구성(문항 수, no, kind, choices)이 달라요. 저장한 답이 엇갈려 붙지 않게 앱에 든 시험을 써요.'],
         },
       ]);
     }

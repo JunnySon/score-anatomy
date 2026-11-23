@@ -119,6 +119,8 @@ function rebind(d: AppData, session: Session): AppData {
  * 테스트가 진행 중이면 이번 참가자의 측정에 묶인 기록만 대상으로 한다(앞 참가자의 기록이 열리지 않게).
  */
 export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | null {
+  // 테스트 기기에서 측정이 진행 중이 아니면(참가자를 마친 뒤, 다음 참가자를 시작하기 전) 어떤 기록도 열지 않는다.
+  if (isTestDevice(d)) return null;
   const pick = (s: Session | undefined) => {
     const exam = s ? findExam(s.examId) : null;
     return s && exam ? { session: s, exam } : null;
@@ -238,9 +240,35 @@ export function startTestRun(participant: string, inputMode: InputMode, plannedE
   });
 }
 
+/**
+ * 참가자를 마친다. 다음 참가자가 앞 참가자의 기록을 열지 않게 지금 보는 기록도 비운다.
+ */
 export function finishTestRun(): void {
   const now = Date.now();
-  store.update((d) => (d.activeRunId ? { ...d, testRuns: closeActiveRun(d, now), activeRunId: null } : d));
+  store.update((d) => (d.activeRunId ? { ...d, testRuns: closeActiveRun(d, now), activeRunId: null, currentId: null } : d));
+}
+
+/**
+ * 테스트 기기인지: 측정 기록이 남아 있는데 진행 중인 측정이 없다(참가자를 마친 뒤, 다음 참가자를 시작하기 전).
+ * 이때는 기록 화면과 "이어서 보기"에 어떤 기록도 보여 주지 않는다. 진행자가 측정 기록을 모두 지우면 평소대로 돌아간다.
+ */
+export function isTestDevice(d: AppData): boolean {
+  return __SA_TOOLS__ && d.activeRunId === null && d.testRuns.length > 0;
+}
+
+/**
+ * 연달아 누르기 보호가 버린 누름을 측정 기록에 센다. counted 는 지금 화면이 측정에 묶인 화면인지다
+ * (진행자용 화면, 예시 결과, 측정에 묶이지 않은 기록의 화면에서는 세지 않는다).
+ */
+export function countDiscardedTap(screen: string, isDemo: boolean): void {
+  if (!__SA_TOOLS__ || !store.get().activeRunId) return;
+  store.update((d) =>
+    withActiveRun(d, (run) => {
+      if (isDemo || screen === 'test' || screen === 'unknown') return run;
+      if (screenLogName(screen, d.currentId !== null && d.currentId === run.sessionId) !== screen) return run;
+      return { ...run, discardedTaps: run.discardedTaps + 1 };
+    }),
+  );
 }
 
 export function setRunAnswerKey(runId: string, text: string): void {

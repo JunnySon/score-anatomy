@@ -1,3 +1,4 @@
+import { isValidYmd } from '../logic/dates';
 import type { Exam, ExamItem } from '../types';
 
 export const SHORT_MIN = 0;
@@ -30,6 +31,8 @@ export function validateExam(raw: unknown): string[] {
   for (const key of ['isSample', 'isPast', 'answerReleased'] as const) {
     if (typeof e[key] !== 'boolean') errors.push(`${key} 값은 true나 false여야 해요.`);
   }
+  // 시행일은 없어도 된다. 있으면 실제로 있는 날짜여야 한다(2027-02-29 같은 값은 거른다).
+  if (e.examDate !== undefined && !isValidYmd(e.examDate)) errors.push('examDate는 2030-01-02 같은, 실제로 있는 날짜여야 해요.');
   const types = (typeof e.types === 'object' && e.types !== null ? e.types : {}) as Exam['types'];
   if (Object.keys(types).length === 0) errors.push('types가 비어 있어요.');
   for (const [id, t] of Object.entries(types)) {
@@ -66,7 +69,7 @@ export function validateExam(raw: unknown): string[] {
   } else if (e.cuts !== undefined && e.cuts !== null) {
     const c = e.cuts;
     if (typeof c.source !== 'string' || c.source === '') errors.push('cuts.source가 비어 있어요.');
-    if (typeof c.asOf !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(c.asOf)) errors.push('cuts.asOf는 2026-11-22 같은 날짜여야 해요.');
+    if (!isValidYmd(c.asOf)) errors.push('cuts.asOf는 2026-11-22 같은, 실제로 있는 날짜여야 해요.');
     if (typeof c.confirmed !== 'boolean') errors.push('cuts.confirmed는 true나 false여야 해요.');
     const grades = typeof c.grades === 'object' && c.grades !== null ? Object.entries(c.grades) : [];
     if (grades.length === 0) errors.push('cuts.grades가 비어 있어요.');

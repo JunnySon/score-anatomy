@@ -36,6 +36,8 @@ const isAnswer = (v: unknown): v is Session['answers'][number] => v === 'skip' |
 const isMark = (v: unknown): v is Session['marks'][number] => v === 'doubt' || v === 'guess' || v === 'unsure';
 const isCause = (v: unknown): v is Session['causes'][number] => v === 'slip' || v === 'blank' || v === 'unknown';
 const isTrue = (v: unknown): v is true => v === true;
+const isSelfCheck = (v: unknown): v is Session['selfChecks'][number] =>
+  isObject(v) && (v.result === 'solved' || v.result === 'stuck') && typeof v.at === 'string';
 const isRetryLike = (v: unknown): v is Record<string, unknown> =>
   isObject(v) && typeof v.correct === 'boolean' && typeof v.attempts === 'number' && typeof v.answerKnown === 'boolean' && typeof v.at === 'string';
 
@@ -78,6 +80,8 @@ function cleanSession(raw: unknown): Session | null {
     answerViewed: cleanRecord(raw.answerViewed, isTrue),
     targetGrade: typeof raw.targetGrade === 'string' ? raw.targetGrade : null,
     retries: cleanRetries(raw.retries),
+    // 1.1에서 더한 칸. 없는 옛 기록도 빈 값으로 읽는다(저장 형식의 version 은 그대로 1이다).
+    selfChecks: cleanRecord(raw.selfChecks, isSelfCheck),
   };
 }
 
@@ -132,6 +136,8 @@ function cleanRun(raw: unknown): TestRun | null {
     examSelectAt: cleanTime(raw.examSelectAt),
     ...cleanPart(raw),
     examReselects: typeof raw.examReselects === 'number' && Number.isFinite(raw.examReselects) ? raw.examReselects : 0,
+    // 1.1에서 더한 칸. 없는 옛 측정 기록은 0으로 읽는다.
+    discardedTaps: typeof raw.discardedTaps === 'number' && Number.isInteger(raw.discardedTaps) && raw.discardedTaps >= 0 ? raw.discardedTaps : 0,
     parts,
     answerKeyText: typeof raw.answerKeyText === 'string' ? raw.answerKeyText : '',
   };
@@ -152,7 +158,9 @@ export function parseStored(text: string | null): AppData | null {
   const sessions = Array.isArray(raw.sessions) ? raw.sessions.map(cleanSession).filter((s): s is Session => s !== null) : [];
   const testRuns = Array.isArray(raw.testRuns) ? raw.testRuns.map(cleanRun).filter((r): r is TestRun => r !== null) : [];
   const currentId = typeof raw.currentId === 'string' && sessions.some((s) => s.id === raw.currentId) ? raw.currentId : null;
-  const activeRunId = typeof raw.activeRunId === 'string' && testRuns.some((r) => r.id === raw.activeRunId) ? raw.activeRunId : null;
+  // 사용성 테스트 도구가 없는 빌드(앱 배포용)에서는 남아 있던 측정을 이어 가지 않는다. 측정 기록 자체는 지우지 않고 둔다.
+  const activeRunId =
+    __SA_TOOLS__ && typeof raw.activeRunId === 'string' && testRuns.some((r) => r.id === raw.activeRunId) ? raw.activeRunId : null;
   const inputMode: InputMode = raw.inputMode === 'rows' ? 'rows' : 'keypad';
   return { version: STORE_VERSION, sessions, currentId, inputMode, testRuns, activeRunId };
 }

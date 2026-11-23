@@ -1,5 +1,5 @@
 import { findMissing, gradeExam, isAnswered } from '../logic/scoring';
-import type { AnswerValue, Cause, Exam, GradedBefore, Mark, SeenBefore, Session, TimeFeel } from '../types';
+import type { AnswerValue, Cause, Exam, GradedBefore, Mark, SeenBefore, SelfCheck, Session, TimeFeel } from '../types';
 import { newId } from './store';
 
 // 기록 한 건(Session)을 고치는 순수 함수들. 화면은 이 함수들로만 기록을 바꾼다.
@@ -28,6 +28,7 @@ export function newSession(
     answerViewed: {},
     targetGrade: null,
     retries: {},
+    selfChecks: {},
   };
 }
 
@@ -60,6 +61,7 @@ export function setAnswer(session: Session, no: number, value: AnswerValue | und
     marks,
     causes: omit(session.causes, no),
     retries: omit(session.retries, no),
+    selfChecks: omit(session.selfChecks, no),
     gradedAt: afterGrading ? null : session.gradedAt,
     answersEditedAfterGrading: edited,
   };
@@ -77,12 +79,6 @@ export function cycleMark(session: Session, no: number): Session {
 export function toggleUnsure(session: Session, no: number): Session {
   const marks = session.marks[no] === 'unsure' ? omit(session.marks, no) : { ...session.marks, [no]: 'unsure' as Mark };
   return { ...session, marks, marksEditedAfterGrading: session.marksEditedAfterGrading || session.firstGradedAt !== null };
-}
-
-/** 표시를 모두 지운다("없어요"). 채점한 뒤에 지웠으면 그것도 채점한 뒤 표시로 적는다. */
-export function clearMarks(session: Session): Session {
-  if (Object.keys(session.marks).length === 0) return session;
-  return { ...session, marks: {}, marksEditedAfterGrading: session.marksEditedAfterGrading || session.firstGradedAt !== null };
 }
 
 export function setTimeFeel(session: Session, timeFeel: TimeFeel | null): Session {
@@ -143,6 +139,18 @@ export function recordRetry(session: Session, no: number, correct: boolean, answ
       },
     },
   };
+}
+
+/**
+ * 찍었다고 표시하고 맞은 문항을 스스로 확인한 결과를 남긴다. 마지막 선택이 기록이 된다.
+ * result가 null이면("아직 안 풀어 봤어요") 기록을 남기지 않고, 앞서 남긴 기록도 지운다.
+ */
+export function setSelfCheck(session: Session, no: number, result: SelfCheck | null, nowIso: string): Session {
+  if (result === null) {
+    if (!(no in session.selfChecks)) return session;
+    return { ...session, selfChecks: omit(session.selfChecks, no) };
+  }
+  return { ...session, selfChecks: { ...session.selfChecks, [no]: { result, at: nowIso } } };
 }
 
 export type Stage = 'input' | 'review' | 'saved' | 'graded';

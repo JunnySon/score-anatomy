@@ -2,14 +2,19 @@ import { useState } from 'react';
 import { Badge, ConfirmDialog, Message, Screen } from '../components/ui';
 import { findExam } from '../exams';
 import { gradeExam } from '../logic/scoring';
-import { href, navigate } from '../router';
-import { deleteAllSessions, deleteSession, openSession, useAppData } from '../state/hooks';
+import { navigate } from '../router';
+import { deleteAllSessions, deleteSession, isTestDevice, openSession, useAppData } from '../state/hooks';
 import { resumePath, stageOf } from '../state/session';
 import { store } from '../state/store';
-import { formatDate, formatTime, S } from '../strings';
+import { activeRun, isMine } from '../state/testlog';
+import { formatDate, formatTime, S, S_TOOLS } from '../strings';
+import { tools } from '#tools';
 import type { Session } from '../types';
 
 // (11) 기록 화면. 기록은 이 기기에만 있고, 여기서 지울 수 있다.
+// 사용성 테스트 기기에서는 앞 참가자의 기록이 보이지 않게 한다.
+// - 측정이 진행 중이면 이번 참가자의 기록만 보이고, "이 기기의 기록 모두 지우기"는 숨긴다.
+// - 측정 기록이 남아 있는데 진행 중인 측정이 없으면 기록을 보여 주지 않고 안내만 한다.
 
 function scoreText(session: Session): string {
   const exam = findExam(session.examId);
@@ -29,8 +34,13 @@ function scoreText(session: Session): string {
 
 export function History() {
   const data = useAppData();
+  const Extras = tools.HistoryExtras;
   const [confirm, setConfirm] = useState<{ kind: 'one'; id: string; title: string; detail: string } | { kind: 'all' } | null>(null);
-  const sessions = [...data.sessions].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+  const run = activeRun(data);
+  const testDevice = isTestDevice(data);
+  const sessions = [...data.sessions]
+    .filter((s) => (run ? isMine(run, s) : !testDevice))
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
   const open = (s: Session) => {
     const exam = findExam(s.examId);
@@ -49,8 +59,8 @@ export function History() {
             body={
               confirm.kind === 'one'
                 ? S.history.confirmOneBody(confirm.title, confirm.detail)
-                : data.testRuns.length > 0
-                  ? S.history.confirmAllBodyWithRuns
+                : __SA_TOOLS__ && data.testRuns.length > 0
+                  ? S_TOOLS.confirmAllBodyWithRuns
                   : S.history.confirmBody
             }
             yes={S.history.confirmYes}
@@ -72,7 +82,12 @@ export function History() {
         </div>
       ) : null}
 
-      {sessions.length === 0 ? (
+      {/* __SA_TOOLS__ 를 함께 적어 두면 앱 배포용 묶음에서는 이 글자가 빌드할 때 빠진다. */}
+      {__SA_TOOLS__ && testDevice ? (
+        <p className="mt4" data-testid="history-test-device">
+          {S_TOOLS.testDevice}
+        </p>
+      ) : sessions.length === 0 ? (
         <p className="mt4" data-testid="history-empty">
           {S.history.empty}
         </p>
@@ -112,31 +127,16 @@ export function History() {
               );
             })}
           </ul>
-          <button type="button" className="btn btn--secondary btn--block mt4" data-testid="history-remove-all" onClick={() => setConfirm({ kind: 'all' })}>
-            {S.history.removeAll}
-          </button>
+          {/* 측정 중에는 앞 참가자의 기록까지 지우지 않게 숨긴다. */}
+          {run ? null : (
+            <button type="button" className="btn btn--secondary btn--block mt4" data-testid="history-remove-all" onClick={() => setConfirm({ kind: 'all' })}>
+              {S.history.removeAll}
+            </button>
+          )}
         </>
       )}
 
-      <section className="mt8" aria-labelledby="upcoming-title">
-        <h2 className="sub" id="upcoming-title">
-          {S.history.upcomingTitle}
-        </h2>
-        <ul className="rule-list mt2">
-          {S.history.upcoming.map((u) => (
-            <li key={u.name} className="upcoming">
-              <span>{u.name}</span>
-              <span className="sub">{u.note}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <p className="mt6">
-        <a className="btn btn--text btn--left link sub" href={href('/test')} data-testid="tester-link">
-          {S.history.tester}
-        </a>
-      </p>
+      {Extras ? <Extras /> : null}
     </Screen>
   );
 }

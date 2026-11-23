@@ -3,7 +3,7 @@ import { Badge, Chip, Message, Screen, TopBar } from '../components/ui';
 import { GradeError } from '../logic/scoring';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { answerText, clearMarks, cycleMark, isMarkedAfterGrading, markGraded, markSaved, setTimeFeel, toggleUnsure } from '../state/session';
+import { answerText, cycleMark, isMarkedAfterGrading, markGraded, markSaved, setTimeFeel, toggleUnsure } from '../state/session';
 import { S } from '../strings';
 import type { TimeFeel } from '../types';
 
@@ -17,11 +17,11 @@ export function Marks({ h }: { h: SessionHandle }) {
   const released = exam.answerReleased;
   const saved = !released && session.savedAt !== null;
 
-  /** withoutMarks가 true면 표시를 모두 지우고 채점한다("없어요": 표시 없이 채점). */
-  const grade = (withoutMarks: boolean) => {
+  /** 지금 붙어 있는 표시 그대로 채점한다. 표시를 지우지 않는다. */
+  const grade = () => {
     try {
       const nowIso = new Date().toISOString();
-      h.update((s) => markGraded(withoutMarks ? clearMarks(s) : s, exam, nowIso));
+      h.update((s) => markGraded(s, exam, nowIso));
       navigate(h.path('/score'));
     } catch (e) {
       if (e instanceof GradeError && e.reason === 'missing') navigate(h.path('/review'));
@@ -48,17 +48,15 @@ export function Marks({ h }: { h: SessionHandle }) {
       </button>
     );
   } else {
+    // 채점 버튼은 하나다. 표시가 하나도 없으면 "없어요, 채점하기", 하나라도 있으면 "채점하기"이고 자리와 크기는 같다.
+    // 라벨이 바뀌는 것은 연달아 누르기 보호 대상에 넣지 않는다(같은 칸을 빠르게 두 번 눌러 붙이는 "찍음"의 둘째 누름이 버려지지 않게).
+    const anyMark = Object.keys(session.marks).length > 0;
     actions = (
       <>
         {msg ? <Message>{msg}</Message> : null}
-        <div className="actions__row">
-          <button type="button" className="btn btn--secondary grow" onClick={() => grade(true)}>
-            {S.marks.none2}
-          </button>
-          <button type="button" className="btn btn--primary grow2" onClick={() => grade(false)}>
-            {S.marks.grade}
-          </button>
-        </div>
+        <button type="button" className="btn btn--primary" data-testid="grade" onClick={grade}>
+          {anyMark ? S.marks.grade : S.marks.gradeNone}
+        </button>
       </>
     );
   }

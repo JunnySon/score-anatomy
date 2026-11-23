@@ -4,7 +4,7 @@ import { EXAMS, findExam } from '../exams';
 import { navigate } from '../router';
 import { finishTestRun, resetTestRuns, setRunAnswerKey, startTestRun, useAppData } from '../state/hooks';
 import { exportCsv, exportJson, finalAnswersOf, parseAnswerKey, PARTICIPANT_PATTERN, type RunExportRow, runMetrics, startOf } from '../state/testlog';
-import { S } from '../strings';
+import { S, S_TEST } from '../strings';
 import type { InputMode, TestRun } from '../types';
 
 // (12) 테스트 진행자용 화면(#/test). 측정 기록은 이 기기 안에만 두고 네트워크로 보내지 않는다.
@@ -46,7 +46,7 @@ function RunCard({ row }: { row: RunExportRow }) {
   const [keyText, setKeyText] = useState(run.answerKeyText);
   const [keyMsg, setKeyMsg] = useState<string | null>(null);
   const m = runMetrics(run, session, exam);
-  const sec = (v: number | null) => (v === null ? S.test.notYet : S.test.seconds(v));
+  const sec = (v: number | null) => (v === null ? S_TEST.notYet : S_TEST.seconds(v));
   const keyExam = exam ?? findExam(run.plannedExamId);
   const keyId = `key-${run.id}`;
 
@@ -54,12 +54,12 @@ function RunCard({ row }: { row: RunExportRow }) {
     if (!keyExam) return;
     const parsed = parseAnswerKey(keyExam, keyText);
     if (!parsed.ok) {
-      setKeyMsg(parsed.errorIndex > 0 ? S.test.keyValueError(parsed.errorIndex) : S.test.keyCountError(keyExam.items.length, parsed.got));
+      setKeyMsg(parsed.errorIndex > 0 ? S_TEST.keyValueError(parsed.errorIndex) : S_TEST.keyCountError(keyExam.items.length, parsed.got));
       return;
     }
     // 시험 기록을 지웠어도 측정 기록에 옮겨 둔 최종 답이 있으면 대조한다.
     if (finalAnswersOf(run, session, exam) === null) {
-      setKeyMsg(S.test.keyNoSession);
+      setKeyMsg(S_TEST.keyNoSession);
       return;
     }
     setKeyMsg(null);
@@ -68,32 +68,34 @@ function RunCard({ row }: { row: RunExportRow }) {
 
   return (
     <li className="card" data-testid="run-card" data-participant={run.participant} data-mode={run.inputMode}>
-      <h3>{S.test.runTitle(run.participant, S.test.modes[run.inputMode], exam?.title ?? keyExam?.title ?? '')}</h3>
-      {run.examId !== null && run.examId !== run.plannedExamId ? <p className="sub">{S.test.plannedMismatch}</p> : null}
+      <h3>{S_TEST.runTitle(run.participant, S_TEST.modes[run.inputMode], exam?.title ?? keyExam?.title ?? '')}</h3>
+      {run.examId !== null && run.examId !== run.plannedExamId ? <p className="sub">{S_TEST.plannedMismatch}</p> : null}
       {run.examReselects > 0 ? (
         <p className="sub" data-testid="reselect-note">
-          {S.test.examReselected(run.examReselects)}
+          {S_TEST.examReselected(run.examReselects)}
         </p>
       ) : null}
       <dl className="kv mt3 sub">
-        <dt>{S.test.metric.started}</dt>
-        <dd data-testid="m-started">{startOf(run) === null ? S.test.notYet : fmtTime(run.startedAt)}</dd>
-        <dt>{S.test.metric.input}</dt>
+        <dt>{S_TEST.metric.started}</dt>
+        <dd data-testid="m-started">{startOf(run) === null ? S_TEST.notYet : fmtTime(run.startedAt)}</dd>
+        <dt>{S_TEST.metric.input}</dt>
         <dd data-testid="m-input">{sec(m.inputSeconds)}</dd>
-        <dt>{S.test.metric.inputCount}</dt>
-        <dd data-testid="m-input-count">{S.test.times(m.inputCount)}</dd>
-        <dt>{S.test.metric.reviewFixed}</dt>
-        <dd data-testid="m-review-fixed">{S.test.count(m.reviewFixedCount)}</dd>
-        <dt>{S.test.metric.marks}</dt>
-        <dd data-testid="m-marks">{S.test.seconds(m.marksSeconds)}</dd>
-        <dt>{S.test.metric.toScore}</dt>
+        <dt>{S_TEST.metric.inputCount}</dt>
+        <dd data-testid="m-input-count">{S_TEST.times(m.inputCount)}</dd>
+        <dt>{S_TEST.metric.reviewFixed}</dt>
+        <dd data-testid="m-review-fixed">{S_TEST.count(m.reviewFixedCount)}</dd>
+        <dt>{S_TEST.metric.marks}</dt>
+        <dd data-testid="m-marks">{S_TEST.seconds(m.marksSeconds)}</dd>
+        <dt>{S_TEST.metric.toScore}</dt>
         <dd data-testid="m-to-score">{sec(m.selectToScoreSeconds)}</dd>
-        <dt>{S.test.metric.residual}</dt>
-        <dd data-testid="m-residual">{m.residualErrors === null ? S.test.notYet : S.test.count(m.residualErrors)}</dd>
+        <dt>{S_TEST.metric.residual}</dt>
+        <dd data-testid="m-residual">{m.residualErrors === null ? S_TEST.notYet : S_TEST.count(m.residualErrors)}</dd>
+        <dt>{S_TEST.metric.discarded}</dt>
+        <dd data-testid="m-discarded">{S_TEST.times(run.discardedTaps)}</dd>
       </dl>
 
       <details className="mt2">
-        <summary>{S.test.metric.screens}</summary>
+        <summary>{S_TEST.metric.screens}</summary>
         <ol className="sub" data-testid="run-screens">
           {run.screens.map((s, i) => (
             <li key={`${s.screen}-${s.at}-${i}`}>
@@ -106,13 +108,13 @@ function RunCard({ row }: { row: RunExportRow }) {
       {keyExam ? (
         <div className="field mt3">
           <label htmlFor={keyId}>
-            {S.test.keyTitle}
+            {S_TEST.keyTitle}
           </label>
-          <span className="sub">{S.test.keyHint(keyExam.items.length)}</span>
+          <span className="sub">{S_TEST.keyHint(keyExam.items.length)}</span>
           <textarea
             id={keyId}
             className="field__input"
-            aria-label={S.test.keyLabel}
+            aria-label={S_TEST.keyLabel}
             value={keyText}
             onChange={(e) => setKeyText(e.target.value)}
             autoComplete="off"
@@ -120,15 +122,15 @@ function RunCard({ row }: { row: RunExportRow }) {
             spellCheck={false}
           />
           <button type="button" className="btn btn--secondary btn--block" data-testid="key-compare" onClick={compare}>
-            {S.test.keyCompare}
+            {S_TEST.keyCompare}
           </button>
           {keyMsg ? <Message>{keyMsg}</Message> : null}
           {m.residualErrors !== null ? (
             <p data-testid="key-result">
-              {S.test.keyResult(m.residualErrors)}
+              {S_TEST.keyResult(m.residualErrors)}
             </p>
           ) : null}
-          {m.residualNos.length > 0 ? <p className="sub">{S.test.keyDiff(m.residualNos)}</p> : null}
+          {m.residualNos.length > 0 ? <p className="sub">{S_TEST.keyDiff(m.residualNos)}</p> : null}
         </div>
       ) : null}
     </li>
@@ -153,7 +155,7 @@ export function TestAdmin() {
   const start = () => {
     const c = code.trim().toUpperCase();
     if (!PARTICIPANT_PATTERN.test(c)) {
-      setFormMsg(S.test.participantError);
+      setFormMsg(S_TEST.participantError);
       return;
     }
     if (!findExam(examId)) return;
@@ -172,15 +174,15 @@ export function TestAdmin() {
   const save = (kind: 'json' | 'csv') => {
     const text = build(kind);
     const ok = text !== null && downloadText(`score-anatomy-test-${stamp()}.${kind}`, text, kind === 'json' ? 'application/json' : 'text/csv');
-    setExportMsg(ok ? S.test.saved : S.test.saveFailed);
+    setExportMsg(ok ? S_TEST.saved : S_TEST.saveFailed);
   };
   const copy = (kind: 'json' | 'csv') => {
     const text = build(kind);
     if (text === null) {
-      setExportMsg(S.test.copyFailed);
+      setExportMsg(S_TEST.copyFailed);
       return;
     }
-    void copyText(text).then((ok) => setExportMsg(ok ? S.test.copied : S.test.copyFailed));
+    void copyText(text).then((ok) => setExportMsg(ok ? S_TEST.copied : S_TEST.copyFailed));
   };
 
   const stamp = () => {
@@ -191,22 +193,22 @@ export function TestAdmin() {
 
   return (
     <Screen
-      top={<TopBar back="/history" title={S.test.title} />}
+      top={<TopBar back="/history" title={S_TEST.title} />}
       // "이 참가자 마치기"를 누르면 아래 내용이 위로 올라온다. 연달아 누른 것이 다른 버튼에 닿지 않게 한다.
       guardKey={active ? active.id : 'idle'}
       actions={
         <>
           {formMsg ? <Message>{formMsg}</Message> : null}
           <button type="button" className="btn btn--primary" data-testid="start-run" onClick={start}>
-            {S.test.start}
+            {S_TEST.start}
           </button>
         </>
       }
       layer={
         confirmReset ? (
           <ConfirmDialog
-            title={S.test.resetConfirm}
-            body={S.test.resetBody}
+            title={S_TEST.resetConfirm}
+            body={S_TEST.resetBody}
             yes={S.history.confirmYes}
             no={S.history.confirmNo}
             onNo={() => setConfirmReset(false)}
@@ -218,30 +220,30 @@ export function TestAdmin() {
         ) : null
       }
     >
-      <p className="sub">{S.test.intro}</p>
+      <p className="sub">{S_TEST.intro}</p>
 
       {active ? (
         <section className="box mt4" aria-labelledby="active-title" data-testid="active-run">
           <h2 className="sub" id="active-title">
-            {S.test.activeTitle}
+            {S_TEST.activeTitle}
           </h2>
-          <p>{S.test.active(active.participant, S.test.modes[active.inputMode])}</p>
+          <p>{S_TEST.active(active.participant, S_TEST.modes[active.inputMode])}</p>
           <button type="button" className="btn btn--secondary btn--block mt3" data-testid="finish-run" onClick={finishTestRun}>
-            {S.test.finish}
+            {S_TEST.finish}
           </button>
         </section>
       ) : null}
 
       <section className="mt6" aria-labelledby="new-title">
         <h2 className="title" id="new-title">
-          {S.test.newTitle}
+          {S_TEST.newTitle}
         </h2>
         <div className="field mt3">
           <label htmlFor="participant">
-            {S.test.participant}
+            {S_TEST.participant}
           </label>
           <span className="sub" id="participant-hint">
-            {S.test.participantHint}
+            {S_TEST.participantHint}
           </span>
           <input
             id="participant"
@@ -262,18 +264,18 @@ export function TestAdmin() {
         </div>
 
         <h3 className="mt4" id="mode-q">
-          {S.test.mode}
+          {S_TEST.mode}
         </h3>
         <div className="chips mt2" role="radiogroup" aria-labelledby="mode-q">
-          {(Object.keys(S.test.modes) as InputMode[]).map((k) => (
+          {(Object.keys(S_TEST.modes) as InputMode[]).map((k) => (
             <Chip key={k} testId={`mode-${k}`} checked={mode === k} onSelect={() => setMode(k)}>
-              {S.test.modes[k]}
+              {S_TEST.modes[k]}
             </Chip>
           ))}
         </div>
 
         <h3 className="mt4" id="texam-q">
-          {S.test.exam}
+          {S_TEST.exam}
         </h3>
         <div className="chips mt2" role="radiogroup" aria-labelledby="texam-q">
           {EXAMS.map((e) => (
@@ -287,11 +289,11 @@ export function TestAdmin() {
 
       <section className="mt8" aria-labelledby="runs-title">
         <h2 className="title" id="runs-title">
-          {S.test.runsTitle}
+          {S_TEST.runsTitle}
         </h2>
         {rows.length === 0 ? (
           <p className="mt3" data-testid="no-runs">
-            {S.test.noRuns}
+            {S_TEST.noRuns}
           </p>
         ) : (
           <ol className="stack gap4 mt3">
@@ -304,9 +306,9 @@ export function TestAdmin() {
 
       <section className="mt8" aria-labelledby="export-title">
         <h2 className="title" id="export-title">
-          {S.test.exportTitle}
+          {S_TEST.exportTitle}
         </h2>
-        <p className="sub mt2">{S.test.noNetwork}</p>
+        <p className="sub mt2">{S_TEST.noNetwork}</p>
         <div className="stack gap2 mt3">
           <div className="actions__row">
             <button
@@ -315,7 +317,7 @@ export function TestAdmin() {
               data-testid="save-json"
               onClick={() => save('json')}
             >
-              {S.test.saveJson}
+              {S_TEST.saveJson}
             </button>
             <button
               type="button"
@@ -323,7 +325,7 @@ export function TestAdmin() {
               data-testid="save-csv"
               onClick={() => save('csv')}
             >
-              {S.test.saveCsv}
+              {S_TEST.saveCsv}
             </button>
           </div>
           <div className="actions__row">
@@ -333,7 +335,7 @@ export function TestAdmin() {
               data-testid="copy-json"
               onClick={() => copy('json')}
             >
-              {S.test.copyJson}
+              {S_TEST.copyJson}
             </button>
             <button
               type="button"
@@ -341,12 +343,12 @@ export function TestAdmin() {
               data-testid="copy-csv"
               onClick={() => copy('csv')}
             >
-              {S.test.copyCsv}
+              {S_TEST.copyCsv}
             </button>
           </div>
           {exportMsg ? <Message plain>{exportMsg}</Message> : null}
           <button type="button" className="btn btn--text btn--block" data-testid="reset-runs" onClick={() => setConfirmReset(true)}>
-            {S.test.reset}
+            {S_TEST.reset}
           </button>
         </div>
       </section>

@@ -249,6 +249,20 @@ a {
   background: var(--bg);
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* 연달아 누르기 보호가 누름을 버렸을 때의 알림(src/tapNotice.ts). 고정 위치라 화면 구성을 밀지 않고, 누름을 받지 않는다. */
+.tap-notice {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  font-size: var(--fs-sub);
+  line-height: var(--lh-sub);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r-chip);
+  padding: var(--s2) var(--s3);
+}
 /* 화면이 바뀐 직후 잠깐 누름을 받지 않는 자리의 표시(src/tapGuard.ts). 보이지 않고 누름도 받지 않는다. */
 .tap-shield {
   position: fixed;
@@ -415,6 +429,10 @@ a {
 }
 .tag--ok {
   color: var(--ok);
+}
+/* 긴 중립 표식(스스로 확인한 기록)은 줄을 바꿔도 된다. */
+.tag--wrap {
+  white-space: normal;
 }
 
 /* 카드와 상자: 표면색(지시서 5장). 그 안의 안내문은 배경색으로 바꿔서 구분한다. 입력 칸은 표면색 그대로 두고 테두리로 구분한다. */
@@ -747,6 +765,31 @@ a {
 }
 .key[aria-pressed='true'] {
   border: 2px solid var(--accent);
+}
+/* 잠긴 키(키패드 잠금, src/logic/keypad.ts): 흐리게 보인다. 색 대비는 보조 글자 기준을 지킨다. */
+.key[aria-disabled='true'],
+.key--go[aria-disabled='true'] {
+  border-style: dashed;
+  border-color: var(--outline);
+  background: var(--surface);
+  color: var(--text-sub);
+  cursor: default;
+  filter: none;
+}
+.key[aria-disabled='true']:active {
+  background: var(--surface);
+}
+/* 키패드 위 안내문 자리의 버튼(잠금과 고치기). */
+.pad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+.btn--panel {
+  flex: 1 1 auto;
+  min-height: var(--touch);
+  padding: 0 var(--s3);
 }
 
 /* 답 입력: 5행 방식. 폭 360px에서도 터치 영역 48px과 간격 8px를 지키려고 좌우 여백을 16px까지 줄인다. */

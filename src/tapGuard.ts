@@ -12,6 +12,7 @@
 // - 단답형 숫자 키(data-tap-safe)는 버리지 않는다. 숫자는 "다음"이나 "넣기"로 확정하기 전에는 저장되지 않고
 //   큰 칸에 보여서, 잘못 들어가도 보고 지울 수 있다. 반대로 숫자를 버리면 누른 것과 다른 답(150 대신 50)이 저장될 수 있다.
 // - 키보드로 누른 것(Enter, Space)은 건드리지 않는다.
+// - 버린 누름이 누를 수 있는 요소 위였으면 알림을 띄운다(src/tapNotice.ts). 측정 중이면 버린 누름을 센다(src/App.tsx).
 
 /** 화면이 바뀐 뒤, 그 화면을 바꾼 누름의 자리를 다시 누른 것을 받지 않는 시간(ms). */
 export const TAP_GUARD_MS = 500;
@@ -35,6 +36,38 @@ let guard: (Spot & { area: GuardArea; until: number }) | null = null;
 let marker: HTMLDivElement | null = null;
 let timer = 0;
 let installed = false;
+/** 보호 구간의 번호. 화면이 바뀌어 새로 막기 시작할 때마다 하나씩 늘린다. 버린 누름으로 다시 셀 때는 그대로다. */
+let guardId = 0;
+
+/** 누를 수 있는 요소. 버린 누름이 이 위였을 때만 알림을 띄운다. */
+export const INTERACTIVE_SELECTOR =
+  'button, a[href], input, select, textarea, summary, label, [role="button"], [role="radio"], [role="link"], [role="tab"], [tabindex]:not([tabindex="-1"])';
+
+export interface DiscardInfo {
+  /** 버린 누름이 누를 수 있는 요소 위였는지. 빈 바탕을 누른 것이면 false. */
+  interactive: boolean;
+  /** 보호 구간의 번호. 같은 구간에서는 알림을 한 번만 띄운다. */
+  guardId: number;
+}
+
+const discardListeners = new Set<(info: DiscardInfo) => void>();
+const acceptListeners = new Set<() => void>();
+
+/** 보호가 누름을 버릴 때마다 불린다. 되돌려 주는 함수로 듣기를 그만둔다. */
+export function addDiscardListener(fn: (info: DiscardInfo) => void): () => void {
+  discardListeners.add(fn);
+  return () => {
+    discardListeners.delete(fn);
+  };
+}
+
+/** 누름을 받아들일 때마다 불린다(알림을 바로 닫는 데 쓴다). */
+export function addAcceptListener(fn: () => void): () => void {
+  acceptListeners.add(fn);
+  return () => {
+    acceptListeners.delete(fn);
+  };
+}
 
 function clearGuard(): void {
   window.clearTimeout(timer);
@@ -88,11 +121,14 @@ function onClick(e: MouseEvent): void {
       e.preventDefault();
       e.stopImmediatePropagation();
       holdGuard(guard, guard.area, TAP_GUARD_MS);
+      const interactive = e.target instanceof Element && e.target.closest(INTERACTIVE_SELECTOR) !== null;
+      for (const l of discardListeners) l({ interactive, guardId });
       return;
     }
   }
   clearGuard();
   lastClick = { x: e.clientX, y: e.clientY, at: now };
+  for (const l of acceptListeners) l();
 }
 
 /** 앱이 시작될 때 한 번 부른다. 모든 누름(click)을 화면의 다른 처리보다 먼저 본다. */
@@ -113,5 +149,6 @@ export function markUiChanged(area: GuardArea = 'spot'): void {
   const now = performance.now();
   if (now - lastClick.at >= TAP_GUARD_MS) return;
   const keepScreen = guard !== null && guard.area === 'screen' && now < guard.until;
+  guardId += 1;
   holdGuard(lastClick, area === 'screen' || keepScreen ? 'screen' : 'spot', TAP_GUARD_MS);
 }

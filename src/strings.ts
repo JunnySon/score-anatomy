@@ -1,6 +1,14 @@
 // 화면 문구는 모두 이 파일에 모은다.
 // 작업 지시서 8장과 9장에 적힌 문구는 그대로 쓴다.
 // 해요체, 한 문장에 한 가지, 사실과 다음 할 일만 말한다. 느낌표와 이모지는 쓰지 않는다.
+//
+// 문구는 이 파일 하나에 두되, 내보내는 묶음을 나눈다.
+// - S: 모든 빌드가 쓰는 문구.
+// - S_ROWS: 5행 방식 답 입력 화면에서만 쓰는 문구.
+// - S_TEST: 테스트 진행자용 화면에서만 쓰는 문구.
+// - S_TOOLS: 진행자용 화면으로 가는 링크, 기록 화면의 "준비 중인 기능" 목록, 테스트 기기 안내.
+// - S_APP: 아이폰 앱 안에서만 바꿔 쓰는 문구.
+// 앱 배포용 묶음은 S_ROWS, S_TEST, S_TOOLS 를 쓰는 화면을 싣지 않으므로 그 글자가 묶음에서 빠진다(src/tools).
 
 import type { Cause, GradedBefore, InputMode, ItemKind, SeenBefore, TimeFeel } from './types';
 
@@ -62,6 +70,8 @@ export const S = {
     crashTitle: '화면을 그리지 못했어요.',
     crashBody: '넣은 기록은 그대로 있어요. 처음 화면으로 돌아가 주세요.',
     crashBack: '처음 화면으로',
+    // 연달아 누르기 보호가 누름을 버렸을 때(src/tapNotice.ts).
+    tapDiscarded: '화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.',
   },
 
   tabs: {
@@ -82,6 +92,8 @@ export const S = {
 
   exams: {
     title: '어떤 시험을 넣을까요?',
+    /** 시험 시행일. 날짜 문자열을 연, 월, 일로 잘라 쓴다(src/logic/dates.ts). */
+    held: (y: number, m: number, d: number) => `${y}년 ${m}월 ${d}일 시행`,
     gradedQ: '채점은 아직인가요?',
     gradedOptions: { not_yet: '아직 안 했어요', already: '이미 했어요' } as Record<GradedBefore, string>,
     seenQ: '이 시험지, 전에 풀어 본 적 있나요?',
@@ -96,34 +108,26 @@ export const S = {
     showAll: '전체 보기',
     section: (kind: ItemKind, from: number, to: number) =>
       `${kind === 'mc' ? '객관식' : '단답형'} ${from === to ? `${from}번` : `${from}~${to}번`}`,
-    pageRange: (from: number, to: number) => (from === to ? `${from}번` : `${from}~${to}번`),
     entered: (n: number) => `${n}문항 입력`,
     progressLabel: '입력한 문항 수',
     nowLabel: '지금 넣을 문항',
     entryLabel: '넣은 답',
     hint: '다섯 문항마다 시험지와 맞춰 보세요. 칸을 누르면 그 문항으로 가요.',
     erased: (no: number) => `${no}번 답을 지웠어요.`,
+    nothingToErase: '지울 답이 없어요.',
     notCommitted: (no: number) => `${no}번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.`,
+    // 키패드 잠금과 고치기(src/logic/keypad.ts).
+    locked: (no: number) => `${no}번에 답을 넣었어요. 다음에 할 일을 골라 주세요.`,
+    noBlank: '빈칸이 없어요. 고칠 문항을 눌러 주세요.',
+    fixing: (no: number) => `${no}번을 고치는 중이에요.`,
+    fixNext: (no: number) => `${no}번도 고치기`,
+    continueFrom: (no: number) => `${no}번부터 이어서 넣기`,
+    nextActionsLabel: '다음에 할 일',
     prevGroupLabel: '직전 묶음',
     currentGroupLabel: '현재 묶음',
     keypadLabel: '답 키패드',
     cellFilled: (no: number, answer: string) => `${no}번 칸, 넣은 답 ${answer}`,
     cellEmpty: (no: number) => `${no}번 칸, 비어 있음`,
-    // 5행 방식
-    prevPage: '이전',
-    nextPage: (n: number) => `다음 ${n}문항`,
-    toReview: '넣은 답 확인하기',
-    rowAnswerLabel: (no: number) => `${no}번 답`,
-    rowChoice: (n: number) => `${n}`,
-    rowNoButton: (no: number) => `${no}번, 안 풂 또는 입력 지우기`,
-    rowNoButtonSkipped: (no: number) => `${no}번, 넣은 답 안 풂, 안 풂 또는 입력 지우기`,
-    rowShortEmpty: '눌러서 답 넣기',
-    rowShortFilled: (no: number, answer: string) => `${no}번 답 ${answer}, 눌러서 고치기`,
-    rowShortOpen: (no: number) => `${no}번 답 넣기`,
-    menuTitle: (no: number) => `${no}번`,
-    menuSkip: '안 풂',
-    menuClear: '입력 지우기',
-    sheetPutTitle: (no: number) => `${no}번 답 넣기`,
   },
 
   review: {
@@ -156,7 +160,8 @@ export const S = {
     timeQ: '시간은 어땠나요?',
     timeOptions: { enough: '충분했어요', tight: '빠듯했어요', missed: '몇 문제는 못 봤어요' } as Record<TimeFeel, string>,
     grade: '채점하기',
-    none2: '없어요',
+    // 표시가 하나도 없을 때의 채점 버튼. 표시를 붙이면 같은 자리의 같은 버튼이 "채점하기"가 된다.
+    gradeNone: '없어요, 채점하기',
     save: '답 저장하기',
     unreleasedNotice: '정답이 아직 공개되지 않았어요. 답은 저장해 뒀어요. 공개되면 여기서 바로 채점돼요.',
     toHistory: '기록 보기',
@@ -192,7 +197,7 @@ export const S = {
     barLabel: (total: number, plain: number, guess: number, slip: number, other: number) => {
       // 값이 없는 구간은 말하지 않는다(0점이라고 쓰지 않는다).
       const parts: string[] = [];
-      if (plain > 0) parts.push(`표시 없이 맞힌 점수 ${plain}점`);
+      if (plain > 0) parts.push(`찍음 표시 없이 맞힌 점수 ${plain}점`);
       if (guess > 0) parts.push(`추측했다고 표시한 정답 ${guess}점`);
       if (slip > 0) parts.push(`실수라고 표시한 오답 ${slip}점`);
       if (other > 0) parts.push(slip > 0 ? `그 외 오답 ${other}점` : `오답 ${other}점`);
@@ -241,7 +246,7 @@ export const S = {
     luckAboveConfirmed: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷보다 위예요`,
     luckSummary: (rounded: number) => `약 ${rounded}점 설명 보기`,
     luckDetail: (actual: number) =>
-      `찍었다고 표시한 문항을 운이 보통이었을 때로 다시 계산한 점수예요. 실제 점수는 ${actual}점 그대로예요.`,
+      `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요. 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,
     noCuts: '등급컷 자료를 기다리고 있어요. 점수와 고칠 것은 지금 볼 수 있어요.',
     toSteps: (n: number) => (n > 0 ? `고칠 것 ${n}가지 보기` : '고칠 것 보기'),
     fix: '입력 고치기',
@@ -252,8 +257,13 @@ export const S = {
     top: '계단',
     title: (n: number) => `먼저 고칠 ${n}가지`,
     emptyTitle: '먼저 고칠 것',
-    missed: (p: number) => `놓친 배점 ${p}점`,
-    guessOnly: (p: number) => `찍었다고 표시한 정답 ${p}점`,
+    /** 카드의 배점 문장. 틀린 문항 배점과 찍었다고 표시한 정답 배점을 있는 것만 적는다. */
+    points: (wrong: number, guess: number) => {
+      const parts: string[] = [];
+      if (wrong > 0) parts.push(`놓친 배점 ${wrong}점`);
+      if (guess > 0) parts.push(`찍었다고 표시한 정답 ${guess}점`);
+      return parts.join(', ');
+    },
     reasonMissed: (points: number, count: number, cause: Cause | 'mixed' | 'none') => {
       const head = `이번 시험에서 이 유형으로 ${points}점을 놓쳤`;
       if (cause === 'slip') return `${head}고, ${allOf(count)}실수라고 표시했어요.`;
@@ -261,7 +271,8 @@ export const S = {
       if (cause === 'unknown') return `${head}고, ${allOf(count)}잘 모르겠다고 표시했어요.`;
       return `${head}어요.`;
     },
-    reasonGuess: (nos: number[]) => `이 유형의 ${listNos(nos)}은 찍어서 맞혔다고 표시했어요.`,
+    // 학생이 표시한 것은 찍음이고, 맞았다는 것은 채점 결과다.
+    reasonGuess: (nos: number[]) => `이 유형의 ${listNos(nos)}은 찍었다고 표시했고, 채점해 보니 맞았어요.`,
     todoTitle: '할 일',
     todoToday: (nos: number[]) => `오늘 시험지의 ${listNos(nos)}을 다시 풀기`,
     coordsTitle: '비슷한 문항 좌표',
@@ -283,19 +294,29 @@ export const S = {
   retry: {
     top: (name: string) => `${name} 다시 풀기`,
     nowLabel: '다시 푼 답을 넣을 문항',
+    selfNowLabel: '다시 볼 문항',
     progress: (index: number, total: number) => `${total}문항 가운데 ${index}번째`,
     entryLabel: '다시 푼 답',
     check: '답 맞춰 보기',
     needAnswer: '다시 푼 답을 먼저 넣어 주세요.',
     correct: '다시 풀어 맞혔어요.',
     correctKnown: '정답을 확인한 뒤 다시 맞혔어요.',
-    wrong: '이번에도 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.',
-    // 처음에 맞혔던 문항(찍어서 맞혔다고 표시한 문항)을 다시 풀어 틀린 경우.
-    wrongAfterCorrect: '이번에는 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.',
+    /** 여러 번 넣은 끝에 맞혔을 때. n은 처음 맞은 차례(2 이상). */
+    correctNth: (n: number) => `${n}번째로 넣은 답이 맞았어요.`,
+    wrong: '이번에도 답이 달랐어요.',
     labelCorrect: '다시 풀어 맞힘',
     labelCorrectSlip: '실수로 표시함, 다시 풀어 맞힘',
     labelCorrectKnown: '정답 확인 후 다시 맞힘',
+    labelCorrectNth: (n: number) => `${n}번째로 넣은 답이 맞음`,
+    labelCorrectNthSlip: (n: number) => `실수로 표시함, ${n}번째로 넣은 답이 맞음`,
     labelWrong: '다시 풀었지만 답이 다름',
+    // 찍었다고 표시하고 맞은 문항: 답을 다시 넣는 대신 스스로 확인한다.
+    selfQ: '이 문항은 찍었다고 표시했고, 채점해 보니 맞았어요. 풀이를 끝까지 써 봤나요?',
+    selfOptions: { solved: '끝까지 풀었어요', stuck: '풀어 봤는데 막혀요', notYet: '아직 안 풀어 봤어요' },
+    selfSolved: '끝까지 풀었다고 표시했어요.',
+    selfStuck: '막힌다고 표시했어요.',
+    labelSelfSolved: '찍음 표시 정답, 끝까지 풀었다고 표시함',
+    labelSelfStuck: '찍음 표시 정답, 막힌다고 표시함',
     recordLabel: '기록',
     nextItem: '다음 문항',
     backToSteps: '계단으로 돌아가기',
@@ -315,75 +336,112 @@ export const S = {
     confirmAll: '이 기기의 기록을 모두 지울까요?',
     confirmBody: '지우면 되돌릴 수 없어요.',
     confirmOneBody: (title: string, detail: string) => `${title}, ${detail} 기록이에요. 지우면 되돌릴 수 없어요.`,
-    confirmAllBodyWithRuns: '지우면 되돌릴 수 없어요. 테스트 측정 기록은 테스트 진행자용 화면에서 따로 지워요.',
     confirmYes: '지우기',
     confirmNo: '그만두기',
     empty: '아직 넣은 시험이 없어요. 시험을 하나 넣으면 여기에 쌓여요.',
-    upcomingTitle: '준비 중인 기능',
-    upcoming: [
-      { name: '7일 뒤 확인', note: '준비 중이에요.' },
-      { name: '실수 카드', note: '준비 중이에요.' },
-      { name: '공유 리포트', note: '준비 중이에요.' },
-      { name: '점수대별 정답률', note: '응답이 모이면 열려요.' },
-    ],
     storageFailed: '이 브라우저에서는 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
-    tester: '테스트 진행자용',
   },
+} as const;
 
-  test: {
-    title: '테스트 진행자용',
-    intro: '사용성 테스트를 진행하는 사람이 쓰는 화면이에요. 측정 기록은 이 기기 안에만 남아요.',
-    newTitle: '새 참가자',
-    participant: '참가자 코드',
-    participantHint: 'P01처럼 적어 주세요. 이름은 넣지 마세요.',
-    participantError: '참가자 코드를 P01 같은 형식으로 적어 주세요.',
-    mode: '입력 방식',
-    modes: { keypad: '키패드', rows: '5행' } as Record<InputMode, string>,
-    exam: '시험',
-    start: '테스트 시작하기',
-    activeTitle: '진행 중인 참가자',
-    active: (code: string, mode: string) => `${code}, ${mode} 방식`,
-    finish: '이 참가자 마치기',
-    runsTitle: '측정 기록',
-    noRuns: '아직 측정 기록이 없어요.',
-    runTitle: (code: string, mode: string, exam: string) => `${code}, ${mode}, ${exam}`,
-    metric: {
-      started: '시작 시각',
-      input: '답 입력 시간',
-      inputCount: '누른 답 입력 횟수',
-      reviewFixed: '입력 확인에서 고친 문항 수',
-      marks: '표시 화면에 머문 시간',
-      toScore: '시험 선택부터 첫 점수까지',
-      residual: '남은 오입력',
-      screens: '화면 진입 기록',
-    },
-    seconds: (s: number) => `${s}초`,
-    count: (n: number) => `${n}개`,
-    times: (n: number) => `${n}번`,
-    notYet: '아직 없음',
-    keyTitle: '정답지 대조',
-    keyLabel: '참가자에게 준 답지의 답',
-    keyHint: (n: number) => `답 ${n}개를 쉼표로 구분해 붙여 넣어 주세요. 안 푼 문항은 x로 적어요.`,
-    keyCompare: '답지와 비교하기',
-    keyCountError: (need: number, got: number) => `답이 ${need}개여야 해요. 지금은 ${got}개예요.`,
-    keyValueError: (index: number) => `${index}번째 값을 읽지 못했어요.`,
-    keyNoSession: '이 참가자가 넣은 답이 아직 없어요.',
-    keyResult: (n: number) => `남은 오입력 ${n}개`,
-    keyDiff: (nos: number[]) => `다른 문항: ${listNos(nos)}`,
-    exportTitle: '내보내기',
-    saveJson: 'JSON 파일 저장',
-    saveCsv: 'CSV 파일 저장',
-    copyJson: 'JSON 복사',
-    copyCsv: 'CSV 복사',
-    copied: '복사했어요.',
-    copyFailed: '복사하지 못했어요. 파일 저장을 써 주세요.',
-    saved: '파일 저장을 요청했어요. 파일이 생기지 않으면 복사를 써 주세요.',
-    saveFailed: '파일로 저장하지 못했어요. 복사를 써 주세요.',
-    noNetwork: '기록은 파일이나 복사로만 꺼낼 수 있어요. 어디로도 전송하지 않아요.',
-    reset: '기록 초기화',
-    resetConfirm: '테스트 기록을 모두 지울까요?',
-    resetBody: '참가자가 넣은 시험 기록은 지우지 않아요. 측정 기록만 지워요.',
-    plannedMismatch: '참가자가 계획과 다른 시험을 골랐어요.',
-    examReselected: (n: number) => `참가자가 측정 중에 다른 시험 기록으로 ${n}번 옮겨 갔어요. 아래 값은 마지막에 넣던 기록에서 잰 것이에요.`,
+/** 5행 방식 답 입력 화면에서만 쓰는 문구. */
+export const S_ROWS = {
+  pageRange: (from: number, to: number) => (from === to ? `${from}번` : `${from}~${to}번`),
+  prevPage: '이전',
+  nextPage: (n: number) => `다음 ${n}문항`,
+  toReview: '넣은 답 확인하기',
+  rowAnswerLabel: (no: number) => `${no}번 답`,
+  rowChoice: (n: number) => `${n}`,
+  rowNoButton: (no: number) => `${no}번, 안 풂 또는 입력 지우기`,
+  rowNoButtonSkipped: (no: number) => `${no}번, 넣은 답 안 풂, 안 풂 또는 입력 지우기`,
+  rowShortEmpty: '눌러서 답 넣기',
+  rowShortFilled: (no: number, answer: string) => `${no}번 답 ${answer}, 눌러서 고치기`,
+  rowShortOpen: (no: number) => `${no}번 답 넣기`,
+  menuTitle: (no: number) => `${no}번`,
+  menuSkip: '안 풂',
+  menuClear: '입력 지우기',
+  sheetPutTitle: (no: number) => `${no}번 답 넣기`,
+} as const;
+
+/** 진행자용 화면으로 가는 링크, 기록 화면의 "준비 중인 기능" 목록, 테스트 기기에서만 나오는 안내. */
+export const S_TOOLS = {
+  upcomingTitle: '준비 중인 기능',
+  upcoming: [
+    { name: '7일 뒤 확인', note: '준비 중이에요.' },
+    { name: '실수 카드', note: '준비 중이에요.' },
+    { name: '공유 리포트', note: '준비 중이에요.' },
+    { name: '점수대별 정답률', note: '응답이 모이면 열려요.' },
+  ],
+  tester: '테스트 진행자용',
+  confirmAllBodyWithRuns: '지우면 되돌릴 수 없어요. 테스트 측정 기록은 테스트 진행자용 화면에서 따로 지워요.',
+  testDevice: '테스트 기기예요. 기록은 진행자용 화면에서 확인해요.',
+} as const;
+
+/** 테스트 진행자용 화면(#/test)에서만 쓰는 문구. */
+export const S_TEST = {
+  title: '테스트 진행자용',
+  intro: '사용성 테스트를 진행하는 사람이 쓰는 화면이에요. 측정 기록은 이 기기 안에만 남아요.',
+  newTitle: '새 참가자',
+  participant: '참가자 코드',
+  participantHint: 'P01처럼 적어 주세요. 이름은 넣지 마세요.',
+  participantError: '참가자 코드를 P01 같은 형식으로 적어 주세요.',
+  mode: '입력 방식',
+  modes: { keypad: '키패드', rows: '5행' } as Record<InputMode, string>,
+  exam: '시험',
+  start: '테스트 시작하기',
+  activeTitle: '진행 중인 참가자',
+  active: (code: string, mode: string) => `${code}, ${mode} 방식`,
+  finish: '이 참가자 마치기',
+  runsTitle: '측정 기록',
+  noRuns: '아직 측정 기록이 없어요.',
+  runTitle: (code: string, mode: string, exam: string) => `${code}, ${mode}, ${exam}`,
+  metric: {
+    started: '시작 시각',
+    input: '답 입력 시간',
+    inputCount: '누른 답 입력 횟수',
+    reviewFixed: '입력 확인에서 고친 문항 수',
+    marks: '표시 화면에 머문 시간',
+    toScore: '시험 선택부터 첫 점수까지',
+    residual: '남은 오입력',
+    discarded: '받지 않은 누름',
+    screens: '화면 진입 기록',
   },
+  seconds: (s: number) => `${s}초`,
+  count: (n: number) => `${n}개`,
+  times: (n: number) => `${n}번`,
+  notYet: '아직 없음',
+  keyTitle: '정답지 대조',
+  keyLabel: '참가자에게 준 답지의 답',
+  keyHint: (n: number) => `답 ${n}개를 쉼표로 구분해 붙여 넣어 주세요. 안 푼 문항은 x로 적어요.`,
+  keyCompare: '답지와 비교하기',
+  keyCountError: (need: number, got: number) => `답이 ${need}개여야 해요. 지금은 ${got}개예요.`,
+  keyValueError: (index: number) => `${index}번째 값을 읽지 못했어요.`,
+  keyNoSession: '이 참가자가 넣은 답이 아직 없어요.',
+  keyResult: (n: number) => `남은 오입력 ${n}개`,
+  keyDiff: (nos: number[]) => `다른 문항: ${listNos(nos)}`,
+  exportTitle: '내보내기',
+  saveJson: 'JSON 파일 저장',
+  saveCsv: 'CSV 파일 저장',
+  copyJson: 'JSON 복사',
+  copyCsv: 'CSV 복사',
+  copied: '복사했어요.',
+  copyFailed: '복사하지 못했어요. 파일 저장을 써 주세요.',
+  // 아이폰 앱에는 파일 저장이 없고 복사만 있다.
+  copyFailedApp: '복사하지 못했어요. 다시 눌러 주세요.',
+  saved: '파일 저장을 요청했어요. 파일이 생기지 않으면 복사를 써 주세요.',
+  saveFailed: '파일로 저장하지 못했어요. 복사를 써 주세요.',
+  noNetwork: '기록은 파일이나 복사로만 꺼낼 수 있어요. 어디로도 전송하지 않아요.',
+  noNetworkApp: '기록은 복사로만 꺼낼 수 있어요. 어디로도 전송하지 않아요.',
+  reset: '기록 초기화',
+  resetConfirm: '테스트 기록을 모두 지울까요?',
+  resetBody: '참가자가 넣은 시험 기록은 지우지 않아요. 측정 기록만 지워요.',
+  plannedMismatch: '참가자가 계획과 다른 시험을 골랐어요.',
+  examReselected: (n: number) => `참가자가 측정 중에 다른 시험 기록으로 ${n}번 옮겨 갔어요. 아래 값은 마지막에 넣던 기록에서 잰 것이에요.`,
+} as const;
+
+/** 아이폰 앱 안에서만 바꿔 쓰는 문구(src/platform/app.ts 만 쓴다). */
+export const S_APP = {
+  privacy: '가입 없이 써요. 기록은 이 기기에 저장하고 서버로 보내지 않아요.',
+  historyNote: '앱을 지우면 기록도 함께 지워져요.',
+  storageFailed: '이 기기에 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
+  archived: '앞서 저장된 기록을 읽지 못해 따로 보관해 뒀어요.',
 } as const;

@@ -40,12 +40,19 @@ export default defineConfig(({ mode }) => {
   const single = mode === 'single';
   const variant = mode === 'variant';
   const fontFile = single ? './src/styles/font-system.css' : './src/styles/font-pretendard.css';
+  // 사용성 테스트 도구(진행자용 화면, 5행 방식, 준비 중 목록)를 싣는지. 일반 웹 빌드는 모두 싣는다(src/tools).
+  const withTools = true;
+  const toolsFile = withTools ? './src/tools/full.ts' : './src/tools/none.ts';
   return {
     base: './',
     plugins: [react(), ...(variant ? [variantExams()] : [])],
+    define: {
+      __SA_TOOLS__: JSON.stringify(withTools),
+    },
     resolve: {
       alias: {
         '#font': fileURLToPath(new URL(fontFile, import.meta.url)),
+        '#tools': fileURLToPath(new URL(toolsFile, import.meta.url)),
       },
     },
     build: {

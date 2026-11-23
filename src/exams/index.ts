@@ -1,14 +1,24 @@
+import { compareYmd } from '../logic/dates';
 import type { Exam } from '../types';
 import rawA from './sample-a.json';
 import rawB from './sample-b.json';
 import rawC from './sample-c.json';
 import { parseExam, validateExam } from './validate';
 
-// 시험 목록. 맨 위가 가장 최근 시험이다. 새 시험은 배열 맨 앞에 추가한다.
-// 예시 시험은 시행일이 없어서 A, B, C 순으로 둔다.
+// 시험 목록. 시행일(examDate)이 있는 시험은 최근 날짜가 위로 오고, 날짜가 같으면 아래 배열의 순서를 따른다.
+// 시행일이 없는 시험은 그 아래에 배열 순서대로 둔다. 예시 시험은 시행일이 없어서(지어낸 날짜를 넣지 않는다) A, B, C 순이다.
 const RAW: unknown[] = [rawA, rawB, rawC];
 
-export const EXAMS: Exam[] = RAW.map((raw) => {
+/** 시험 목록의 순서. 시행일이 있는 시험이 먼저(최근 날짜가 위), 같은 날짜와 시행일이 없는 시험은 받은 순서대로. */
+export function sortExams(list: Exam[]): Exam[] {
+  const dated = list.filter((e) => e.examDate !== undefined);
+  const undated = list.filter((e) => e.examDate === undefined);
+  // Array.prototype.sort 는 같은 값의 순서를 바꾸지 않는다.
+  dated.sort((a, b) => compareYmd(b.examDate as string, a.examDate as string));
+  return [...dated, ...undated];
+}
+
+const PARSED: Exam[] = RAW.map((raw) => {
   const exam = parseExam(raw);
   if (!exam) {
     // 잘못된 시험 파일은 목록에서 빼고 개발자 콘솔에만 알린다.
@@ -16,6 +26,8 @@ export const EXAMS: Exam[] = RAW.map((raw) => {
   }
   return exam;
 }).filter((e): e is Exam => e !== null);
+
+export const EXAMS: Exam[] = sortExams(PARSED);
 
 export function findExam(id: string | null | undefined): Exam | null {
   if (!id) return null;

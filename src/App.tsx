@@ -1,5 +1,6 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { ScreenShownContext } from './components/ui';
+import { typesReadyOf } from './exams/validate';
 import { findMissing } from './logic/scoring';
 import { href, inputModeFromUrl, useRoute, navigate, type Route } from './router';
 import { Anatomy } from './screens/Anatomy';
@@ -69,8 +70,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
   }
 }
 
-/** 채점 결과가 있어야 하는 화면들. */
-function GradedScreen({ h, route }: { h: SessionHandle; route: Route }) {
+/** 채점 결과가 있어야 하는 화면들. 단위 테스트가 서버 그리기로 돌려보내는 곳을 확인할 수 있게 내보낸다. */
+export function GradedScreen({ h, route }: { h: SessionHandle; route: Route }) {
   const grade = useGrade(h);
   if (!grade) {
     if (h.isDemo) return <Redirect to="/" />;
@@ -87,6 +88,8 @@ function GradedScreen({ h, route }: { h: SessionHandle; route: Route }) {
     case 'steps':
       return <Steps h={h} grade={grade} />;
     case 'retry':
+      // 유형 분류 전(typesReady false)에는 계단이 없어서 다시 풀 유형도 없다. 주소로 들어오면 계단 자리로 보낸다(작업 지시서 3의 4-3).
+      if (!typesReadyOf(h.exam)) return <Redirect to={h.path('/steps')} />;
       return <Retry key={route.param ?? ''} h={h} grade={grade} typeId={route.param} />;
     default:
       return <Anatomy h={h} grade={grade} />;

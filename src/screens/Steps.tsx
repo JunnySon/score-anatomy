@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { platform } from '#platform';
 import { Badge, Message, Screen, TopBar } from '../components/ui';
+import { typesReadyOf } from '../exams/validate';
 import type { Grade } from '../logic/scoring';
 import { selectSteps, type Step } from '../logic/steps';
-import { retryLabel, selfCheckLabel, stepReasons } from '../logic/text';
+import { retryLabel, selfCheckLabel, stepReasons, typesPendingText } from '../logic/text';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { S } from '../strings';
@@ -101,14 +102,20 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
 }
 
 export function Steps({ h, grade }: { h: SessionHandle; grade: Grade }) {
-  const steps = selectSteps(h.exam, grade);
+  // 유형 분류 전(typesReady false)에는 계단을 셈하지 않고 계단 대신 안내를 보여 준다. 유형 이름도 보여 주지 않는다(작업 지시서 3의 4-3).
+  const typesReady = typesReadyOf(h.exam);
+  const steps = typesReady ? selectSteps(h.exam, grade) : [];
   return (
     <Screen top={<TopBar back={h.path('/anatomy')} title={S.steps.top} />} tabs="current">
       <div className="inline">
         <h2 className="title">{steps.length > 0 ? S.steps.title(steps.length) : S.steps.emptyTitle}</h2>
         {h.exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
       </div>
-      {steps.length === 0 ? (
+      {!typesReady ? (
+        <p className="mt4" data-testid="steps-pending">
+          {typesPendingText(h.exam)}
+        </p>
+      ) : steps.length === 0 ? (
         <p className="mt4" data-testid="steps-empty">
           {S.steps.empty}
         </p>

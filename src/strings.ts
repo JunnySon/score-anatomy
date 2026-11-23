@@ -274,6 +274,8 @@ export const S = {
     luckDetail: (actual: number) =>
       `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요. 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,
     noCuts: '등급컷 자료를 기다리고 있어요. 점수와 고칠 것은 지금 볼 수 있어요.',
+    // 유형 분류 전(typesReady false)에는 고칠 것(계단)을 볼 수 없어서 뒷문장을 뺀다(작업 지시서 3의 4-3).
+    noCutsTypesPending: '등급컷 자료를 기다리고 있어요.',
     toSteps: (n: number) => (n > 0 ? `고칠 것 ${n}가지 보기` : '고칠 것 보기'),
     fix: '입력 고치기',
     pickExam: '시험 고르기',
@@ -313,6 +315,10 @@ export const S = {
     howBody: (wrong: number, guess: number, score: number) =>
       `틀린 문항의 배점과, 찍었다고 표시하고 맞힌 문항의 배점을 유형별로 더했어요. 합이 큰 유형부터 보여 드려요. 이 유형은 ${wrong}점과 ${guess}점을 더해 ${score}점이에요. 다른 학생의 자료는 쓰지 않았어요.`,
     empty: '틀린 문항이 없어요. 고칠 계단도 없어요.',
+    // 유형 분류가 끝나지 않았을 때(typesReady false) 계단 화면과 계단으로 가는 길에 계단 대신 보여 준다(작업 지시서 3의 4-3).
+    // 등급컷 자료가 아직 없으면 "등급컷은 지금 볼 수 있어요"가 사실과 달라서 점수만 적는다.
+    typesPending: '유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.',
+    typesPendingNoCuts: '유형 분류를 준비하고 있어요. 점수는 지금 볼 수 있어요.',
     retryStatusTitle: '다시 푼 기록',
     retryStatus: (no: number, label: string) => `${no}번: ${label}`,
   },

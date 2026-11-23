@@ -267,6 +267,8 @@ describe('화면 문구', () => {
     expect(S.causes.acceptedAll(2)).toBe('둘 다 정답으로 인정해요.');
     expect(S.causes.acceptedAll(3)).toBe('모두 정답으로 인정해요.');
     expect(S.anatomy.emptyGuessAllCorrect(60)).toBe('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. 60점 그대로예요.');
+    // 4-3: 유형 분류가 늦을 때 계단 대신 보여 주는 안내.
+    for (const text of ['유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.']) expect(texts.has(text), text).toBe(true);
   });
 });
 

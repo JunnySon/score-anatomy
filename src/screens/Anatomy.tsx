@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { ScoreBar } from '../components/ScoreBar';
-import { Badge, BottomSheet, Chip, IconInfo, Screen, TopBar } from '../components/ui';
+import { Badge, BottomSheet, Chip, IconInfo, Message, Screen, TopBar } from '../components/ui';
+import { typesReadyOf } from '../exams/validate';
 import { cutView, gradeKeys } from '../logic/cuts';
 import { analyze, type Grade } from '../logic/scoring';
 import { selectSteps } from '../logic/steps';
-import { actualLine, anatomySentences, luckLine } from '../logic/text';
+import { actualLine, anatomySentences, luckLine, noCutsText, typesPendingText } from '../logic/text';
 import { href, navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { isMarkedAfterGrading, setTargetGrade } from '../state/session';
@@ -17,7 +18,9 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const { exam, session } = h;
   const [sourceOpen, setSourceOpen] = useState(false);
   const an = analyze(exam, grade);
-  const steps = selectSteps(exam, grade);
+  // 유형 분류 전(typesReady false)에는 계단을 셈하지 않고, 계단으로 가는 버튼 자리에 안내를 둔다(작업 지시서 3의 4-3).
+  const typesReady = typesReadyOf(exam);
+  const steps = typesReady ? selectSteps(exam, grade) : [];
   const keys = gradeKeys(exam);
   const cv = cutView(exam, an, session.targetGrade);
   const sentences = anatomySentences(an);
@@ -44,9 +47,15 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
         ) : null
       }
       actions={
-        <button type="button" className="btn btn--primary" data-testid="to-steps" onClick={() => navigate(h.path('/steps'))}>
-          {S.anatomy.toSteps(steps.length)}
-        </button>
+        typesReady ? (
+          <button type="button" className="btn btn--primary" data-testid="to-steps" onClick={() => navigate(h.path('/steps'))}>
+            {S.anatomy.toSteps(steps.length)}
+          </button>
+        ) : (
+          <Message plain testId="steps-pending">
+            {typesPendingText(exam)}
+          </Message>
+        )
       }
     >
       <div className="inline">
@@ -135,7 +144,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
 
       <section className="box mt6" aria-label={S.anatomy.cutBoxLabel} data-testid="cutbox">
         {keys.length === 0 ? (
-          <p data-testid="no-cuts">{S.anatomy.noCuts}</p>
+          <p data-testid="no-cuts">{noCutsText(exam)}</p>
         ) : (
           <>
             <p className={cv ? 'sub' : undefined} id="target-q">

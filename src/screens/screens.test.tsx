@@ -1,9 +1,12 @@
+import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { GradedScreen } from '../App';
 import { findExam } from '../exams';
 import { validateExam } from '../exams/validate';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import { gradeExam } from '../logic/scoring';
+import { parseHash } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { newSession } from '../state/session';
 import type { Causes as CauseMap, Exam, ExamItem, Marks as MarkMap, Session } from '../types';
@@ -11,6 +14,7 @@ import { Anatomy } from './Anatomy';
 import { Causes } from './Causes';
 import { Retry } from './Retry';
 import { Score } from './Score';
+import { startPreview } from './Start';
 import { Steps } from './Steps';
 
 // 화면을 글자로 그려서(서버 렌더링) 드문 상태의 문구를 확인한다.
@@ -48,6 +52,14 @@ function anatomy(h: SessionHandle): string {
 /** 예시 시험 A의 문항 하나를 고친 사본(테스트 전용 자료, 작업 지시서 3의 4-2). */
 function withItem(exam: Exam, no: number, more: Partial<ExamItem>): Exam {
   return { ...exam, items: exam.items.map((it) => (it.no === no ? { ...it, ...more } : it)) };
+}
+
+/**
+ * 유형 분류 전의 판(테스트 전용 자료, 작업 지시서 3의 4-3). 시험의 사본에 typesReady false 를 적고,
+ * 자리만 채우는 유형 하나(지시서의 형식 예시 "t00": { "name": "분류 중" })를 모든 문항이 가리키게 한다.
+ */
+function typesPending(exam: Exam): Exam {
+  return { ...exam, typesReady: false, types: { t00: { name: '분류 중' } }, items: exam.items.map((it) => ({ ...it, typeId: 't00' })) };
 }
 
 describe('점수 해부 화면의 상태별 문구', () => {
@@ -273,5 +285,99 @@ describe('그 밖의 화면', () => {
     const h = handleFor(examA, exampleMarks(), exampleCauses());
     const t = text(renderToStaticMarkup(<Retry h={h} grade={gradeExam(h.exam, h.session)} typeId="nope" />));
     expect(t).toContain('다시 풀 문항이 없어요.');
+  });
+});
+
+describe('유형 분류가 늦을 때(작업 지시서 3의 4-3)', () => {
+  const pending = typesPending(examA);
+
+  it('점수 해부 화면: 계단으로 가는 버튼 자리에 안내를 보여 주고, 점수와 등급컷은 그대로다', () => {
+    expect(validateExam(pending)).toEqual([]);
+    const html = anatomy(handleFor(pending, exampleMarks(), exampleCauses(), { targetGrade: '2' }));
+    const t = text(html);
+    expect(html).toMatch(/data-testid="steps-pending"[^>]*>유형 분류를 준비하고 있어요\. 점수와 등급컷은 지금 볼 수 있어요\.<\/p>/);
+    expect(html).not.toContain('data-testid="to-steps"');
+    expect(t).not.toContain('고칠 것');
+    expect(t).not.toContain('분류 중');
+    // 채점과 점수 해부, 등급컷 상자는 그대로다(검산 예시 기대값).
+    expect(t).toContain('78점 30문항 가운데 24문항을 맞혔어요.');
+    expect(t).toContain('추측했다고 표시한 정답 7점 78점 안에 들어 있어요');
+    expect(t).toContain('실수라고 표시한 오답 8점 78점에는 들어 있지 않아요');
+    expect(t).toContain('2등급 컷 81~85점');
+    expect(t).toContain('실제 78점 기준 3~7점 남았어요');
+    expect(t).toContain('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 6~10점이에요 추정');
+    // 유형 분류가 끝난 판(typesReady 가 없거나 true)은 지금 그대로 계단으로 가는 버튼이 있다.
+    for (const ready of [examA, { ...examA, typesReady: true }]) {
+      const html2 = anatomy(handleFor(ready, exampleMarks(), exampleCauses(), { targetGrade: '2' }));
+      expect(html2).toMatch(/data-testid="to-steps"[^>]*>고칠 것 3가지 보기<\/button>/);
+      expect(html2).not.toContain('유형 분류');
+    }
+  });
+
+  it('등급컷 자료도 없으면 안내는 점수만 지금 볼 수 있다고 적고, 등급컷 상자는 고칠 것을 말하지 않는다', () => {
+    const noCuts: Exam = { ...pending, cuts: undefined };
+    expect(validateExam(noCuts)).toEqual([]);
+    const html = anatomy(handleFor(noCuts, exampleMarks(), exampleCauses()));
+    expect(html).toMatch(/data-testid="steps-pending"[^>]*>유형 분류를 준비하고 있어요\. 점수는 지금 볼 수 있어요\.<\/p>/);
+    expect(html).toContain('data-testid="no-cuts">등급컷 자료를 기다리고 있어요.</p>');
+    expect(text(html)).not.toContain('고칠 것');
+    expect(text(html)).not.toContain('등급컷은 지금 볼 수 있어요');
+  });
+
+  it('계단 화면: 계단 대신 안내를 보여 주고, 유형 이름과 다시 풀기 버튼이 없다. typesReady 가 true 인 판이면 계단이 나온다', () => {
+    const h = handleFor(pending, exampleMarks(), exampleCauses());
+    const html = renderToStaticMarkup(<Steps h={h} grade={gradeExam(h.exam, h.session)} />);
+    const t = text(html);
+    expect(html).toContain('data-testid="steps-pending">유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.</p>');
+    expect(html).not.toMatch(/data-testid="step-\d/);
+    expect(html).not.toContain('data-testid="retry-btn"');
+    expect(html).not.toContain('data-testid="steps-empty"');
+    expect(t).not.toContain('분류 중');
+    expect(t).not.toContain('다시 풀고 답 넣기');
+    // 틀린 문항이 없어도 계단을 셈하지 않고 같은 안내를 보여 준다.
+    const answers = Object.fromEntries(pending.items.map((it) => [it.no, it.answer as number]));
+    const perfect = handleFor(pending, {}, {}, { answers });
+    expect(renderToStaticMarkup(<Steps h={perfect} grade={gradeExam(pending, perfect.session)} />)).toContain('data-testid="steps-pending"');
+    // typesReady 가 true 인 판을 받으면 그때부터 계단이 나온다.
+    const ready = handleFor({ ...examA, typesReady: true }, exampleMarks(), exampleCauses());
+    const html2 = renderToStaticMarkup(<Steps h={ready} grade={gradeExam(ready.exam, ready.session)} />);
+    expect(text(html2)).toContain('먼저 고칠 3가지');
+    expect(html2).toContain('data-testid="step-3"');
+    expect(html2).not.toContain('steps-pending');
+  });
+
+  it('재풀이 화면: 주소로 들어와도 그리지 않고 계단 자리로 돌려보낸다', () => {
+    const route = parseHash('#/retry/t00');
+    const seen: { el: ReactElement | null } = { el: null };
+    function Probe({ h }: { h: SessionHandle }) {
+      seen.el = GradedScreen({ h, route });
+      return null;
+    }
+    const h = handleFor(pending, exampleMarks(), exampleCauses());
+    expect(renderToStaticMarkup(<GradedScreen h={h} route={route} />)).toBe('');
+    renderToStaticMarkup(<Probe h={h} />);
+    expect(seen.el?.props).toEqual({ to: '/steps' });
+    // 예시 결과 안이면 예시 결과의 계단 자리로 보낸다.
+    renderToStaticMarkup(<Probe h={{ ...h, isDemo: true, path: (p) => `/demo${p}` }} />);
+    expect(seen.el?.props).toEqual({ to: '/demo/steps' });
+    // 유형 분류가 끝난 판이면 지금처럼 재풀이 화면을 그린다.
+    const ready = handleFor(examA, exampleMarks(), exampleCauses());
+    expect(text(renderToStaticMarkup(<GradedScreen h={ready} route={parseHash('#/retry/t06')} />))).toContain('적분 다시 풀기');
+  });
+
+  it('점수, 오답 원인, 정답 보기는 그대로이고, 시작 화면의 결과 미리보기도 유형 이름 대신 안내를 적는다', () => {
+    const h = handleFor(pending, exampleMarks(), exampleCauses(), { answerViewed: { 27: true } });
+    const grade = gradeExam(pending, h.session);
+    const score = text(renderToStaticMarkup(<Score h={h} grade={grade} />));
+    expect(score).toContain('78점 30문항 가운데 24문항을 맞혔어요.');
+    const html = renderToStaticMarkup(<Causes h={h} grade={grade} />);
+    expect(html.match(/data-testid="wrong-/g)).toHaveLength(6);
+    expect(text(html)).toContain('정답 164 정답 확인함');
+    for (const t of [score, text(html)]) expect(t).not.toContain('분류 중');
+    // 시작 화면의 미리보기는 먼저 고칠 것을 유형 이름으로 적는다. 유형 분류 전이면 이름 대신 안내를 적는다.
+    expect(startPreview(examA)?.stepsLine).toBe('먼저 고칠 것: 적분, 수열, 확률');
+    expect(startPreview(pending)?.stepsLine).toBe('유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.');
+    expect(startPreview({ ...pending, cuts: undefined })?.stepsLine).toBe('유형 분류를 준비하고 있어요. 점수는 지금 볼 수 있어요.');
+    expect(startPreview(pending)?.an.actual).toBe(78);
   });
 });

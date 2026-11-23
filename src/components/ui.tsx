@@ -293,10 +293,11 @@ export function Progress({ value, max, label }: { value: number; max: number; la
  * live 가 false면 늘 붙어 있는 다른 알림 영역(LiveRegion)이 같은 글자를 전하므로, 보이는 안내문은 알림 영역으로 두지 않고
  * 화면 낭독기에서도 뺀다(aria-hidden, 훑어 읽을 때 같은 문장을 두 번 듣지 않게).
  */
-export function Message({ children, plain, live = true }: { children: ReactNode; plain?: boolean; live?: boolean }) {
+export function Message({ children, plain, live = true, testId }: { children: ReactNode; plain?: boolean; live?: boolean; testId?: string }) {
   return (
     <p
       className={`msg${plain ? ' msg--plain' : ''}`}
+      data-testid={testId}
       {...(live ? { role: 'status', 'aria-live': 'polite' as const } : { 'aria-hidden': true as const })}
     >
       {children}

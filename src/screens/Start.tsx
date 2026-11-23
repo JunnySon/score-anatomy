@@ -2,27 +2,36 @@ import { useMemo } from 'react';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, Screen } from '../components/ui';
 import { findExam, SAMPLE_EXAM_ID } from '../exams';
+import { typesReadyOf } from '../exams/validate';
 import { exampleResponses } from '../logic/example';
 import { analyze, gradeExam } from '../logic/scoring';
 import { selectSteps } from '../logic/steps';
+import { typesPendingText } from '../logic/text';
 import { platform } from '#platform';
 import { navigate } from '../router';
 import { demoStore } from '../state/demo';
 import { S } from '../strings';
+import type { Exam } from '../types';
 
 // (1) 시작 화면.
 
+/**
+ * 결과 미리보기(예시 시험에 검산 예시를 넣은 결과). 그릴 수 없으면 null.
+ * 먼저 고칠 것은 유형 이름으로 적는데, 유형 분류 전(typesReady false)이면 이름 대신 안내를 적는다(작업 지시서 3의 4-3).
+ */
+export function startPreview(exam: Exam | null) {
+  if (!exam || !exam.answerReleased) return null;
+  try {
+    const grade = gradeExam(exam, exampleResponses(exam));
+    const stepsLine = typesReadyOf(exam) ? S.start.previewSteps(selectSteps(exam, grade).map((s) => s.name)) : typesPendingText(exam);
+    return { exam, an: analyze(exam, grade), stepsLine };
+  } catch {
+    return null;
+  }
+}
+
 function usePreview() {
-  return useMemo(() => {
-    const exam = findExam(SAMPLE_EXAM_ID);
-    if (!exam || !exam.answerReleased) return null;
-    try {
-      const grade = gradeExam(exam, exampleResponses(exam));
-      return { exam, an: analyze(exam, grade), steps: selectSteps(exam, grade) };
-    } catch {
-      return null;
-    }
-  }, []);
+  return useMemo(() => startPreview(findExam(SAMPLE_EXAM_ID)), []);
 }
 
 export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResume?: () => void }) {
@@ -76,7 +85,7 @@ export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResum
           <div className="mt3">
             <ScoreBar an={preview.an} mini />
           </div>
-          <p className="sub mt3">{S.start.previewSteps(preview.steps.map((s) => s.name))}</p>
+          <p className="sub mt3">{preview.stepsLine}</p>
         </section>
       ) : null}
       <p className="cap mt4">{platform.appText?.privacy ?? S.start.privacy}</p>

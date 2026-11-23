@@ -1,10 +1,24 @@
+import { typesReadyOf } from '../exams/validate';
 import { S } from '../strings';
-import type { Cause, RetryRecord, SelfCheck } from '../types';
-import type { CutView, Gap } from './cuts';
+import type { Cause, Exam, RetryRecord, SelfCheck } from '../types';
+import { gradeKeys, type CutView, type Gap } from './cuts';
 import type { Anatomy } from './scoring';
 import type { Step } from './steps';
 
 // 계산 결과를 화면 문장으로 바꾼다. 문구 자체는 strings.ts에 있다.
+
+/**
+ * 유형 분류가 끝나지 않았을 때(typesReady false) 계단 화면과 계단으로 가는 길에 계단 대신 보여 주는 문장(작업 지시서 3의 4-3).
+ * 등급컷 자료가 없으면 "등급컷은 지금 볼 수 있어요"가 사실과 달라서 점수만 적는다.
+ */
+export function typesPendingText(exam: Exam): string {
+  return gradeKeys(exam).length > 0 ? S.steps.typesPending : S.steps.typesPendingNoCuts;
+}
+
+/** 등급컷 자료가 없을 때 등급컷 상자의 문장. 유형 분류 전에는 고칠 것(계단)을 볼 수 없어서 그 말을 빼고 적는다. */
+export function noCutsText(exam: Exam): string {
+  return typesReadyOf(exam) ? S.anatomy.noCuts : S.anatomy.noCutsTypesPending;
+}
 
 /** 점수 해부 화면의 문장. 표시가 없는 부분은 말하지 않는다. */
 export function anatomySentences(an: Anatomy): string[] {

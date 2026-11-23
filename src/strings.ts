@@ -199,6 +199,9 @@ export const S = {
     same: (score: number) => `정답이 정정됐지만 점수는 ${score}점 그대로예요.`,
     // 채점 흔적이 없는 옛 기록이라 예전 점수를 알 수 없을 때.
     noPrevious: '정답이 정정돼서 지금 정답으로 채점했어요.',
+    // 정답 판 번호는 오르지 않았는데 지금 시험 자료로 계산한 점수가 채점한 때와 다를 때(같은 판 번호에 다른 정답이 든 판, 예전 판).
+    // 정정 안내(answersNote)는 이 바뀜의 까닭이 아닐 수 있어서 다음 줄에 붙이지 않는다.
+    differs: (from: number, to: number) => `채점한 때와 다른 시험 자료로 다시 채점했어요. ${from}점에서 ${to}점으로 바뀌었어요.`,
     ack: '확인했어요',
   },
 
@@ -383,6 +386,9 @@ export const S = {
     // 정답 정정 알림을 아직 확인하지 않은 기록(작업 지시서 3의 4-6). 보이는 표시와 열기 버튼의 이름에 붙인다.
     corrected: '정답 정정으로 다시 채점됨',
     openCorrected: (title: string, detail: string) => `${title} 기록 열기, ${detail}, 정답 정정으로 다시 채점됨`,
+    // 정답 판 번호는 그대로인데 다른 시험 자료로 다시 채점해 점수가 바뀐 기록(src/state/session.ts 의 differs).
+    rescored: '다른 시험 자료로 다시 채점됨',
+    openRescored: (title: string, detail: string) => `${title} 기록 열기, ${detail}, 다른 시험 자료로 다시 채점됨`,
     removeAll: '이 기기의 기록 모두 지우기',
     confirmOne: '이 기록을 지울까요?',
     confirmAll: '이 기기의 기록을 모두 지울까요?',

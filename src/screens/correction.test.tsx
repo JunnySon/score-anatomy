@@ -428,16 +428,18 @@ describe('정답 정정 알림(4-6)', () => {
 });
 
 describe('정답 정정 알림의 세부(4-6)', () => {
-  it('정답 판 번호가 채점 흔적과 같거나 작으면, 또는 다시 채점해야 하는 기록이면 알리지 않는다', () => {
+  it('정답 판 번호가 채점 흔적과 같거나 작고 점수도 같으면, 또는 다시 채점해야 하는 기록이면 알리지 않는다', () => {
     const s = graded();
     const g = gradeExam(examA, s);
     expect(correctionOf(s, examA, g)).toEqual({ kind: 'none' });
-    // 정답 판 번호 2로 채점한 기록이 정답 판 번호 1의 판(묶음 안 시험 등)으로 열려도 알리지 않는다.
+    // 정답 판 번호 2로 채점한 기록이 같은 판으로 열리면 알리지 않는다. 정답 판 번호가 작은 판이어도 점수가 같으면 알리지 않는다.
     const exam = up();
     const at2 = markGraded(s, exam, NOW);
     expect(at2.gradedWith).toEqual({ answersRev: 2, score: 82 });
     expect(correctionOf(at2, exam, gradeExam(exam, at2))).toEqual({ kind: 'none' });
-    expect(correctionOf(at2, examA, gradeExam(examA, at2))).toEqual({ kind: 'none' });
+    const sameScoreOld = corrected(2, { 11: { answer: 3 } });
+    const at2same = markGraded(s, sameScoreOld, NOW);
+    expect(correctionOf(at2same, examA, gradeExam(examA, at2same))).toEqual({ kind: 'none' });
     // 채점한 뒤 답을 고쳐 채점 시각이 빈 기록은 점수를 보여 주지 않으므로 알리지 않고, 다시 채점하면 지금 값이 적힌다.
     const edited = setAnswer(s, 1, 4);
     expect(edited.gradedAt).toBeNull();
@@ -447,6 +449,46 @@ describe('정답 정정 알림의 세부(4-6)', () => {
     const missing = setAnswer(s, 1, undefined);
     expect(acknowledgeCorrection(missing, exam)).toBe(missing);
     expect(acknowledgeCorrection(s, examA)).toBe(s);
+  });
+
+  it('정답 판 번호는 오르지 않았는데 점수가 채점 흔적과 다르면 "다른 시험 자료로 다시 채점했어요"를 알리고, 기록 화면에 표시를 붙인다(별도 검토 B1)', () => {
+    // (1) 같은 정답 판 번호(1)인데 정답이 다른 판: 묶음 안 판으로 78점을 채점한 뒤, 15번 정답만 다른 판(answersRev 칸 없음)이 쓰인다.
+    const s = graded();
+    expect(s.gradedWith).toEqual({ answersRev: 1, score: 78 });
+    const sameRevOther: Exam = { ...examA, rev: 2, items: examA.items.map((it) => (it.no === 15 ? { ...it, answer: 1 } : it)) };
+    expect(validateExam(sameRevOther)).toEqual([]);
+    const c1 = correctionOf(s, sameRevOther, gradeExam(sameRevOther, s));
+    expect(c1).toEqual({ kind: 'differs', from: 78, to: 82, note: '' });
+    expect(correctionNotice(c1)).toBe(c1);
+    const { h: h1 } = handleOf(s, sameRevOther);
+    // 정정 안내는 이 바뀜의 까닭이 아닐 수 있어서 다음 줄을 두지 않는다.
+    expect(noticeText(scoreHtml(h1))).toBe('채점한 때와 다른 시험 자료로 다시 채점했어요. 78점에서 82점으로 바뀌었어요. 확인했어요');
+    expect(noticeText(anatomyHtml(h1))).toBe('채점한 때와 다른 시험 자료로 다시 채점했어요. 78점에서 82점으로 바뀌었어요. 확인했어요');
+    // (2) 정정 판(answersRev 2)으로 82점을 채점한 뒤, 정답 판 번호가 작은 예전 판(묶음 안 시험)이 쓰인다.
+    const at2 = markGraded(s, up(), NOW);
+    expect(at2.gradedWith).toEqual({ answersRev: 2, score: 82 });
+    const c2 = correctionOf(at2, examA, gradeExam(examA, at2));
+    expect(c2).toEqual({ kind: 'differs', from: 82, to: 78, note: '' });
+    expect(noticeText(scoreHtml(handleOf(at2, examA).h))).toBe('채점한 때와 다른 시험 자료로 다시 채점했어요. 82점에서 78점으로 바뀌었어요. 확인했어요');
+    // 기록 화면: 확인하기 전에는 "다른 시험 자료로 다시 채점됨"을 붙이고 열기 버튼의 이름에도 넣는다.
+    swapped.set('sample-a', examA);
+    store.update(() => ({ ...defaultData(), sessions: [at2], currentId: at2.id }));
+    const detail = `${formatDate(at2.createdAt)}, 78점`;
+    let html = historyHtml();
+    expect(html).toContain('<span class="sub" data-testid="history-corrected">다른 시험 자료로 다시 채점됨</span>');
+    expect(html).toContain(`aria-label="${examA.title} 기록 열기, ${detail}, 다른 시험 자료로 다시 채점됨"`);
+    // "확인했어요"는 채점 흔적만 지금 값(정답 판 번호 1, 78점)으로 바꾸고 알림과 표시가 사라진다. 답과 표시는 그대로다.
+    const acked = ackOnScore(at2, examA);
+    expect(acked.gradedWith).toEqual({ answersRev: 1, score: 78 });
+    expect(acked.answers).toEqual(at2.answers);
+    expect(acked.marks).toEqual(at2.marks);
+    expect(correctionOf(acked, examA, gradeExam(examA, acked))).toEqual({ kind: 'none' });
+    store.update(() => ({ ...defaultData(), sessions: [acked], currentId: acked.id }));
+    html = historyHtml();
+    expect(html).not.toContain('history-corrected');
+    expect(html).toContain(`aria-label="${examA.title} 기록 열기, ${detail}"`);
+    // 그 뒤 정정 판이 다시 쓰이면 정정 알림으로 알린다(정답 판 번호가 채점 흔적보다 커서).
+    expect(correctionOf(acked, up(), gradeExam(up(), acked))).toEqual({ kind: 'changed', from: 78, to: 82, note: NOTE });
   });
 
   it('예시 결과에는 알림을 보여 주지 않는다', () => {

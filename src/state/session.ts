@@ -218,6 +218,8 @@ export function firstMissingIndex(exam: Exam, session: Session): number {
  * - fill: 채점 흔적이 없는 옛 기록이고 시험의 정답 판 번호가 1이다. 알리지 않고 채운다(fillGradedWith).
  * - changed, same: 채점한 뒤에 정답이 정정됐다. 다시 계산한 점수가 달라졌는지에 따라 나눈다.
  * - noPrevious: 채점 흔적이 없는 옛 기록인데 정답이 정정된 판(정답 판 번호 2 이상)이라 예전 점수를 알 수 없다.
+ * - differs: 정답 판 번호는 오르지 않았는데 지금 시험 자료로 계산한 점수가 채점 흔적의 점수와 다르다
+ *   (같은 정답 판 번호에 다른 정답이 든 판, 정답 판 번호가 더 작은 예전 판이 쓰일 때). 정정 안내는 이 바뀜의 까닭이 아닐 수 있어서 note 는 비운다.
  * note 는 시험 파일의 정정 안내(answersNote)이고 알림의 다음 줄에 그대로 보인다.
  */
 export type Correction =
@@ -225,14 +227,17 @@ export type Correction =
   | { kind: 'fill' }
   | { kind: 'changed'; from: number; to: number; note: string }
   | { kind: 'same'; score: number; note: string }
-  | { kind: 'noPrevious'; note: string };
+  | { kind: 'noPrevious'; note: string }
+  | { kind: 'differs'; from: number; to: number; note: string };
 
-/** 알림을 보여 주는 정정(점수 화면과 점수 해부 화면 위쪽, 기록 화면의 "정답 정정으로 다시 채점됨"). */
+/** 알림을 보여 주는 정정(점수 화면과 점수 해부 화면 위쪽, 기록 화면의 표시). */
 export type CorrectionNotice = Extract<Correction, { note: string }>;
 
 /**
  * 기록의 정답 정정 상태를 정한다. grade 는 지금 시험 파일로 계산한 채점 결과다.
- * 채점 흔적의 정답 판 번호보다 시험의 정답 판 번호가 클 때만 정정으로 본다. 같거나 작으면 알리지 않는다.
+ * 채점 흔적의 정답 판 번호보다 시험의 정답 판 번호가 크면 정정으로 본다(changed, same).
+ * 같거나 작은데 점수가 채점 흔적과 다르면 다른 시험 자료로 다시 채점한 것으로 알린다(differs). 점수가 같으면 알리지 않는다.
+ * 학생이 본 점수가 알림 없이 바뀌지 않게 하려는 것이다(별도 검토 B1).
  * 채점 시각이 비어 있으면(채점한 뒤 답을 고쳐 다시 채점해야 하는 기록) 점수를 보여 주지 않으므로 알리지 않는다.
  */
 export function correctionOf(session: Session, exam: Exam, grade: Grade): Correction {
@@ -241,13 +246,13 @@ export function correctionOf(session: Session, exam: Exam, grade: Grade): Correc
   const note = exam.answersNote ?? '';
   const prev = session.gradedWith;
   if (!prev) return rev === 1 ? { kind: 'fill' } : { kind: 'noPrevious', note };
-  if (rev <= prev.answersRev) return { kind: 'none' };
+  if (rev <= prev.answersRev) return prev.score === grade.actual ? { kind: 'none' } : { kind: 'differs', from: prev.score, to: grade.actual, note: '' };
   return prev.score === grade.actual ? { kind: 'same', score: grade.actual, note } : { kind: 'changed', from: prev.score, to: grade.actual, note };
 }
 
 /** 알림을 보여 줄 정정이면 그 정정, 아니면 null. */
 export function correctionNotice(c: Correction): CorrectionNotice | null {
-  return c.kind === 'changed' || c.kind === 'same' || c.kind === 'noPrevious' ? c : null;
+  return c.kind === 'changed' || c.kind === 'same' || c.kind === 'noPrevious' || c.kind === 'differs' ? c : null;
 }
 
 /**

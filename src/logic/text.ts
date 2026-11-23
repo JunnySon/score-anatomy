@@ -29,6 +29,7 @@ export function noCutsText(exam: Exam): string {
 export function correctionText(n: CorrectionNotice): string {
   if (n.kind === 'changed') return S.correction.changed(n.from, n.to);
   if (n.kind === 'same') return S.correction.same(n.score);
+  if (n.kind === 'differs') return S.correction.differs(n.from, n.to);
   return S.correction.noPrevious;
 }
 

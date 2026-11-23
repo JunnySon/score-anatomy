@@ -18,25 +18,27 @@ import type { Session } from '../types';
 // - 측정 기록이 남아 있는데 진행 중인 측정이 없으면 기록을 보여 주지 않고 안내만 한다.
 
 /**
- * 기록 한 건의 점수 글자와, 정답 정정 알림을 아직 확인하지 않았는지(작업 지시서 3의 4-6).
- * 점수는 지금 시험 파일로 계산한 값이다. 정정 알림이 남아 있으면 "정답 정정으로 다시 채점됨"을 붙인다.
+ * 기록 한 건의 점수 글자와, 아직 확인하지 않은 정정 알림의 종류(작업 지시서 3의 4-6).
+ * 점수는 지금 시험 파일로 계산한 값이다. 정정 알림이 남아 있으면 "정답 정정으로 다시 채점됨"을, 정답 판 번호는 그대로인데
+ * 다른 시험 자료로 점수가 바뀌었으면 "다른 시험 자료로 다시 채점됨"을 붙인다(corrected 가 그 종류다).
  * 그 시험을 지금 시험 목록에서 찾지 못하면 null 이다(점수도 진행 상태도 알 수 없다, 작업 지시서 3의 5-2).
  */
-function summaryOf(session: Session): { score: string; corrected: boolean } | null {
+function summaryOf(session: Session): { score: string; corrected: 'correction' | 'rescored' | null } | null {
   const exam = findExam(session.examId);
   if (!exam) return null;
   const stage = stageOf(session, exam);
   if (stage === 'graded') {
     try {
       const grade = gradeExam(exam, session);
-      return { score: S.common.points(grade.actual), corrected: correctionNotice(correctionOf(session, exam, grade)) !== null };
+      const notice = correctionNotice(correctionOf(session, exam, grade));
+      return { score: S.common.points(grade.actual), corrected: notice === null ? null : notice.kind === 'differs' ? 'rescored' : 'correction' };
     } catch {
-      return { score: S.history.inProgress, corrected: false };
+      return { score: S.history.inProgress, corrected: null };
     }
   }
   // 저장해 둔 기록: 정답 공개 전이면 "정답 공개 전", 공개된 뒤에는 "채점 전".
-  if (stage === 'saved') return { score: exam.answerReleased ? S.history.readyToGrade : S.common.unreleased, corrected: false };
-  return { score: S.history.inProgress, corrected: false };
+  if (stage === 'saved') return { score: exam.answerReleased ? S.history.readyToGrade : S.common.unreleased, corrected: null };
+  return { score: S.history.inProgress, corrected: null };
 }
 
 export function History() {
@@ -128,16 +130,17 @@ export function History() {
               const detail = twins.length > 0 ? describe(s, `${formatDate(s.createdAt)} ${formatTime(s.createdAt, sameMinute)}`) : plain;
               // 정답 정정 알림을 아직 확인하지 않은 기록에는 표시를 붙이고 열기 버튼의 이름에도 넣는다.
               // 구분에 쓰는 글자(detail)와 지우기 버튼, 삭제 확인의 글자는 그대로 둔다.
-              const corrected = summaries.get(s.id)?.corrected === true;
+              const corrected = summaries.get(s.id)?.corrected ?? null;
+              const openLabel =
+                corrected === 'correction'
+                  ? S.history.openCorrected(title, detail)
+                  : corrected === 'rescored'
+                    ? S.history.openRescored(title, detail)
+                    : S.history.open(title, detail);
               return (
                 <li key={s.id} className="hitem" data-testid="history-item">
                   {exam ? (
-                    <button
-                      type="button"
-                      className="hitem__open"
-                      aria-label={corrected ? S.history.openCorrected(title, detail) : S.history.open(title, detail)}
-                      onClick={() => open(s)}
-                    >
+                    <button type="button" className="hitem__open" aria-label={openLabel} onClick={() => open(s)}>
                       <span className="inline">
                         <span className="strong">{title}</span>
                         {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
@@ -145,7 +148,7 @@ export function History() {
                       <span className="sub">{detail}</span>
                       {corrected ? (
                         <span className="sub" data-testid="history-corrected">
-                          {S.history.corrected}
+                          {corrected === 'rescored' ? S.history.rescored : S.history.corrected}
                         </span>
                       ) : null}
                     </button>

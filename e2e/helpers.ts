@@ -88,7 +88,15 @@ export const test = base.extend({
     });
     await use(page);
     const workers = context.serviceWorkers().length;
-    addMetric({ kind: 'network', test: testInfo.titlePath.slice(1).join(' > '), total: all.length, external, serviceWorkers: workers, permissionAsks });
+    addMetric({
+      kind: 'network',
+      project: testInfo.project.name,
+      test: testInfo.titlePath.slice(1).join(' > '),
+      total: all.length,
+      external,
+      serviceWorkers: workers,
+      permissionAsks,
+    });
     expect(external, '자기 주소 밖으로 나간 요청').toEqual([]);
     expect(workers, '등록된 서비스 워커').toBe(0);
     expect(permissionAsks, '알림 권한을 요청한 횟수').toBe(0);

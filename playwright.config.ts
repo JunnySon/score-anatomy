@@ -43,8 +43,13 @@ export default defineConfig({
     isMobile: true,
     locale: 'ko-KR',
     timezoneId: 'Asia/Seoul',
-    ...browserOptions(),
   },
+  // 화면 검사는 Chromium 으로 한다. WebKit(아이폰의 화면 엔진과 같은 계열)은 앱 시험용 묶음의 흐름 한 번만 돌리고,
+  // 설치돼 있을 때 verify 가 SA_WEBKIT=1 로 켠다(e2e/webkit.spec.ts).
+  projects: [
+    { name: 'chromium', testIgnore: /webkit\.spec\.ts/, use: { ...browserOptions() } },
+    ...(process.env.SA_WEBKIT === '1' ? [{ name: 'webkit', testMatch: /webkit\.spec\.ts/, use: { browserName: 'webkit' as const } }] : []),
+  ],
   // 4173: 배포하는 빌드(dist). 4174: 검증용 변형 빌드(정답만 다른 시험 A, 등급컷이 없는 시험 B).
   webServer: [
     {

@@ -16,7 +16,8 @@
     "noEmit": true,
     "types": ["vite/client", "node"],
     "paths": {
-      "#tools": ["./src/tools/full.ts"]
+      "#tools": ["./src/tools/full.ts"],
+      "#platform": ["./src/platform/web.ts"]
     }
   },
   "include": ["src", "e2e", "scripts", "vite.config.ts", "playwright.config.ts"]

@@ -35,14 +35,18 @@ function variantExams(): Plugin {
 }
 
 // 일반 빌드는 Pretendard dynamic subset을 프로젝트 안에 싣고,
-// 단일 HTML 빌드(mode single)는 시스템 글꼴만 쓴다.
+// 단일 HTML 빌드(mode single)와 앱용 묶음(mode app-test, app-release)은 시스템 글꼴만 쓴다.
+// 앱용 묶음은 scripts/app-bundles.mjs 가 이 두 모드로 빌드한 뒤 파일 하나로 묶는다.
 export default defineConfig(({ mode }) => {
-  const single = mode === 'single';
+  const app = mode === 'app-test' || mode === 'app-release';
+  const single = mode === 'single' || app;
   const variant = mode === 'variant';
   const fontFile = single ? './src/styles/font-system.css' : './src/styles/font-pretendard.css';
-  // 사용성 테스트 도구(진행자용 화면, 5행 방식, 준비 중 목록)를 싣는지. 일반 웹 빌드는 모두 싣는다(src/tools).
-  const withTools = true;
+  // 사용성 테스트 도구(진행자용 화면, 5행 방식, 준비 중 목록)를 싣는지. 앱 배포용 묶음만 싣지 않는다(src/tools).
+  const withTools = mode !== 'app-release';
   const toolsFile = withTools ? './src/tools/full.ts' : './src/tools/none.ts';
+  // 앱 껍데기와의 다리(src/platform/app.ts)는 앱용 묶음에만 싣는다. 일반 웹 빌드는 브라우저용(web.ts)이다.
+  const platformFile = app ? './src/platform/app.ts' : './src/platform/web.ts';
   return {
     base: './',
     plugins: [react(), ...(variant ? [variantExams()] : [])],
@@ -53,10 +57,11 @@ export default defineConfig(({ mode }) => {
       alias: {
         '#font': fileURLToPath(new URL(fontFile, import.meta.url)),
         '#tools': fileURLToPath(new URL(toolsFile, import.meta.url)),
+        '#platform': fileURLToPath(new URL(platformFile, import.meta.url)),
       },
     },
     build: {
-      outDir: single ? 'dist-single' : variant ? 'verify-out/dist-variant' : 'dist',
+      outDir: app ? `verify-out/build-${mode}` : single ? 'dist-single' : variant ? 'verify-out/dist-variant' : 'dist',
       assetsInlineLimit: 0,
       sourcemap: false,
       emptyOutDir: true,

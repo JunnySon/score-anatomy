@@ -7,12 +7,14 @@ import { join } from 'node:path';
 import { findForbidden, OUT, readText, rel, ROOT, walkTextFiles } from './lib.mjs';
 
 const groups = [
-  { name: '소스와 설정', files: walkTextFiles(ROOT, new Set(['node_modules', '.git', 'test-results', 'playwright-report', 'verify-out', 'release', 'dist', 'dist-single', 'docs'])) },
+  { name: '소스와 설정', files: walkTextFiles(ROOT, new Set(['node_modules', '.git', 'test-results', 'playwright-report', 'verify-out', 'release', 'dist', 'dist-single', 'docs', 'Web'])) },
   { name: '문서', files: [...walkTextFiles(join(ROOT, 'docs')), join(ROOT, 'README.md')].filter((f) => existsSync(f)) },
   { name: '빌드 결과(dist)', files: existsSync(join(ROOT, 'dist')) ? walkTextFiles(join(ROOT, 'dist')) : [] },
   { name: '단일 HTML(dist-single)', files: existsSync(join(ROOT, 'dist-single')) ? walkTextFiles(join(ROOT, 'dist-single')) : [] },
   // 전달용 파일(아티팩트용 파일, 단일 HTML 사본). 압축 파일은 이진 파일이라 여기서 보지 않는다.
   { name: '전달용 파일(release)', optional: true, files: existsSync(join(ROOT, 'release')) ? walkTextFiles(join(ROOT, 'release'), new Set()) : [] },
+  // 앱용 묶음(아이폰 앱 껍데기에 싣는 단일 HTML 두 가지와 manifest.json). 소스와 설정 묶음에서는 빼고 여기서 센다.
+  { name: '앱용 묶음(ios/ScoreAnatomy/Web)', files: existsSync(join(ROOT, 'ios/ScoreAnatomy/Web')) ? walkTextFiles(join(ROOT, 'ios/ScoreAnatomy/Web'), new Set()) : [] },
 ];
 
 const result = { groups: [], commits: { count: 0, hits: [], checked: false }, missing: [], ok: true };

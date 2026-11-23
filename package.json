@@ -10,6 +10,7 @@
     "build:single": "vite build --mode single && node scripts/inline-single.mjs",
     "build:variant": "vite build --mode variant",
     "build:artifact": "npm run build:single && node scripts/make-artifact.mjs",
+    "build:app": "node scripts/build-app.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "npm run build && npm run build:single && npm run build:variant && node scripts/make-artifact.mjs && playwright test --trace off",

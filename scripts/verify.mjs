@@ -148,13 +148,48 @@ const REQUIRED = {
   auditStates: 300, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 100, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
   e2eTests: 78, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 148, // 통과한 단위 테스트 수의 최소
+  unitTests: 149, // 통과한 단위 테스트 수의 최소
   leakChecks: 44, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
   leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
+  fitStates: 64, // 작은 화면에서 스크롤 없이 들어와야 하는 답 입력 상태 수의 최소
 };
-const auditsEnough = audits.length >= REQUIRED.auditStates;
+// 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
+const AUDIT_LISTS = [
+  'smallText',
+  'smallInputs',
+  'smallTargets',
+  'overlaps',
+  'tightGaps',
+  'obscured',
+  'outside',
+  'clippedSide',
+  'clippedText',
+  'forbidden',
+  'exclamation',
+  'emoji',
+  'lowContrast',
+  'lowEdges',
+  'semanticMisuse',
+];
+const AUDIT_NUMBERS = ['textCount', 'minFont', 'targetCount', 'contrastCount', 'edgeCount', 'accentRatio', 'heroCount', 'primaryCount'];
+const AUDIT_FLAGS = ['mustFit', 'scrolls'];
+const auditsComplete = audits.every(
+  (a) =>
+    AUDIT_LISTS.every((k) => Array.isArray(a[k])) &&
+    AUDIT_NUMBERS.every((k) => typeof a[k] === 'number' && Number.isFinite(a[k])) &&
+    AUDIT_FLAGS.every((k) => typeof a[k] === 'boolean'),
+);
+const leaksComplete =
+  leaks.every((l) => Array.isArray(l.leaks)) &&
+  leakControls.every((c) => Number.isInteger(c.caught27) && Number.isInteger(c.caught15)) &&
+  (leakDiff === null || (Number.isInteger(leakDiff.compared) && Array.isArray(leakDiff.differences)));
+const auditsEnough = audits.length >= REQUIRED.auditStates && auditsComplete;
 const smallEnough = smallAudits.length >= REQUIRED.smallStates;
+const fitEnough = fitAudits.length >= REQUIRED.fitStates;
+/** 최소 기준에 못 미쳤을 때 그 줄에 덧붙이는 말. */
+const short = (what, n, min, unit = '개') => (n >= min ? '' : `. ${what} ${n}${unit}${unit === '개' ? '가' : '이'} 최소 ${min}${unit}에 못 미침`);
+const incomplete = (ok, what) => (ok ? '' : `. ${what}에 결과 칸이 빠진 것이 있음`);
 // 건너뛴 테스트는 수에 넣지 않는다.
 const ranTests = tests.filter((t) => !t.skipped);
 const e2eEnough = ranTests.length >= REQUIRED.e2eTests;
@@ -178,6 +213,8 @@ const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.i
 const smallOk =
   allOk(smallTests) &&
   smallEnough &&
+  fitEnough &&
+  auditsComplete &&
   count(smallAudits, (a) => a.overlaps) === 0 &&
   count(smallAudits, (a) => a.obscured) === 0 &&
   count(smallAudits, (a) => a.clippedSide) === 0 &&
@@ -198,6 +235,7 @@ const screenTextOk = auditsEnough && count(audits, (a) => a.forbidden) === 0 && 
 const renderedContrastOk = auditsEnough && count(audits, (a) => a.lowContrast) === 0 && count(audits, (a) => a.lowEdges) === 0;
 const contrastOk = contrastRun.ok && contrast !== null && contrast.ok && renderedContrastOk;
 const leakOk =
+  leaksComplete &&
   leaks.length >= REQUIRED.leakChecks &&
   count(leaks, (l) => l.leaks) === 0 &&
   leakControls.length >= REQUIRED.leakControls &&
@@ -226,6 +264,11 @@ const failedSteps = [
 ]
   .filter(([, ok]) => !ok)
   .map(([name]) => name);
+
+// 여러 항목이 함께 쓰는 화면 검사 기록이 모자라거나 비어 있을 때 그 줄들에 덧붙이는 말.
+const stateNote = `${short('화면 상태', audits.length, REQUIRED.auditStates)}${incomplete(auditsComplete, '화면 검사 기록')}`;
+// 통과도 실패도 못 한 테스트 파일(읽다가 오류가 난 파일 등).
+const failedUnitFiles = unit ? (unit.numFailedTestSuites ?? unit.testResults.filter((f) => f.status === 'failed').length) : 0;
 
 const pad = (n) => String(n).padStart(2, '0');
 const now = new Date();
@@ -261,7 +304,7 @@ function buildReport(textOk, textResult) {
       '단위 테스트',
       unitOk,
       unit
-        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개, 건너뛴 것 ${skippedUnit.length}개. 꼭 있어야 하는 검산 예시와 추가 경우 테스트 ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인`
+        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개, 건너뛴 것 ${skippedUnit.length}개, 읽지 못했거나 실패한 테스트 파일 ${failedUnitFiles}개. 꼭 있어야 하는 검산 예시와 추가 경우 테스트 ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인${short('통과한 단위 테스트', unit.numPassedTests, REQUIRED.unitTests)}${unitRun.ok ? '' : '. 단위 테스트 실행이 실패로 끝남'}`
         : '결과 파일 없음',
     ],
     [
@@ -274,32 +317,32 @@ function buildReport(textOk, textResult) {
       '3',
       '작은 화면(360x640)',
       smallOk,
-      `화면 상태 ${smallAudits.length}개 검사(스크롤 없이 들어와야 하는 답 입력 상태 ${fitAudits.length}개 포함). 겹침 ${count(smallAudits, (a) => a.overlaps)}곳, 가려짐 ${count(smallAudits, (a) => a.obscured)}곳, 옆으로 잘림 ${count(smallAudits, (a) => a.clippedSide)}곳, 답 입력 화면에서 화면 밖 ${count(fitAudits, (a) => a.outside)}곳, 스크롤 생김 ${fitAudits.filter((a) => a.scrolls).length}곳`,
+      `화면 상태 ${smallAudits.length}개 검사(스크롤 없이 들어와야 하는 답 입력 상태 ${fitAudits.length}개 포함). 겹침 ${count(smallAudits, (a) => a.overlaps)}곳, 가려짐 ${count(smallAudits, (a) => a.obscured)}곳, 옆으로 잘림 ${count(smallAudits, (a) => a.clippedSide)}곳, 답 입력 화면에서 화면 밖 ${count(fitAudits, (a) => a.outside)}곳, 스크롤 생김 ${fitAudits.filter((a) => a.scrolls).length}곳${short('작은 화면 상태', smallAudits.length, REQUIRED.smallStates)}${short('스크롤 없이 들어와야 하는 상태', fitAudits.length, REQUIRED.fitStates)}${incomplete(auditsComplete, '화면 검사 기록')}`,
     ],
     [
       '4',
       '글자 크기 13px 이상',
       fontOk,
-      `화면 상태 ${audits.length}개에서 보이는 글자 ${sum(audits, (a) => a.textCount)}개 검사. 가장 작은 글자 ${min(audits, (a) => a.minFont)}px, 13px 미만 ${count(audits, (a) => a.smallText)}개, 16px 미만인 입력 칸 ${count(audits, (a) => a.smallInputs)}개`,
+      `화면 상태 ${audits.length}개에서 보이는 글자 ${sum(audits, (a) => a.textCount)}개 검사. 가장 작은 글자 ${min(audits, (a) => a.minFont)}px, 13px 미만 ${count(audits, (a) => a.smallText)}개, 16px 미만인 입력 칸 ${count(audits, (a) => a.smallInputs)}개${stateNote}`,
     ],
     [
       '5',
       '터치 영역 48x48px 이상',
       targetOk,
-      `조작 요소 ${sum(audits, (a) => a.targetCount)}개 검사. 가장 작은 폭 ${min(withTargets, (a) => a.minTargetW)}px, 가장 작은 높이 ${min(withTargets, (a) => a.minTargetH)}px, 48px 미만 ${count(audits, (a) => a.smallTargets)}개. 예외 없음(폭 360px 미만은 지원 범위 밖이라 검사 대상이 아님)`,
+      `조작 요소 ${sum(audits, (a) => a.targetCount)}개 검사. 가장 작은 폭 ${min(withTargets, (a) => a.minTargetW)}px, 가장 작은 높이 ${min(withTargets, (a) => a.minTargetH)}px, 48px 미만 ${count(audits, (a) => a.smallTargets)}개. 예외 없음(폭 360px 미만은 지원 범위 밖이라 검사 대상이 아님)${stateNote}`,
     ],
     [
       '6',
       '외부 요청 0건',
       netOk,
-      `테스트 ${net.length}개에서 요청 ${sum(net, (n) => n.total)}건 관찰, 자기 주소 밖 ${count(net, (n) => n.external)}건, 서비스 워커 ${sum(net, (n) => n.serviceWorkers ?? 0)}개${netComplete ? '' : `. 요청 기록이 빠졌거나 비어 있음(실제로 돈 화면 테스트 ${ranTests.length}개, 기록 ${net.length}개)`}. 단일 HTML은 요청 ${single ? single.requests : '?'}건(파일 자신뿐), 밖으로 ${single ? single.external : '?'}건`,
+      `테스트 ${net.length}개에서 요청 ${sum(net, (n) => n.total)}건 관찰, 자기 주소 밖 ${count(net, (n) => n.external)}건, 서비스 워커 ${sum(net, (n) => n.serviceWorkers ?? 0)}개${netComplete ? '' : `. 요청 기록이 빠졌거나 비어 있음(실제로 돈 화면 테스트 ${ranTests.length}개, 기록 ${net.length}개)`}${short('실제로 돈 화면 테스트', ranTests.length, REQUIRED.e2eTests)}. 단일 HTML은 요청 ${single ? single.requests : '?'}건(파일 자신뿐), 밖으로 ${single ? single.external : '?'}건`,
     ],
     [
       '7',
       '금지 문자, 느낌표, 이모지',
       textOk && screenTextOk,
       textResult
-        ? `${textResult.groups.map((g) => `${g.name} ${g.files}개에서 ${g.hits.length}곳`).join(', ')}, 커밋 메시지 ${textResult.commits.checked ? `${textResult.commits.count}개에서 ${textResult.commits.hits.length}곳` : '읽지 못함'}. 그려진 화면 상태 ${audits.length}개에서 금지 문자 ${count(audits, (a) => a.forbidden)}, 느낌표 ${count(audits, (a) => a.exclamation)}, 이모지 ${count(audits, (a) => a.emoji)}`
+        ? `${textResult.groups.map((g) => `${g.name} ${g.files}개에서 ${g.hits.length}곳`).join(', ')}, 커밋 메시지 ${textResult.commits.checked ? `${textResult.commits.count}개에서 ${textResult.commits.hits.length}곳` : '읽지 못함'}. 그려진 화면 상태 ${audits.length}개에서 금지 문자 ${count(audits, (a) => a.forbidden)}, 느낌표 ${count(audits, (a) => a.exclamation)}, 이모지 ${count(audits, (a) => a.emoji)}${stateNote}`
         : '결과 파일 없음',
     ],
     [
@@ -307,14 +350,14 @@ function buildReport(textOk, textResult) {
       '색 대비',
       contrastOk,
       contrast
-        ? `색 값 계산: 글자 조합 최저 ${min(contrast.rows.filter((r) => r.min === 4.5), (r) => r.ratio).toFixed(2)}:1(기준 4.5:1), 테두리와 윤곽 최저 ${min(contrast.rows.filter((r) => r.min === 3), (r) => r.ratio).toFixed(2)}:1(기준 3:1), 조합 ${contrast.rows.length}개 가운데 실패 ${contrast.rows.filter((r) => !r.pass).length}개. 그려진 글자 ${sum(audits, (a) => a.contrastCount)}개의 실제 대비 최저 ${min(withText, (a) => a.minContrast)}:1(4.5:1 미만 ${count(audits, (a) => a.lowContrast)}개), 그려진 입력 테두리와 그래프 윤곽 ${sum(audits, (a) => a.edgeCount)}개의 실제 대비 최저 ${min(withEdges, (a) => a.minEdgeContrast)}:1(3:1 미만 ${count(audits, (a) => a.lowEdges)}개)`
+        ? `색 값 계산: 글자 조합 최저 ${min(contrast.rows.filter((r) => r.min === 4.5), (r) => r.ratio).toFixed(2)}:1(기준 4.5:1), 테두리와 윤곽 최저 ${min(contrast.rows.filter((r) => r.min === 3), (r) => r.ratio).toFixed(2)}:1(기준 3:1), 조합 ${contrast.rows.length}개 가운데 실패 ${contrast.rows.filter((r) => !r.pass).length}개. 그려진 글자 ${sum(audits, (a) => a.contrastCount)}개의 실제 대비 최저 ${min(withText, (a) => a.minContrast)}:1(4.5:1 미만 ${count(audits, (a) => a.lowContrast)}개), 그려진 입력 테두리와 그래프 윤곽 ${sum(audits, (a) => a.edgeCount)}개의 실제 대비 최저 ${min(withEdges, (a) => a.minEdgeContrast)}:1(3:1 미만 ${count(audits, (a) => a.lowEdges)}개)${stateNote}`
         : '결과 파일 없음',
     ],
     [
       '9',
       '정답 노출',
       leakOk,
-      `정답만 다른 두 빌드의 화면 ${leakDiff ? leakDiff.compared : 0}곳을 통째로 견줌: 다른 곳 ${leakDiff ? leakDiff.differences.length : '?'}곳. 화면 글자와 속성을 읽는 검사 ${leaks.length}번: 노출 ${count(leaks, (l) => l.leaks)}건. 대조 검사에서 "정답 보기"를 누른 뒤에는 두 검사 모두 노출을 잡아냄`,
+      `정답만 다른 두 빌드의 화면 ${leakDiff ? leakDiff.compared : 0}곳을 통째로 견줌: 다른 곳 ${leakDiff ? leakDiff.differences.length : '?'}곳. 화면 글자와 속성을 읽는 검사 ${leaks.length}번: 노출 ${count(leaks, (l) => l.leaks)}건. 대조 검사에서 "정답 보기"를 누른 뒤에는 두 검사 모두 노출을 잡아냄${short('화면을 읽는 검사', leaks.length, REQUIRED.leakChecks, '번')}${short('두 빌드를 견준 화면', leakDiff ? leakDiff.compared : 0, REQUIRED.leakCompared, '곳')}${short('대조 검사', leakControls.length, REQUIRED.leakControls, '번')}${incomplete(leaksComplete, '정답 노출 검사 기록')}`,
     ],
     ['10', '화면 캡처', shotsOk, `밝은 화면 ${shots.light}장, 어두운 화면 ${shots.dark}장(390x844, 2배 해상도), 작은 화면 ${shots.small}장(360x640). 기대한 장수는 묶음마다 ${expectedShots}장`],
   ];
@@ -325,9 +368,9 @@ function buildReport(textOk, textResult) {
   say();
   const skippedTests = tests.filter((t) => t.skipped);
   say(
-    failed.length === 0 && otherFailed.length === 0 && failedSteps.length === 0
+    failed.length === 0 && otherFailed.length === 0 && failedSteps.length === 0 && skippedUnit.length === 0
       ? '결론: 10장의 자동 검증 10개 항목이 모두 통과했어요.'
-      : `결론: 실패한 항목이 있어요. 항목 ${failed.length}개, 테스트 ${otherFailed.length}개(건너뛴 것 ${skippedTests.length}개 포함), 실패로 끝난 실행 단계 ${failedSteps.length}개.`,
+      : `결론: 실패한 항목이 있어요. 항목 ${failed.length}개, 화면 테스트 ${otherFailed.length}개(건너뛴 것 ${skippedTests.length}개 포함), 건너뛴 단위 테스트 ${skippedUnit.length}개, 실패로 끝난 실행 단계 ${failedSteps.length}개.`,
   );
   say();
   say('이 문서는 `npm run verify`가 실행할 때마다 새로 써요. 손으로 고치지 않아요.');
@@ -351,6 +394,7 @@ function buildReport(textOk, textResult) {
     for (const t of otherFailed) say(`- 테스트${t.skipped ? '(건너뜀)' : ''}: ${t.title}`);
     for (const name of missingUnit) say(`- 없거나 통과하지 못한 단위 테스트: ${name}`);
     for (const t of skippedUnit) say(`- 건너뛴 단위 테스트: ${t.fullName}`);
+    if (unit) for (const f of unit.testResults.filter((x) => x.status === 'failed' && x.assertionResults.length === 0)) say(`- 읽지 못한 단위 테스트 파일: ${f.name.replace(ROOT, '').replace(/^[\\/]/, '')}`);
     for (const name of failedSteps) say(`- 실패로 끝난 실행 단계: ${name}`);
     say();
   }
@@ -490,7 +534,9 @@ function buildReport(textOk, textResult) {
   say();
   say('만든 쪽이 캡처를 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
   say();
-  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지면 해당 항목이 실패로 적혀요.`);
+  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 작은 화면에서 스크롤 없이 들어와야 하는 상태 ${REQUIRED.fitStates}개 이상(이번 ${fitAudits.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지거나 검사 기록에 결과 칸이 비어 있으면 해당 항목이 실패로 적혀요.`);
+  say();
+  say('화면 검사는 실행할 때마다 지금 폴더의 빌드로 서버를 새로 띄워요. 쓰려는 포트(기본 4173, 4174)에 이미 떠 있는 서버가 있으면 그 서버를 다시 쓰지 않고 실패로 끝나요.');
   say();
 
   say('## 자동으로 확인하지 못하는 것');

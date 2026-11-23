@@ -45,6 +45,20 @@ export function formatTime(iso: string, withSeconds = false): string {
   return withSeconds ? `${base} ${d.getSeconds()}초` : base;
 }
 
+/** 날짜("2030년 1월 2일"). 연, 월, 일은 날짜 문자열을 잘라 얻은 값이다(src/logic/dates.ts). 기기의 시간대를 쓰지 않는다. */
+export function dateText(y: number, m: number, d: number): string {
+  return `${y}년 ${m}월 ${d}일`;
+}
+
+/**
+ * 한국 시간의 시각("오후 8시 10분"). 시와 분은 시각 문자열을 잘라 얻은 값이다(src/logic/dates.ts).
+ * 오전과 오후로 나눠 적고, 분이 0이면 분을 빼고 "오후 8시"로 적는다. 0시는 "오전 0시", 12시는 "오후 12시"다.
+ */
+export function clockText(h: number, mi: number): string {
+  const hour = `${h < 12 ? '오전' : '오후'} ${h > 12 ? h - 12 : h}시`;
+  return mi === 0 ? hour : `${hour} ${mi}분`;
+}
+
 export const S = {
   appName: '점수 해부',
 
@@ -93,7 +107,7 @@ export const S = {
   exams: {
     title: '어떤 시험을 넣을까요?',
     /** 시험 시행일. 날짜 문자열을 연, 월, 일로 잘라 쓴다(src/logic/dates.ts). */
-    held: (y: number, m: number, d: number) => `${y}년 ${m}월 ${d}일 시행`,
+    held: (y: number, m: number, d: number) => `${dateText(y, m, d)} 시행`,
     gradedQ: '채점은 아직인가요?',
     gradedOptions: { not_yet: '아직 안 했어요', already: '이미 했어요' } as Record<GradedBefore, string>,
     seenQ: '이 시험지, 전에 풀어 본 적 있나요?',

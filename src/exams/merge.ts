@@ -1,6 +1,6 @@
 import { compareYmd, parseYmdHm } from '../logic/dates';
 import type { Exam } from '../types';
-import { checkExam, revOf } from './validate';
+import { answersRevOf, checkExam, choicesOf, revOf } from './validate';
 
 // 넘겨받은 시험 자료(다리 규격 2의 remote)를 읽고 묶음 안 시험과 합친다(작업 지시서 3의 5-2). 순수 함수만 둔다.
 // 화면, 기록 저장소, 플랫폼(#platform)을 가져오지 않는다. 버린 것의 이유는 warn 으로만 남긴다(기본은 개발자 콘솔의 경고).
@@ -86,11 +86,26 @@ function nameOf(raw: unknown, index: number): string {
 }
 
 /**
+ * 두 판의 문항 구성(문항 수와, 차례대로 문항의 no, kind, 5지선다의 보기 수)이 같은지.
+ * 기록의 답과 표시는 문항 번호로 붙고 답 입력 화면의 커서는 문항의 차례라서, 구성이 다른 판으로 바꾸면 답이 다른 문항에 붙는다.
+ */
+export function sameStructure(a: Exam, b: Exam): boolean {
+  if (a.items.length !== b.items.length) return false;
+  return a.items.every((it, i) => {
+    const other = b.items[i]!;
+    return it.no === other.no && it.kind === other.kind && (it.kind !== 'mc' || choicesOf(it) === choicesOf(other));
+  });
+}
+
+/**
  * 묶음 안 시험과 넘겨받은 시험(remote.exams)을 합친다(작업 지시서 3의 5-2). 순수 함수이고 이유는 warn 으로만 남긴다. 던지지 않는다.
  * - 넘겨받은 시험은 하나씩 묶음 안 시험 파일과 같은 검사(src/exams/validate.ts 의 checkExam)를 거친다.
  *   통과하지 못한 시험은 버리고 id 와 이유를 남기고, 나머지는 쓴다.
  * - 넘겨받은 목록 안에서 id 가 겹치면 앞의 것을 쓰고 뒤의 것은 버린다.
  * - 묶음 안 시험과 id 가 같으면 판 번호(rev, 없으면 1)가 큰 쪽을 쓰고, 같으면 넘겨받은 쪽을 쓴다. 쓰는 판은 묶음 안 시험의 자리에 둔다.
+ *   다만 문항 구성(sameStructure)이 묶음 안 시험과 다른 넘겨받은 판은 버리고 이유를 남긴다. 발행 도구는 묶음 안 시험과 같은 id 를
+ *   거부하지만(scripts/exams/check.ts), 그 규칙을 어긴 자료가 와도 저장한 답이 다른 문항이나 다른 시험에 붙지 않게 한다.
+ *   쓰는 판의 정답 판 번호(answersRev)가 쓰지 않는 판보다 작으면 알린다(점수가 채점 흔적과 다르면 화면이 알린다, src/state/session.ts).
  * - 묶음에 없는 시험은 묶음 안 시험보다 앞에 넘겨받은 차례대로 두고, 그 뒤 sortExams 로 정렬한다
  *   (시행일이 있는 시험은 날짜 순서로 위에, 시행일이 없는 넘겨받은 시험은 시행일이 없는 예시 시험보다 위).
  * - 넘겨받은 것이 없으면(null, undefined, 빈 배열) 묶음 안 시험 그대로다.
@@ -115,8 +130,25 @@ export function mergeExams(bundled: readonly Exam[], remoteExams: readonly unkno
     }
     seen.add(exam.id);
     const mine = bundledById.get(exam.id);
-    if (!mine) fresh.push(exam);
-    else if (revOf(exam) >= revOf(mine)) replaced.set(exam.id, exam);
+    if (!mine) {
+      fresh.push(exam);
+      continue;
+    }
+    if (!sameStructure(mine, exam)) {
+      warn(`넘겨받은 ${nameOf(raw, i)}을 쓰지 않았어요.`, [
+        '앱에 든 같은 id 의 시험과 문항 구성(문항 수, no, kind, choices)이 달라요. 저장한 답이 다른 문항에 붙지 않게 앱에 든 시험을 써요.',
+      ]);
+      continue;
+    }
+    const takeRemote = revOf(exam) >= revOf(mine);
+    if (takeRemote) replaced.set(exam.id, exam);
+    const used = takeRemote ? exam : mine;
+    const other = takeRemote ? mine : exam;
+    if (answersRevOf(used) < answersRevOf(other)) {
+      warn(`넘겨받은 ${nameOf(raw, i)}과 앱에 든 같은 id 의 시험은 정답 판 번호가 어긋나요.`, [
+        `판 번호(rev)가 ${takeRemote ? '크거나 같은 넘겨받은' : '큰 앱에 든'} 판을 썼는데, 그 판의 answersRev(${answersRevOf(used)})가 다른 판(${answersRevOf(other)})보다 작아요.`,
+      ]);
+    }
   }
   return sortExams([...fresh, ...bundled.map((e) => replaced.get(e.id) ?? e)]);
 }

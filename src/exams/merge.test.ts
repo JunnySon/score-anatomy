@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Exam } from '../types';
-import { mergeExams, parseRemote, sortExams, type MergeWarn } from './merge';
+import { mergeExams, parseRemote, sameStructure, sortExams, type MergeWarn } from './merge';
 import rawA from './sample-a.json';
 import { parseExam, validateExam } from './validate';
 
@@ -135,6 +135,58 @@ describe('넘겨받은 시험 합치기(mergeExams, 작업 지시서 3의 5-2)',
     expect(mergeExams([bundled2], [testExam('test-remote-a', '테스트 전용 시험 A 넘겨받은 판')], warn)[0]).toBe(bundled2);
     // 판이 작은 것은 틀린 자료가 아니라서 알리지 않는다.
     expect(warned).toEqual([]);
+  });
+
+  it('묶음 안 시험과 id 가 같아도 문항 구성(문항 수, no, kind, choices)이 다른 넘겨받은 판은 rev 가 커도 버리고 이유를 남긴다', () => {
+    // 별도 검토 A2: 묶음 안 시험과 같은 id 로 구성이 다른 판이 오면, 저장한 답이 다른 문항이나 다른 시험에 붙었다.
+    const variants: [string, Exam][] = [
+      ['보기 수', testExam('test-remote-a', '테스트 전용 시험 A 보기 수', { rev: 2, items: examA.items.map((it) => (it.no === 7 ? { ...it, choices: 4, answer: 4 } : it)) })],
+      ['문항 수', testExam('test-remote-a', '테스트 전용 시험 A 문항 수', { rev: 2, items: examA.items.filter((it) => it.no !== 21) })],
+      [
+        'kind',
+        testExam('test-remote-a', '테스트 전용 시험 A kind', {
+          rev: 2,
+          items: examA.items.map((it) => (it.no === 22 ? { no: 22, kind: 'mc' as const, points: it.points, answer: 3, typeId: it.typeId } : it)),
+        }),
+      ],
+    ];
+    for (const [name, changed] of variants) {
+      const { warned, warn } = collector();
+      const got = mergeExams([bundledA, bundledB], [changed], warn);
+      expect(got[0], name).toBe(bundledA);
+      expect(warned, name).toEqual([
+        {
+          message: '넘겨받은 1번째 시험(id: test-remote-a)을 쓰지 않았어요.',
+          reasons: ['앱에 든 같은 id 의 시험과 문항 구성(문항 수, no, kind, choices)이 달라요. 저장한 답이 다른 문항에 붙지 않게 앱에 든 시험을 써요.'],
+        },
+      ]);
+    }
+    // 구성이 같으면(제목과 정답만 다름) 지금처럼 rev 가 큰 넘겨받은 판을 쓴다.
+    const sameShape = testExam('test-remote-a', '테스트 전용 시험 A 정답 판', { rev: 2, items: examA.items.map((it) => (it.no === 1 ? { ...it, answer: 4 } : it)) });
+    expect(sameStructure(bundledA, sameShape)).toBe(true);
+    expect(mergeExams([bundledA], [sameShape])[0]).toBe(sameShape);
+  });
+
+  it('판 번호(rev)로 고른 판의 정답 판 번호(answersRev)가 쓰지 않은 판보다 작으면 알린다', () => {
+    // 별도 검토 B1: 정정 판(answersRev 2)으로 채점한 뒤 rev 는 크지만 정답은 정정 전인 판이 쓰이면 점수가 알림 없이 바뀌었다.
+    const corrected = testExam('test-remote-a', '테스트 전용 시험 A 정정 판', { rev: 2, answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' });
+    const newerOld = testExam('test-remote-a', '테스트 전용 시험 A 묶음 판 3', { rev: 3 });
+    const a = collector();
+    expect(mergeExams([newerOld], [corrected], a.warn)[0]).toBe(newerOld);
+    expect(a.warned).toEqual([
+      {
+        message: '넘겨받은 1번째 시험(id: test-remote-a)과 앱에 든 같은 id 의 시험은 정답 판 번호가 어긋나요.',
+        reasons: ['판 번호(rev)가 큰 앱에 든 판을 썼는데, 그 판의 answersRev(1)가 다른 판(2)보다 작아요.'],
+      },
+    ]);
+    const b = collector();
+    const remoteOld = testExam('test-remote-a', '테스트 전용 시험 A 넘겨받은 판 3', { rev: 3 });
+    expect(mergeExams([corrected], [remoteOld], b.warn)[0]).toBe(remoteOld);
+    expect(b.warned.map((w) => w.reasons)).toEqual([['판 번호(rev)가 크거나 같은 넘겨받은 판을 썼는데, 그 판의 answersRev(1)가 다른 판(2)보다 작아요.']]);
+    // 정답 판 번호가 같거나 큰 쪽을 쓰면 알리지 않는다.
+    const c = collector();
+    mergeExams([bundledA], [corrected], c.warn);
+    expect(c.warned).toEqual([]);
   });
 
   it('검사를 통과하지 못한 시험만 버리고 id 와 이유를 남기며 나머지는 쓴다', () => {

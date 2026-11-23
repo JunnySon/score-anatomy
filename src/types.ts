@@ -59,6 +59,19 @@ export interface Exam {
   types: Record<string, ExamType>;
 }
 
+/**
+ * 풀이 잠금 달력의 항목(작업 지시서 3의 4-5). 달력은 이 항목의 배열이다. 검사는 src/exams/validate.ts 의 checkLocks 로 한다.
+ * start 와 end 는 "YYYY-MM-DDTHH:mm"(한국 시간)이고 같은 날이며 start 가 end 보다 앞선다. 구간은 start 이상 end 미만이다.
+ */
+export interface LockEntry {
+  /** 항목의 이름. 묶음 안 달력과 넘겨받은 달력에 같은 id 가 있으면 넘겨받은 항목을 쓴다. */
+  id: string;
+  /** 사람이 보는 메모. 화면에 쓰지 않는다. */
+  label: string;
+  start: string;
+  end: string;
+}
+
 /** 넣은 답. 숫자이거나 안 풂. 키가 없으면 미입력이다. */
 export type AnswerValue = number | 'skip';
 export type Answers = Record<number, AnswerValue>;

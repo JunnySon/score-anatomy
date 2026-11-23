@@ -1,8 +1,8 @@
-import { isValidYmd, parseAsOf } from '../logic/dates';
-import type { Exam, ExamItem } from '../types';
+import { isValidYmd, parseAsOf, parseYmdHm } from '../logic/dates';
+import type { Exam, ExamItem, LockEntry } from '../types';
 
-// 시험 파일(JSON)의 검사와 선택 칸의 기본값.
-// 묶음 안 시험, 껍데기가 넘겨준 시험, 발행 도구가 모두 이 규칙을 쓴다(작업 지시서 3의 5-2, 6-4). 규칙을 두 벌로 만들지 않는다.
+// 시험 파일(JSON)과 풀이 잠금 달력의 검사, 시험 파일 선택 칸의 기본값.
+// 묶음 안 자료, 껍데기가 넘겨준 자료, 발행 도구가 모두 이 규칙을 쓴다(작업 지시서 3의 4-5, 5-2, 6-4). 규칙을 두 벌로 만들지 않는다.
 // 넘겨받은 자료는 모양이 크게 틀릴 수 있어서, 검사는 어떤 값을 받아도 던지지 않고 오류 문장을 돌려준다.
 
 export const SHORT_MIN = 0;
@@ -258,4 +258,88 @@ export function checkExam(raw: unknown): ExamCheck {
 /** 검사를 통과한 시험만 돌려준다. 통과하지 못하면 null. cuts가 null이면 없는 것으로 본다. 던지지 않는다. */
 export function parseExam(raw: unknown): Exam | null {
   return checkExam(raw).exam;
+}
+
+// 풀이 잠금 달력(작업 지시서 3의 4-5). 항목의 배열이고, 항목은 id, label, start, end 다.
+// 판정과 두 달력 합치기는 src/logic/lock.ts 에 있다.
+
+/** 빈칸뿐이 아닌 글자인지. */
+function isFilled(v: unknown): v is string {
+  return typeof v === 'string' && v.trim() !== '';
+}
+
+function lockEntryErrors(raw: unknown, where: string): string[] {
+  if (!isRecord(raw)) return [`${where}이 객체가 아니에요.`];
+  const errors: string[] = [];
+  if (!isFilled(raw.id)) errors.push(`${where}: id 값이 비어 있어요.`);
+  // label 은 화면에 쓰지 않지만, 사람이 달력을 읽고 고칠 때 항목을 알아볼 수 있게 비우지 않는다.
+  if (!isFilled(raw.label)) errors.push(`${where}: label 값이 비어 있어요.`);
+  const start = parseYmdHm(raw.start);
+  const end = parseYmdHm(raw.end);
+  if (!start) errors.push(`${where}: start는 2030-01-02T08:40 같은, 실제로 있는 날짜와 시각(한국 시간)이어야 해요.`);
+  if (!end) errors.push(`${where}: end는 2030-01-02T17:45 같은, 실제로 있는 날짜와 시각(한국 시간)이어야 해요.`);
+  if (start && end) {
+    if (start.y !== end.y || start.m !== end.m || start.d !== end.d) errors.push(`${where}: start와 end는 같은 날이어야 해요.`);
+    // 같은 모양의 글자는 글자 순서가 곧 시각 순서다(src/logic/dates.ts 의 compareYmd).
+    if ((raw.start as string) >= (raw.end as string)) errors.push(`${where}: start가 end보다 앞서야 해요.`);
+  }
+  return errors;
+}
+
+/**
+ * 잠금 달력의 항목 하나를 검사한다. id 와 label 은 빈칸뿐이 아닌 글자, start 와 end 는 "YYYY-MM-DDTHH:mm"(한국 시간)이고
+ * 같은 날이며 start 가 end 보다 앞서야 한다. 다른 칸은 보지 않는다. where 는 오류 문장 앞에 붙이는 이름이다. 던지지 않는다.
+ */
+export function validateLockEntry(raw: unknown, where = '잠금 항목'): string[] {
+  try {
+    return lockEntryErrors(raw, where);
+  } catch {
+    return [`${where}을 끝까지 검사하지 못했어요.`];
+  }
+}
+
+/** 형식에 맞는 잠금 항목인지. */
+export function isLockEntry(raw: unknown): raw is LockEntry {
+  return validateLockEntry(raw).length === 0;
+}
+
+/** 잠금 달력의 검사 결과. entries 는 쓸 수 있는 항목(받은 객체 그대로), errors 는 버린 것의 이유다. */
+export interface LockCheck {
+  entries: LockEntry[];
+  errors: string[];
+}
+
+/**
+ * 잠금 달력을 검사해 쓸 수 있는 항목과 버린 이유를 돌려준다. 던지지 않는다.
+ * 달력이 배열이 아니면 쓸 수 있는 항목이 없다. 형식이 틀린 항목과, 앞에서 받은 항목과 id 가 겹치는 항목은 버린다.
+ * 항목끼리 시간이 겹치거나 이어 붙는 것은 받는다.
+ */
+export function checkLocks(raw: unknown): LockCheck {
+  if (!Array.isArray(raw)) return { entries: [], errors: ['잠금 달력은 항목의 배열이어야 해요. 항목이 없으면 빈 배열([])로 둬요.'] };
+  const entries: LockEntry[] = [];
+  const errors: string[] = [];
+  try {
+    const items: unknown[] = raw;
+    for (let i = 0; i < items.length; i += 1) {
+      const entry = items[i];
+      const where = `${i + 1}번째 항목`;
+      const found = validateLockEntry(entry, where);
+      if (found.length > 0) {
+        errors.push(...found);
+      } else if (entries.some((e) => e.id === (entry as LockEntry).id)) {
+        errors.push(`${where}: 앞의 항목과 id가 겹쳐요(${(entry as LockEntry).id}).`);
+      } else {
+        entries.push(entry as LockEntry);
+      }
+    }
+  } catch {
+    // 위 검사가 미처 막지 못한 모양에서 멈추면 그때까지 확인한 항목만 쓴다.
+    errors.push('잠금 달력을 끝까지 검사하지 못했어요.');
+  }
+  return { entries, errors };
+}
+
+/** 잠금 달력을 검사한다. 문제가 있으면 사람이 읽을 수 있는 오류 목록을 돌려준다. 발행 도구는 오류가 하나라도 있으면 발행하지 않는다. */
+export function validateLocks(raw: unknown): string[] {
+  return checkLocks(raw).errors;
 }

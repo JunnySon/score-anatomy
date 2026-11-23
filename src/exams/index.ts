@@ -1,5 +1,7 @@
 import { compareYmd } from '../logic/dates';
-import type { Exam } from '../types';
+import { mergeLocks } from '../logic/lock';
+import type { Exam, LockEntry } from '../types';
+import rawLocks from './locks.json';
 import rawA from './sample-a.json';
 import rawB from './sample-b.json';
 import rawC from './sample-c.json';
@@ -35,3 +37,10 @@ export function findExam(id: string | null | undefined): Exam | null {
 }
 
 export const SAMPLE_EXAM_ID = 'sample-a';
+
+/**
+ * 풀이 잠금 달력(작업 지시서 3의 4-5). 묶음 안 달력(locks.json)은 빈 배열로 시작하고, 실제 날짜와 시각은
+ * 주관 기관 공고를 확인한 사람이 넣는다. 넘겨받은 달력(다리 규격 2)은 2부에서 함께 합친다.
+ * 형식이 틀린 항목은 버리고 개발자 콘솔에 경고로 남긴다(src/logic/lock.ts 의 mergeLocks).
+ */
+export const LOCKS: LockEntry[] = mergeLocks(rawLocks, null);

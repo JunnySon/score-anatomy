@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { APP_WEB_DIR, BRIDGE_VERSION, BUNDLES, buildAll, INPUTS as APP_INPUTS } from './app-bundles.mjs';
+import { APP_WEB_DIR, BRIDGE_MAX, BRIDGE_VERSION, BUNDLES, buildAll, INPUTS as APP_INPUTS } from './app-bundles.mjs';
 import { findForbidden, OUT, ROOT } from './lib.mjs';
 
 const require = createRequire(import.meta.url);
@@ -440,6 +440,7 @@ const manifestOk =
   appCheck.manifest !== null &&
   appCheck.manifest.version === appCheck.pkgVersion &&
   appCheck.manifest.bridge === BRIDGE_VERSION &&
+  appCheck.manifest.bridgeMax === BRIDGE_MAX &&
   appCheck.dirtyFlag === false &&
   appCheck.tracked &&
   appCheck.clean &&
@@ -587,7 +588,7 @@ function buildReport(textOk, textResult) {
       '앱용 묶음이 지금 코드로 다시 만든 것과 같음',
       appBuildOk,
       appCheck.ran
-        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts ${BRIDGE_VERSION}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
+        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 bridge ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts 의 BRIDGE_VERSION ${BRIDGE_VERSION}), bridgeMax ${appCheck.manifest?.bridgeMax ?? '없음'}(BRIDGE_MAX ${BRIDGE_MAX}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
         : `만들지 못함: ${appCheck.error ?? '알 수 없음'}`,
     ],
     [

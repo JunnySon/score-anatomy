@@ -9,13 +9,26 @@ import { join } from 'node:path';
 import { inlineDir } from './inline.mjs';
 import { ROOT } from './lib.mjs';
 
-/** 다리 규격 번호. 웹 코드와 어긋나지 않게 src/platform/app.ts 의 BRIDGE_VERSION 한 곳에서 읽는다. */
-export const BRIDGE_VERSION = (() => {
+/**
+ * 다리 규격 번호 두 가지. 웹 코드와 어긋나지 않게 src/platform/app.ts 한 곳에서 읽는다.
+ * 그 파일의 `export const BRIDGE_VERSION = 1;` 모양 줄을 정규식으로 읽으므로 줄 모양을 바꾸면 여기서 멈춘다.
+ */
+const bridgeNumbers = (() => {
   const src = readFileSync(join(ROOT, 'src/platform/app.ts'), 'utf8');
-  const m = src.match(/^export const BRIDGE_VERSION = (\d+);$/m);
-  if (!m) throw new Error('src/platform/app.ts 에서 BRIDGE_VERSION 을 찾지 못했어요.');
-  return Number(m[1]);
+  const read = (name) => {
+    const m = src.match(new RegExp(`^export const ${name} = (\\d+);$`, 'm'));
+    if (!m) throw new Error(`src/platform/app.ts 에서 ${name} 줄을 찾지 못했어요.`);
+    return Number(m[1]);
+  };
+  const version = read('BRIDGE_VERSION');
+  const max = read('BRIDGE_MAX');
+  if (max < version) throw new Error(`src/platform/app.ts 의 BRIDGE_MAX 는 BRIDGE_VERSION 보다 작을 수 없어요(지금 ${max}, ${version}).`);
+  return { version, max };
 })();
+/** 이 묶음이 돌아가는 가장 낮은 다리 규격 번호(src/platform/app.ts 의 BRIDGE_VERSION). manifest.json 의 bridge 에 적는다. */
+export const BRIDGE_VERSION = bridgeNumbers.version;
+/** 웹이 아는 가장 높은 다리 규격 번호(src/platform/app.ts 의 BRIDGE_MAX). manifest.json 의 bridgeMax 에 적는다. */
+export const BRIDGE_MAX = bridgeNumbers.max;
 /** 커밋하는 묶음의 자리. 맥에서는 Node 없이 이 파일만 쓴다. */
 export const APP_WEB_DIR = join(ROOT, 'ios/ScoreAnatomy/Web');
 export const BUNDLES = ['app-test', 'app-release'];
@@ -78,7 +91,10 @@ function git(args) {
 /** 묶음에 들어가는 것(이 가운데 커밋하지 않은 바뀜이 있으면 manifest 에 dirty 로 적는다. verify 11번도 쓴다). */
 export const INPUTS = ['src', 'index.html', 'vite.config.ts', 'tsconfig.json', 'package.json', 'package-lock.json', 'scripts/inline.mjs', 'scripts/app-bundles.mjs'];
 
-/** manifest.json: 묶음을 만든 때의 커밋, package.json 의 버전, 다리 규격 번호, 파일별 SHA-256. */
+/**
+ * manifest.json: 묶음을 만든 때의 커밋, package.json 의 버전, 다리 규격 번호(bridge 는 이 묶음이 돌아가는 가장 낮은 규격,
+ * bridgeMax 는 웹이 아는 가장 높은 규격), 파일별 SHA-256. 칸은 docs/앱_다리_규격.md 7장의 표에 있다.
+ */
 export function writeManifest(outRoot, files) {
   const status = git(['status', '--porcelain', '--', ...INPUTS]);
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
@@ -88,6 +104,7 @@ export function writeManifest(outRoot, files) {
     dirty: status === null ? null : status !== '',
     version: pkg.version,
     bridge: BRIDGE_VERSION,
+    bridgeMax: BRIDGE_MAX,
     files,
   };
   writeFileSync(join(outRoot, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

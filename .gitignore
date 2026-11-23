@@ -7,3 +7,10 @@ playwright-report/
 verify-out/
 *.log
 .DS_Store
+
+# iOS 빌드 산출물과 내려받은 도구(커밋하지 않음)
+ios/build/
+ios/.tools/
+*.xcresult
+xcuserdata/
+ios/Config/Signing.local.xcconfig

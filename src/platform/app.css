@@ -1,0 +1,26 @@
+/* 아이폰 앱 안에서만 쓰는 모양(html.sa-app). 앱용 묶음에만 들어간다(src/platform/app.ts). */
+
+/* 길게 눌렀을 때 글자 선택이나 미리보기가 떠서 키와 버튼 조작을 방해하지 않게 한다. */
+.sa-app body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* 글을 적는 칸과 좌표 목록처럼 골라서 복사할 수 있어야 하는 곳은 그대로 둔다. */
+.sa-app input,
+.sa-app textarea,
+.sa-app .selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 화면 끝에서 당겨도 화면 전체가 끌려오지 않게 한다. 스크롤 영역 안에서만 스크롤된다. */
+html.sa-app,
+.sa-app body {
+  overscroll-behavior: none;
+}
+.sa-app .body,
+.sa-app .sheet {
+  overscroll-behavior: contain;
+}

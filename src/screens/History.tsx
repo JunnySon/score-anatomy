@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
+import { platform } from '#platform';
 import { Badge, ConfirmDialog, Message, Screen } from '../components/ui';
 import { findExam } from '../exams';
 import { gradeExam } from '../logic/scoring';
@@ -35,6 +36,7 @@ function scoreText(session: Session): string {
 export function History() {
   const data = useAppData();
   const Extras = tools.HistoryExtras;
+  const status = useSyncExternalStore(store.subscribeStatus, store.getStatus, store.getStatus);
   const [confirm, setConfirm] = useState<{ kind: 'one'; id: string; title: string; detail: string } | { kind: 'all' } | null>(null);
   const run = activeRun(data);
   const testDevice = isTestDevice(data);
@@ -72,9 +74,14 @@ export function History() {
       }
     >
       <h1 className="title">{S.history.title}</h1>
-      {!store.storageOk ? (
-        <div className="mt3">
-          <Message plain>{S.history.storageFailed}</Message>
+      {status.archived && platform.appText ? (
+        <div className="mt3" data-testid="history-archived">
+          <Message plain>{platform.appText.archived}</Message>
+        </div>
+      ) : null}
+      {!status.ok ? (
+        <div className="mt3" data-testid="history-storage-failed">
+          <Message plain>{platform.appText?.storageFailed ?? S.history.storageFailed}</Message>
         </div>
       ) : null}
 
@@ -133,6 +140,12 @@ export function History() {
       )}
 
       {Extras ? <Extras /> : null}
+
+      {platform.appText ? (
+        <p className="cap mt6" data-testid="app-note">
+          {platform.appText.historyNote}
+        </p>
+      ) : null}
     </Screen>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { platform } from '#platform';
 import { choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, initEntry, pressDigit, type DigitEntry } from '../logic/entry';
 import { S } from '../strings';
@@ -63,6 +64,7 @@ export function McPad({
                 onLocked?.();
                 return;
               }
+              platform.haptic();
               onPick(n);
             }}
           >
@@ -86,6 +88,7 @@ export function McPad({
                   onLocked?.();
                   return;
                 }
+                platform.haptic();
                 f.onPress();
               }}
             >
@@ -145,6 +148,7 @@ export function DigitPad({
                 onLocked?.();
                 return;
               }
+              platform.haptic();
               onDigit(d);
             }}
           >
@@ -164,6 +168,7 @@ export function DigitPad({
                 onLocked?.();
                 return;
               }
+              platform.haptic();
               onSkip();
             }}
           >
@@ -180,6 +185,7 @@ export function DigitPad({
               onLocked?.();
               return;
             }
+            platform.haptic();
             onErase();
           }}
         >
@@ -195,6 +201,7 @@ export function DigitPad({
               onLocked?.();
               return;
             }
+            platform.haptic();
             onGo();
           }}
         >

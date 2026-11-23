@@ -5,6 +5,7 @@ import { findExam, SAMPLE_EXAM_ID } from '../exams';
 import { exampleResponses } from '../logic/example';
 import { analyze, gradeExam } from '../logic/scoring';
 import { selectSteps } from '../logic/steps';
+import { platform } from '#platform';
 import { navigate } from '../router';
 import { demoStore } from '../state/demo';
 import { S } from '../strings';
@@ -78,7 +79,7 @@ export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResum
           <p className="sub mt3">{S.start.previewSteps(preview.steps.map((s) => s.name))}</p>
         </section>
       ) : null}
-      <p className="cap mt4">{S.start.privacy}</p>
+      <p className="cap mt4">{platform.appText?.privacy ?? S.start.privacy}</p>
     </Screen>
   );
 }

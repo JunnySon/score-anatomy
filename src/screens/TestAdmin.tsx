@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { platform } from '#platform';
 import { Chip, ConfirmDialog, Message, Screen, TopBar } from '../components/ui';
 import { EXAMS, findExam } from '../exams';
 import { navigate } from '../router';
@@ -20,15 +21,6 @@ function downloadText(filename: string, text: string, type: string): boolean {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
     return true;
   } catch {
     return false;
@@ -179,10 +171,10 @@ export function TestAdmin() {
   const copy = (kind: 'json' | 'csv') => {
     const text = build(kind);
     if (text === null) {
-      setExportMsg(S_TEST.copyFailed);
+      setExportMsg(platform.isApp ? S_TEST.copyFailedApp : S_TEST.copyFailed);
       return;
     }
-    void copyText(text).then((ok) => setExportMsg(ok ? S_TEST.copied : S_TEST.copyFailed));
+    void platform.copy(text).then((ok) => setExportMsg(ok ? S_TEST.copied : platform.isApp ? S_TEST.copyFailedApp : S_TEST.copyFailed));
   };
 
   const stamp = () => {
@@ -308,26 +300,28 @@ export function TestAdmin() {
         <h2 className="title" id="export-title">
           {S_TEST.exportTitle}
         </h2>
-        <p className="sub mt2">{S_TEST.noNetwork}</p>
+        <p className="sub mt2">{platform.canSaveFile ? S_TEST.noNetwork : S_TEST.noNetworkApp}</p>
         <div className="stack gap2 mt3">
-          <div className="actions__row">
-            <button
-              type="button"
-              className="btn btn--secondary grow"
-              data-testid="save-json"
-              onClick={() => save('json')}
-            >
-              {S_TEST.saveJson}
-            </button>
-            <button
-              type="button"
-              className="btn btn--secondary grow"
-              data-testid="save-csv"
-              onClick={() => save('csv')}
-            >
-              {S_TEST.saveCsv}
-            </button>
-          </div>
+          {platform.canSaveFile ? (
+            <div className="actions__row">
+              <button
+                type="button"
+                className="btn btn--secondary grow"
+                data-testid="save-json"
+                onClick={() => save('json')}
+              >
+                {S_TEST.saveJson}
+              </button>
+              <button
+                type="button"
+                className="btn btn--secondary grow"
+                data-testid="save-csv"
+                onClick={() => save('csv')}
+              >
+                {S_TEST.saveCsv}
+              </button>
+            </div>
+          ) : null}
           <div className="actions__row">
             <button
               type="button"

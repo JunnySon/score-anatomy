@@ -1,6 +1,8 @@
+import { platform } from '#platform';
+import type { StorageBackend } from '../platform/types';
 import type { AppData, InputMode, RunPart, Session, TestRun } from '../types';
 
-// 상태 저장소. 기록은 이 기기의 localStorage에만 둔다.
+// 상태 저장소. 기록은 이 기기에만 둔다(브라우저는 localStorage, 아이폰 앱은 다리로 앱 전용 파일. src/platform).
 // 읽기와 쓰기를 try/catch로 감싸고, 저장이 안 돼도 화면은 메모리 상태로 동작한다.
 
 export const STORAGE_KEY = 'score-anatomy';
@@ -143,18 +145,33 @@ function cleanRun(raw: unknown): TestRun | null {
   };
 }
 
-/** 저장된 값을 현재 형식으로 읽는다. 읽을 수 없으면 null. */
+/**
+ * 옛 형식(version 이 STORE_VERSION 보다 작은 값)의 저장 값을 지금 형식으로 옮긴다. 옮기지 못하면 null.
+ * 지금은 version 1뿐이라 틀만 있다. 형식을 바꾸면 여기에 옮기는 단계를 더하고 STORE_VERSION 을 올린다.
+ */
+export function migrateStored(raw: Record<string, unknown>): Record<string, unknown> | null {
+  if (raw.version === STORE_VERSION) return raw;
+  return null;
+}
+
+/**
+ * 저장된 값을 현재 형식으로 읽는다. 읽을 수 없으면 null.
+ * 통째로 읽을 수 없거나(JSON이 아님, 객체가 아님, version 이 숫자가 아님) version 이 이 앱이 아는 값보다 크면 null이다.
+ * version 이 작으면 migrateStored 를 거친다.
+ */
 export function parseStored(text: string | null): AppData | null {
   if (!text) return null;
-  let raw: unknown;
+  let parsed: unknown;
   try {
-    raw = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
     return null;
   }
-  if (!isObject(raw)) return null;
-  // 저장 형식의 version 필드. 형식이 바뀌면 여기서 옛 형식을 새 형식으로 옮긴다.
-  if (raw.version !== STORE_VERSION) return null;
+  if (!isObject(parsed)) return null;
+  // 저장 형식의 version 필드.
+  if (typeof parsed.version !== 'number' || parsed.version > STORE_VERSION) return null;
+  const raw = migrateStored(parsed);
+  if (!raw) return null;
   const sessions = Array.isArray(raw.sessions) ? raw.sessions.map(cleanSession).filter((s): s is Session => s !== null) : [];
   const testRuns = Array.isArray(raw.testRuns) ? raw.testRuns.map(cleanRun).filter((r): r is TestRun => r !== null) : [];
   const currentId = typeof raw.currentId === 'string' && sessions.some((s) => s.id === raw.currentId) ? raw.currentId : null;
@@ -165,56 +182,89 @@ export function parseStored(text: string | null): AppData | null {
   return { version: STORE_VERSION, sessions, currentId, inputMode, testRuns, activeRunId };
 }
 
-export interface StorageLike {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-}
+export type StorageLike = StorageBackend;
 
-function browserStorage(): StorageLike | null {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage : null;
-  } catch {
-    return null;
-  }
+/** 저장소의 상태. 화면(기록 화면)이 안내문을 고를 때 쓴다. 바뀔 때마다 새 객체가 된다. */
+export interface StoreStatus {
+  /** 마지막 저장이 성공했는지(앱은 껍데기가 storeFailed 를 알리면 false). */
+  ok: boolean;
+  /** 받은 기록을 읽지 못해 따로 보관해 달라고 하고 새로 시작했는지(앱만). */
+  archived: boolean;
 }
 
 export class Store {
   private data: AppData;
   private listeners = new Set<() => void>();
+  private statusListeners = new Set<() => void>();
   private storage: StorageLike | null;
-  /** 마지막 저장이 성공했는지. 실패해도 화면은 메모리 상태로 동작한다. */
-  storageOk = true;
+  private status: StoreStatus = { ok: true, archived: false };
 
-  constructor(storage: StorageLike | null = browserStorage()) {
+  constructor(storage: StorageLike | null = platform.storage(), onFailed: (fn: () => void) => () => void = platform.onStoreFailed) {
     this.storage = storage;
     this.data = this.read() ?? defaultData();
+    onFailed(() => this.setStatus({ ok: false }));
+  }
+
+  /** 마지막 저장이 성공했는지. 실패해도 화면은 메모리 상태로 동작한다. */
+  get storageOk(): boolean {
+    return this.status.ok;
+  }
+
+  private setStatus(change: Partial<StoreStatus>): void {
+    const next = { ...this.status, ...change };
+    if (next.ok === this.status.ok && next.archived === this.status.archived) return;
+    this.status = next;
+    for (const l of this.statusListeners) l();
   }
 
   private read(): AppData | null {
     if (!this.storage) {
-      this.storageOk = false;
+      this.setStatus({ ok: false });
       return null;
     }
+    let text: string | null;
     try {
-      return parseStored(this.storage.getItem(STORAGE_KEY));
+      text = this.storage.getItem(STORAGE_KEY);
     } catch {
-      this.storageOk = false;
+      this.setStatus({ ok: false });
       return null;
     }
+    if (text === null) return null;
+    const parsed = parseStored(text);
+    if (parsed === null && this.storage.archive) {
+      // 앱: 받은 기록을 통째로 읽지 못했거나 더 새 형식이면 덮어쓰지 않는다. 따로 보관해 달라고 한 뒤 새로 시작한다.
+      // (브라우저는 지금처럼 처음 상태로 열고, 다음 저장이 그 자리를 쓴다.)
+      try {
+        this.storage.archive();
+      } catch {
+        // 보관 요청이 실패해도 화면은 처음 상태로 연다.
+      }
+      this.setStatus({ archived: true });
+    }
+    return parsed;
   }
 
   private write(): void {
     if (!this.storage) {
-      this.storageOk = false;
+      this.setStatus({ ok: false });
       return;
     }
     try {
       this.storage.setItem(STORAGE_KEY, JSON.stringify(this.data));
-      this.storageOk = true;
+      this.setStatus({ ok: true });
     } catch {
-      this.storageOk = false;
+      this.setStatus({ ok: false });
     }
   }
+
+  getStatus = (): StoreStatus => this.status;
+
+  subscribeStatus = (listener: () => void): (() => void) => {
+    this.statusListeners.add(listener);
+    return () => {
+      this.statusListeners.delete(listener);
+    };
+  };
 
   get = (): AppData => this.data;
 

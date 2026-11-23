@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { platform } from '#platform';
 import { Badge, Message, Screen, TopBar } from '../components/ui';
 import type { Grade } from '../logic/scoring';
 import { selectSteps, type Step } from '../logic/steps';
@@ -8,31 +9,6 @@ import type { SessionHandle } from '../state/hooks';
 import { S } from '../strings';
 
 // (9) 계단 화면. 먼저 고칠 유형을 내 기록만으로 정해 보여 준다.
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 아래의 다른 방법으로 넘어간다.
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
 
 function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; step: Step; index: number }) {
   const { exam, session } = h;
@@ -75,7 +51,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
               <span>2. {S.steps.coordsTitle}</span>
               {exam.isSample ? <Badge>{S.steps.coordsSample}</Badge> : null}
             </div>
-            <ul className="sub mt2">
+            <ul className="sub mt2 selectable">
               {coordLines.map((line) => (
                 <li key={line}>{line}</li>
               ))}
@@ -85,7 +61,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
               className="btn btn--text btn--left"
               data-testid="copy-coords"
               onClick={() => {
-                void copyText(coordLines.join('\n')).then((ok) => setCopyMsg(ok ? S.steps.copied : S.steps.copyFailed));
+                void platform.copy(coordLines.join('\n')).then((ok) => setCopyMsg(ok ? S.steps.copied : S.steps.copyFailed));
               }}
             >
               {S.steps.copy}

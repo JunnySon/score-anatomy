@@ -17,7 +17,9 @@ const started = Date.now();
 function run(label, cmd, args) {
   console.log(`\n=== ${label} ===`);
   const t = Date.now();
-  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '0' } });
+  // verify 는 늘 지금 폴더의 빌드로 서버를 새로 띄워서 잰다. 떠 있는 서버를 다시 쓰는 스위치(SA_REUSE_SERVER)가
+  // 셸에 켜져 있어도 따르지 않는다(보고서가 "새로 띄워요"라고 적으므로).
+  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '0', SA_REUSE_SERVER: '' } });
   const ok = r.status === 0;
   console.log(`--- ${label}: ${ok ? '통과' : '실패'} (${((Date.now() - t) / 1000).toFixed(1)}초)`);
   return { ok, seconds: (Date.now() - t) / 1000 };
@@ -60,10 +62,23 @@ const REQUIRED_UNIT_TESTS = [
   '추가 경우 미입력이 남아 있으면 채점하지 않는다',
 ];
 
-// 0. 이전 결과를 지운다.
+// 0. 이전 결과를 지운다. 보고서는 "끝나지 않음"으로 바꿔 둔다(도중에 멈춰도 앞 실행의 "통과"가 남지 않게).
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 rmSync(join(ROOT, 'docs/screens'), { recursive: true, force: true });
+mkdirSync(join(ROOT, 'docs'), { recursive: true });
+const reportPath = join(ROOT, 'docs/검증결과.md');
+const failureReport = (why) =>
+  [
+    '# 검증 결과',
+    '',
+    `결론: 검증이 끝나지 않았어요. ${why}`,
+    '',
+    '이 문서는 `npm run verify`가 실행할 때마다 새로 써요. 손으로 고치지 않아요.',
+    '지금 내용은 통과를 뜻하지 않아요. `npm run verify`를 다시 실행해 주세요.',
+    '',
+  ].join('\n');
+writeFileSync(reportPath, failureReport('실행 중이거나 도중에 멈췄어요.'));
 
 // 1. 단위 테스트
 const unitRun = run('1. 단위 테스트', npx, ['vitest', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${join(OUT, 'unit.json')}`]);
@@ -122,7 +137,15 @@ const audits = metrics.filter((m) => m.kind === 'audit');
 const net = metrics.filter((m) => m.kind === 'network');
 const leaks = metrics.filter((m) => m.kind === 'leak');
 const leakControls = metrics.filter((m) => m.kind === 'leak-control');
-const leakDiff = metrics.find((m) => m.kind === 'leak-diff') ?? null;
+const leakDiffRaw = metrics.find((m) => m.kind === 'leak-diff') ?? null;
+// 보고서가 읽는 칸의 모양을 맞춘다. 칸이 빠졌는지는 아래 leaksComplete 가 원래 기록으로 따로 본다.
+const leakDiff = leakDiffRaw
+  ? {
+      ...leakDiffRaw,
+      compared: Number.isInteger(leakDiffRaw.compared) ? leakDiffRaw.compared : 0,
+      differences: Array.isArray(leakDiffRaw.differences) ? leakDiffRaw.differences : [],
+    }
+  : null;
 const flows = metrics.filter((m) => m.kind === 'flow');
 const small = metrics.filter((m) => m.kind === 'small');
 const tours = metrics.filter((m) => m.kind === 'tour');
@@ -130,6 +153,8 @@ const conditions = metrics.filter((m) => m.kind === 'condition');
 const single = metrics.find((m) => m.kind === 'single') ?? null;
 const artifact = metrics.find((m) => m.kind === 'artifact') ?? null;
 
+/** 보고서에 적을 값. 잰 값이 없으면(null, NaN) "없음"으로 적는다. */
+const shown = (v) => (v === null || v === undefined || Number.isNaN(v) ? '없음' : v);
 const sum = (list, f) => list.reduce((s, x) => s + f(x), 0);
 const min = (list, f) => (list.length > 0 ? Math.min(...list.map(f)) : null);
 const max = (list, f) => (list.length > 0 ? Math.max(...list.map(f)) : null);
@@ -173,17 +198,29 @@ const AUDIT_LISTS = [
   'semanticMisuse',
 ];
 const AUDIT_NUMBERS = ['textCount', 'minFont', 'targetCount', 'contrastCount', 'edgeCount', 'accentRatio', 'heroCount', 'primaryCount'];
-const AUDIT_FLAGS = ['mustFit', 'scrolls'];
+const AUDIT_FLAGS = ['mustFit', 'scrolls', 'horizontalOverflow'];
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const auditsComplete = audits.every(
   (a) =>
+    typeof a.name === 'string' &&
+    typeof a.run === 'string' &&
     AUDIT_LISTS.every((k) => Array.isArray(a[k])) &&
-    AUDIT_NUMBERS.every((k) => typeof a[k] === 'number' && Number.isFinite(a[k])) &&
-    AUDIT_FLAGS.every((k) => typeof a[k] === 'boolean'),
+    AUDIT_NUMBERS.every((k) => isNum(a[k])) &&
+    AUDIT_FLAGS.every((k) => typeof a[k] === 'boolean') &&
+    // 최저값 칸: 검사한 것이 있으면 숫자여야 한다. 검사한 것이 없는 화면에서는 비어 있어도 된다.
+    (a.targetCount === 0 || (isNum(a.minTargetW) && isNum(a.minTargetH))) &&
+    (a.contrastCount === 0 || isNum(a.minContrast)) &&
+    (a.edgeCount === 0 || isNum(a.minEdgeContrast)) &&
+    (a.minGap === null || isNum(a.minGap)),
 );
 const leaksComplete =
   leaks.every((l) => Array.isArray(l.leaks)) &&
   leakControls.every((c) => Number.isInteger(c.caught27) && Number.isInteger(c.caught15)) &&
-  (leakDiff === null || (Number.isInteger(leakDiff.compared) && Array.isArray(leakDiff.differences)));
+  (leakDiffRaw === null ||
+    (Number.isInteger(leakDiffRaw.compared) &&
+      Array.isArray(leakDiffRaw.differences) &&
+      typeof leakDiffRaw.controlShort === 'boolean' &&
+      typeof leakDiffRaw.controlMc === 'boolean'));
 const auditsEnough = audits.length >= REQUIRED.auditStates && auditsComplete;
 const smallEnough = smallAudits.length >= REQUIRED.smallStates;
 const fitEnough = fitAudits.length >= REQUIRED.fitStates;
@@ -323,13 +360,13 @@ function buildReport(textOk, textResult) {
       '4',
       '글자 크기 13px 이상',
       fontOk,
-      `화면 상태 ${audits.length}개에서 보이는 글자 ${sum(audits, (a) => a.textCount)}개 검사. 가장 작은 글자 ${min(audits, (a) => a.minFont)}px, 13px 미만 ${count(audits, (a) => a.smallText)}개, 16px 미만인 입력 칸 ${count(audits, (a) => a.smallInputs)}개${stateNote}`,
+      `화면 상태 ${audits.length}개에서 보이는 글자 ${sum(audits, (a) => a.textCount)}개 검사. 가장 작은 글자 ${shown(min(audits, (a) => a.minFont))}px, 13px 미만 ${count(audits, (a) => a.smallText)}개, 16px 미만인 입력 칸 ${count(audits, (a) => a.smallInputs)}개${stateNote}`,
     ],
     [
       '5',
       '터치 영역 48x48px 이상',
       targetOk,
-      `조작 요소 ${sum(audits, (a) => a.targetCount)}개 검사. 가장 작은 폭 ${min(withTargets, (a) => a.minTargetW)}px, 가장 작은 높이 ${min(withTargets, (a) => a.minTargetH)}px, 48px 미만 ${count(audits, (a) => a.smallTargets)}개. 예외 없음(폭 360px 미만은 지원 범위 밖이라 검사 대상이 아님)${stateNote}`,
+      `조작 요소 ${sum(audits, (a) => a.targetCount)}개 검사. 가장 작은 폭 ${shown(min(withTargets, (a) => a.minTargetW))}px, 가장 작은 높이 ${shown(min(withTargets, (a) => a.minTargetH))}px, 48px 미만 ${count(audits, (a) => a.smallTargets)}개. 예외 없음(폭 360px 미만은 지원 범위 밖이라 검사 대상이 아님)${stateNote}`,
     ],
     [
       '6',
@@ -350,7 +387,7 @@ function buildReport(textOk, textResult) {
       '색 대비',
       contrastOk,
       contrast
-        ? `색 값 계산: 글자 조합 최저 ${min(contrast.rows.filter((r) => r.min === 4.5), (r) => r.ratio).toFixed(2)}:1(기준 4.5:1), 테두리와 윤곽 최저 ${min(contrast.rows.filter((r) => r.min === 3), (r) => r.ratio).toFixed(2)}:1(기준 3:1), 조합 ${contrast.rows.length}개 가운데 실패 ${contrast.rows.filter((r) => !r.pass).length}개. 그려진 글자 ${sum(audits, (a) => a.contrastCount)}개의 실제 대비 최저 ${min(withText, (a) => a.minContrast)}:1(4.5:1 미만 ${count(audits, (a) => a.lowContrast)}개), 그려진 입력 테두리와 그래프 윤곽 ${sum(audits, (a) => a.edgeCount)}개의 실제 대비 최저 ${min(withEdges, (a) => a.minEdgeContrast)}:1(3:1 미만 ${count(audits, (a) => a.lowEdges)}개)${stateNote}`
+        ? `색 값 계산: 글자 조합 최저 ${min(contrast.rows.filter((r) => r.min === 4.5), (r) => r.ratio).toFixed(2)}:1(기준 4.5:1), 테두리와 윤곽 최저 ${min(contrast.rows.filter((r) => r.min === 3), (r) => r.ratio).toFixed(2)}:1(기준 3:1), 조합 ${contrast.rows.length}개 가운데 실패 ${contrast.rows.filter((r) => !r.pass).length}개. 그려진 글자 ${sum(audits, (a) => a.contrastCount)}개의 실제 대비 최저 ${shown(min(withText, (a) => a.minContrast))}:1(4.5:1 미만 ${count(audits, (a) => a.lowContrast)}개), 그려진 입력 테두리와 그래프 윤곽 ${sum(audits, (a) => a.edgeCount)}개의 실제 대비 최저 ${shown(min(withEdges, (a) => a.minEdgeContrast))}:1(3:1 미만 ${count(audits, (a) => a.lowEdges)}개)${stateNote}`
         : '결과 파일 없음',
     ],
     [
@@ -498,8 +535,8 @@ function buildReport(textOk, textResult) {
     for (const r of contrast.rows) say(`| ${r.theme} | ${r.use} | ${r.fg} | ${r.bg} | ${r.ratio.toFixed(2)}:1 | ${r.min}:1 | ${mark(r.pass)} |`);
     say();
   }
-  say(`브라우저가 실제로 그린 글자 ${sum(audits, (a) => a.contrastCount)}개도 계산된 글자색과 바탕색(투명도 포함)으로 다시 쟀어요. 가장 낮은 대비는 ${min(withText, (a) => a.minContrast)}:1, 4.5:1에 못 미친 글자는 ${count(audits, (a) => a.lowContrast)}개예요.`);
-  say(`그려진 입력 테두리와 그래프 윤곽(칸, 키, 고르는 줄, 칩, 막대 구간, 진행 막대 등) ${sum(audits, (a) => a.edgeCount)}개도 테두리색(테두리가 없으면 채운 색)과 바깥 바탕색으로 쟀어요. 가장 낮은 대비는 ${min(withEdges, (a) => a.minEdgeContrast)}:1, 3:1에 못 미친 것은 ${count(audits, (a) => a.lowEdges)}개예요.`);
+  say(`브라우저가 실제로 그린 글자 ${sum(audits, (a) => a.contrastCount)}개도 계산된 글자색과 바탕색(투명도 포함)으로 다시 쟀어요. 가장 낮은 대비는 ${shown(min(withText, (a) => a.minContrast))}:1, 4.5:1에 못 미친 글자는 ${count(audits, (a) => a.lowContrast)}개예요.`);
+  say(`그려진 입력 테두리와 그래프 윤곽(칸, 키, 고르는 줄, 칩, 막대 구간, 진행 막대 등) ${sum(audits, (a) => a.edgeCount)}개도 테두리색(테두리가 없으면 채운 색)과 바깥 바탕색으로 쟀어요. 가장 낮은 대비는 ${shown(min(withEdges, (a) => a.minEdgeContrast))}:1, 3:1에 못 미친 것은 ${count(audits, (a) => a.lowEdges)}개예요.`);
   say();
 
   say('## 9. 정답 노출');
@@ -536,7 +573,8 @@ function buildReport(textOk, textResult) {
   say();
   say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 작은 화면에서 스크롤 없이 들어와야 하는 상태 ${REQUIRED.fitStates}개 이상(이번 ${fitAudits.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지거나 검사 기록에 결과 칸이 비어 있으면 해당 항목이 실패로 적혀요.`);
   say();
-  say('화면 검사는 실행할 때마다 지금 폴더의 빌드로 서버를 새로 띄워요. 쓰려는 포트(기본 4173, 4174)에 이미 떠 있는 서버가 있으면 그 서버를 다시 쓰지 않고 실패로 끝나요.');
+  say('화면 검사는 실행할 때마다 지금 폴더의 빌드로 서버를 새로 띄워요. 쓰려는 포트(기본 4173, 4174)에 이미 떠 있는 서버가 있으면 그 서버를 다시 쓰지 않고 실패로 끝나요(떠 있는 서버를 다시 쓰는 스위치 SA_REUSE_SERVER 는 verify 에서는 따르지 않아요).');
+  if (!e2eRun.ok) say('이번 실행은 화면 검사가 실패로 끝났어요. 포트가 이미 쓰이고 있어서 서버를 띄우지 못한 것일 수 있어요. 콘솔 출력의 오류를 확인해 주세요.');
   say();
 
   say('## 자동으로 확인하지 못하는 것');
@@ -554,12 +592,21 @@ function buildReport(textOk, textResult) {
 }
 
 // 7. 금지 문자 파일 검사. 보고서 자신도 검사 대상이므로, 먼저 보고서를 한 번 쓰고 검사한 뒤 결과를 넣어 다시 쓴다.
-mkdirSync(join(ROOT, 'docs'), { recursive: true });
-const reportPath = join(ROOT, 'docs/검증결과.md');
-writeFileSync(reportPath, buildReport(true, readJson(join(OUT, 'text.json'))).text + '\n');
-const textRun = run('7. 금지 문자(파일과 커밋 메시지)', process.execPath, [join(ROOT, 'scripts/check-text.mjs')]);
-const textResult = readJson(join(OUT, 'text.json'));
-const report = buildReport(textRun.ok, textResult);
+// 보고서를 만들다 오류가 나면(검사 기록의 모양이 예상과 다른 경우 등) 통과로 남기지 않고 실패 보고서를 쓴다.
+let report;
+let textRun;
+try {
+  writeFileSync(reportPath, buildReport(true, readJson(join(OUT, 'text.json'))).text + '\n');
+  textRun = run('7. 금지 문자(파일과 커밋 메시지)', process.execPath, [join(ROOT, 'scripts/check-text.mjs')]);
+  const textResult = readJson(join(OUT, 'text.json'));
+  report = buildReport(textRun.ok, textResult);
+} catch (e) {
+  const why = e instanceof Error ? e.message : String(e);
+  writeFileSync(reportPath, failureReport(`보고서를 만들다가 오류가 났어요: ${why}`));
+  console.error(e);
+  console.log(`\n검증 보고서를 만들지 못했어요. 전체 실패 (${Math.round((Date.now() - started) / 1000)}초)`);
+  process.exit(1);
+}
 const selfHits = findForbidden(report.text);
 writeFileSync(reportPath, report.text + '\n');
 

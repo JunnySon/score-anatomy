@@ -24,11 +24,29 @@ CREATED=""
 
 log() { printf '[verify %s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
+remove_prefixed_sims() {
+  # 이름이 "SA검증-" 으로 시작하는 시뮬레이터(이 스크립트가 만든 것)를 모두 끄고 지운다.
+  for udid in $(xcrun simctl list devices -j | python3 -c '
+import json, sys
+for rt, devs in json.load(sys.stdin)["devices"].items():
+    for d in devs:
+        if d["name"].startswith(sys.argv[1] + "-"):
+            print(d["udid"])
+' "$PREFIX"); do
+    xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
+    xcrun simctl delete "$udid" >/dev/null 2>&1 || true
+  done
+}
+
 cleanup() {
+  # 만든 시뮬레이터를 지운다. create_sim 은 $(...) 안(하위 셸)에서 돌아서 목록은 부르는 쪽에서 모으고,
+  # 혹시 빠진 것이 있어도 남지 않게 이름으로도 한 번 더 지운다.
   for udid in $CREATED; do
     xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true
     xcrun simctl delete "$udid" >/dev/null 2>&1 || true
   done
+  remove_prefixed_sims
+  log "검증용 시뮬레이터를 지웠다(남은 것: $(xcrun simctl list devices | grep -c "$PREFIX-"))"
 }
 trap cleanup EXIT
 
@@ -64,7 +82,6 @@ create_sim() {
   local udid
   udid=$(xcrun simctl create "$1" "$2" "$3" 2>/dev/null) || udid=""
   if [ -n "$udid" ]; then
-    CREATED="$CREATED $udid"
     xcrun simctl boot "$udid" >/dev/null 2>&1 || true
     xcrun simctl bootstatus "$udid" -b >/dev/null 2>&1 || true
     # 캡처의 상태 표시줄을 고정한다(새로 만든 시뮬레이터에만).
@@ -108,17 +125,7 @@ meta commit "$(git -C "$REPO" rev-parse --short HEAD)"
 if [ -n "$(git -C "$REPO" status --porcelain -- ios docs/앱_다리_규격.md)" ]; then meta dirty yes; else meta dirty no; fi
 
 # 앞서 멈춘 실행이 남긴 검증용 시뮬레이터를 지운다(이름이 SA검증- 으로 시작하는 것만).
-for old in $(xcrun simctl list devices -j | python3 -c '
-import json, sys
-for rt, devs in json.load(sys.stdin)["devices"].items():
-    for d in devs:
-        if d["name"].startswith(sys.argv[1] + "-"):
-            print(d["udid"])
-' "$PREFIX"); do
-  log "남아 있던 검증용 시뮬레이터 지움: $old"
-  xcrun simctl shutdown "$old" >/dev/null 2>&1 || true
-  xcrun simctl delete "$old" >/dev/null 2>&1 || true
-done
+remove_prefixed_sims
 
 # 프로젝트 파일이 project.yml 과 같은지(XcodeGen 이 있을 때만). 지금 프로젝트 파일을 먼저 떠 두고, 다시 만든 것과 견준 뒤
 # 다르면 떠 둔 것으로 되돌린다. 검증은 늘 원래 프로젝트 파일로 한다.
@@ -151,15 +158,15 @@ meta manifestSha "$manifest_ok"
 LATEST=$(runtime_for latest)
 LATEST_ID=${LATEST%% *}
 log "주 런타임: $LATEST"
-MAIN=$(create_sim "$PREFIX-iPhone17" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$LATEST_ID")
-SE=$(create_sim "$PREFIX-iPhoneSE3" com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation "$LATEST_ID")
-IPAD=$(create_sim "$PREFIX-iPad" com.apple.CoreSimulator.SimDeviceType.iPad-A16 "$LATEST_ID")
+MAIN=$(create_sim "$PREFIX-iPhone17" com.apple.CoreSimulator.SimDeviceType.iPhone-17 "$LATEST_ID"); CREATED="$CREATED $MAIN"
+SE=$(create_sim "$PREFIX-iPhoneSE3" com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation "$LATEST_ID"); CREATED="$CREATED $SE"
+IPAD=$(create_sim "$PREFIX-iPad" com.apple.CoreSimulator.SimDeviceType.iPad-A16 "$LATEST_ID"); CREATED="$CREATED $IPAD"
 IOS17=$(runtime_for 17)
 IOS18=$(runtime_for 18)
 OLD=""
-if [ -n "$IOS17" ]; then OLD=$(create_sim "$PREFIX-iOS17" com.apple.CoreSimulator.SimDeviceType.iPhone-15 "${IOS17%% *}"); fi
+if [ -n "$IOS17" ]; then OLD=$(create_sim "$PREFIX-iOS17" com.apple.CoreSimulator.SimDeviceType.iPhone-15 "${IOS17%% *}"); CREATED="$CREATED $OLD"; fi
 I18=""
-if [ -z "$IOS17" ] && [ -n "$IOS18" ]; then I18=$(create_sim "$PREFIX-iOS18" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "${IOS18%% *}"); fi
+if [ -z "$IOS17" ] && [ -n "$IOS18" ]; then I18=$(create_sim "$PREFIX-iOS18" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "${IOS18%% *}"); CREATED="$CREATED $I18"; fi
 [ -n "$MAIN" ] || { log "주 시뮬레이터를 만들지 못해 멈춘다"; exit 2; }
 if [ -n "$SE" ]; then meta seSimulator ok; else meta seSimulator "만들지 못함"; fi
 if [ -n "$IPAD" ]; then meta ipadSimulator ok; meta ipadName "iPad (A16), ${LATEST#* }"; else meta ipadSimulator "만들지 못함"; fi
@@ -282,15 +289,7 @@ done
 rm -rf "$REPO/docs/screens-ios"
 "${REPORT[@]}" captures "$OUT/screens" "$REPO/docs/screens-ios" "$OUT/captures.json"
 # 목록(9화면 x 2테마 x 2기기) 밖의 캡처는 참고용으로 extra 에 기기와 테마를 붙여 모은다.
-mkdir -p "$REPO/docs/screens-ios/extra"
-for f in "$OUT"/runs/*/screens/*/*/*.png; do
-  [ -f "$f" ] || continue
-  name=$(basename "$f" .png); theme=$(basename "$(dirname "$f")"); device=$(basename "$(dirname "$(dirname "$f")")")
-  case "$name" in
-    01-시작|02-시험선택|03-답입력-키패드|04-잠금|05-입력확인|06-표시|07-점수해부|08-계단|09-기록) continue ;;
-  esac
-  cp "$f" "$REPO/docs/screens-ios/extra/$device-$theme-$name.png"
-done
+"${REPORT[@]}" extras "$OUT/runs" "$REPO/docs/screens-ios/extra" > "$OUT/extras.json"
 
 # ---------------------------------------------------------------- 문서
 log "docs/ios_검증결과.md 쓰기"

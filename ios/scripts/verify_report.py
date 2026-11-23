@@ -6,6 +6,7 @@
   scan <ios 폴더> <저장소 폴더> <출력.json>   소스 검사(금지 문자, 네트워크 API, 권한, 사유 API)
   app <앱 폴더> <manifest.json> <종류> <출력.json>  앱 꾸러미 검사(종류: debug, release)
   captures <원본 폴더> <docs/screens-ios> <출력.json>  캡처 모으기와 빠진 것, 겹친 것 검사
+  extras <runs 폴더> <docs/screens-ios/extra>    목록 밖 참고 캡처 모으기
   render <결과 폴더> <문서 경로>             docs/ios_검증결과.md 쓰기
 """
 import hashlib
@@ -339,6 +340,35 @@ def cmd_captures(src, dest, out):
     save(out, report)
 
 
+def cmd_extras(runs_dir, dest):
+    """목록(9화면 x 2테마 x 2기기) 밖의 캡처를 기기와 테마를 붙여 모은다.
+    Foundation 이 쓴 파일 이름은 한글이 풀어 쓴 형태(NFD)일 수 있어 NFC 로 맞춰 견준다."""
+    import unicodedata
+    names = {unicodedata.normalize("NFC", n) for n in SCREENS}
+    if os.path.isdir(dest):
+        shutil.rmtree(dest)
+    os.makedirs(dest, exist_ok=True)
+    copied = []
+    for base, _, files in os.walk(runs_dir):
+        parts = base.split(os.sep)
+        if "screens" not in parts:
+            continue
+        rest = parts[parts.index("screens") + 1:]
+        if len(rest) != 2:
+            continue
+        device, theme = rest
+        for name in sorted(files):
+            if not name.endswith(".png"):
+                continue
+            stem = unicodedata.normalize("NFC", name[:-4])
+            if stem in names:
+                continue
+            target = unicodedata.normalize("NFC", f"{device}-{theme}-{stem}.png")
+            shutil.copyfile(os.path.join(base, name), os.path.join(dest, target))
+            copied.append(target)
+    print(json.dumps({"extras": copied}, ensure_ascii=False))
+
+
 # ---------------------------------------------------------------- 문서
 
 def tests_of(results, suite=None):
@@ -663,6 +693,8 @@ def main():
         cmd_app(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
     elif cmd == "captures":
         cmd_captures(sys.argv[2], sys.argv[3], sys.argv[4])
+    elif cmd == "extras":
+        cmd_extras(sys.argv[2], sys.argv[3])
     elif cmd == "render":
         cmd_render(sys.argv[2], sys.argv[3])
     else:

@@ -25,6 +25,7 @@ import type { Fetched } from './verify.ts';
 // - issuedAt 은 --issued-at 으로 주거나 지금의 한국 시각이다. 마지막 발행보다 이르면 거부한다(같은 시각은 받는다).
 // - 마지막 발행과 바뀐 것이 하나도 없으면 발행하지 않는다. 같은 내용을 새 seq 로 다시 내야 하면 --allow-same 을 붙인다.
 // - 자료 폴더에 public-key.txt 가 있으면 비밀 키와 짝인지 보고, 짝이 아니면 거부한다(앱이 그 서명을 받지 않아서).
+//   저장소의 진짜 자료 폴더(exam-data)로 실제 발행할 때는 public-key.txt 가 없어도 거부한다(별도 검토 C6).
 // - 발행 폴더(--out)는 통째로 바꿔 넣으므로, 발행물이 아닌 파일이 있거나 저장소, 자료 폴더와 겹치면 거부한다(다른 파일을 지우지 않게).
 
 /** 도중 실패를 흉내 낼 수 있는 단계: 임시 폴더를 다 쓴 뒤, 그 전 발행 폴더를 옮긴 뒤, state.json 을 쓰기 전. */
@@ -49,6 +50,12 @@ export interface PublishOptions {
   now?: () => number;
   /** 테스트가 도중 실패를 흉내 낼 때만 쓴다. 단계 이름을 받고, 던지면 그 단계에서 멈춘다. */
   interrupt?: (step: PublishStep) => void;
+}
+
+/** 자료 폴더가 저장소의 진짜 자료 폴더(<저장소>/exam-data)인지. 두 경로가 서로의 안이면 같은 폴더다. */
+export function isRepoDataDir(dataDir: string, root: string): boolean {
+  const repoData = join(root, 'exam-data');
+  return isInside(dataDir, repoData) && isInside(repoData, dataDir);
 }
 
 /** 발행 폴더에 둘 수 있는 것: index.json, index.json.sig, files 폴더(안에는 *.json 파일만). 그 밖의 것이 있으면 발행 폴더가 아닌 곳으로 본다. */
@@ -194,6 +201,12 @@ export function runPublish(opts: PublishOptions, io: Io): number {
         ]);
       }
       keyNote += ` 자료 폴더의 ${PUBLIC_KEY_FILE} 와 짝이에요.`;
+    } else if (!opts.dryRun && isRepoDataDir(opts.dataDir, opts.root)) {
+      // 진짜 자료 폴더(저장소의 exam-data)로 실제 발행할 때는 공개 키가 있어야 한다(별도 검토 C6). 짝을 보지 않고 발행하면
+      // 다른 키로 서명한 발행물을 앱이 모두 버리는데도 state.json 의 seq 와 발행 기록이 올라간다. 리허설과 테스트의 임시 자료 폴더는 그대로다.
+      return fail([
+        `자료 폴더(저장소의 exam-data)에 ${PUBLIC_KEY_FILE} 가 없어요. 진짜 발행은 비밀 키와 짝인 공개 키가 자료 폴더에 있어야 해요(앱은 그 공개 키로 서명을 확인해요). 키를 맡은 사람이 npm run exams:keygen 으로 만든 공개 키를 먼저 커밋해요.`,
+      ]);
     } else {
       keyNote += ` 자료 폴더에 ${PUBLIC_KEY_FILE} 가 없어서 짝인지는 보지 않았어요.`;
     }

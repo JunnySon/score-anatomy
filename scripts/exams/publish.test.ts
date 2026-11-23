@@ -1,12 +1,13 @@
 import { createPublicKey, generateKeyPairSync, verify } from 'node:crypto';
 import type { KeyObject } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkExam } from '../../src/exams/validate.ts';
 import type { Exam } from '../../src/types.ts';
 import { canonicalJson, sha256Hex } from './canonical.ts';
+import { isRepoDataDir } from './publish.ts';
 import { identityOf, insideByIdentity, isInside, keyFingerprint, publicKeyText } from './sign.ts';
 import { examFileText, locksSha256, parseState, stateEntryOf } from './state.ts';
 import {
@@ -414,6 +415,38 @@ describe('발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4)', () => {
     const ok = publishTo(dir, o.out, key.keyFile);
     expect(ok.code).toBe(0);
     expect(ok.out).toContain(`서명: Ed25519, 공개 키 지문 ${keyFingerprint(key.key)}. 자료 폴더의 public-key.txt 와 짝이에요.`);
+  });
+
+  it('저장소의 진짜 자료 폴더(exam-data)로 실제 발행할 때 공개 키(public-key.txt)가 없으면 거부하고, 임시 자료 폴더와 쓰지 않는 발행은 그대로다(별도 검토 C6)', () => {
+    // 저장소 폴더 자리(root)를 임시 폴더로 바꿔 끼운다. 그 안의 exam-data 가 진짜 자료 폴더 자리다(저장소의 파일은 건드리지 않는다).
+    const root = tempDir('sa-exams-root-');
+    const real = join(root, 'exam-data');
+    cpSync(dataDir(), real, { recursive: true });
+    writeExam(real, testExam());
+    expect(isRepoDataDir(real, root)).toBe(true);
+    expect(isRepoDataDir(dataDir(), root)).toBe(false);
+    const key = tempKey();
+    const o = outDir();
+    const before = picture(real, o);
+    const r = publishTo(real, o.out, key.keyFile, { root });
+    expect(r.code).toBe(1);
+    expect(r.err[0]).toBe(
+      '자료 폴더(저장소의 exam-data)에 public-key.txt 가 없어요. 진짜 발행은 비밀 키와 짝인 공개 키가 자료 폴더에 있어야 해요(앱은 그 공개 키로 서명을 확인해요). 키를 맡은 사람이 npm run exams:keygen 으로 만든 공개 키를 먼저 커밋해요.',
+    );
+    expect(picture(real, o)).toEqual(before);
+    // 쓰지 않고 보여 주기(--dry-run)는 지금처럼 짝을 보지 않았다고만 적는다.
+    const dry = publishTo(real, o.out, key.keyFile, { root, dryRun: true });
+    expect(dry.code).toBe(0);
+    expect(dry.out.join('\n')).toContain('자료 폴더에 public-key.txt 가 없어서 짝인지는 보지 않았어요.');
+    // 짝인 공개 키를 두면 발행한다.
+    writeFileSync(join(real, 'public-key.txt'), publicKeyText(key.key));
+    expect(publishTo(real, o.out, key.keyFile, { root }).code).toBe(0);
+    // 임시 자료 폴더(리허설과 테스트)는 지금처럼 공개 키가 없어도 발행한다.
+    const temp = dataDir();
+    writeExam(temp, testExam());
+    const t = publishTo(temp, outDir().out, key.keyFile);
+    expect(t.code).toBe(0);
+    expect(t.out.join('\n')).toContain('자료 폴더에 public-key.txt 가 없어서 짝인지는 보지 않았어요.');
   });
 });
 

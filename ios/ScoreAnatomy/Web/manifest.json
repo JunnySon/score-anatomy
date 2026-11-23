@@ -1,18 +1,18 @@
 {
   "name": "score-anatomy",
-  "commit": "f44cdba39702beef300efd05ff453a7d3fe11a69",
+  "commit": "35f779b8d68157410db42a026678343e4464541c",
   "dirty": false,
   "version": "0.2.0",
   "bridge": 1,
   "bridgeMax": 2,
   "files": {
     "app-test/index.html": {
-      "sha256": "7cd19f67f13e26729c5a86602093ef67c64c2d01443ef51aadd29932853836d8",
-      "bytes": 383017
+      "sha256": "fd2404f6c67d27c354832c0e89676225bd7d2b3d8f9e59ead5e4fc545ea79ace",
+      "bytes": 383045
     },
     "app-release/index.html": {
-      "sha256": "ccf1022718c636c674d18589ec16da9bc10e1690f1e110b03dbb01b006071574",
-      "bytes": 352201
+      "sha256": "dcdd0a3fc1ff14afd15c78f6d544fab0519c15f75d8220b523810d02a06cf773",
+      "bytes": 352229
     }
   }
 }

@@ -77,11 +77,14 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
         ) : (
           <p className="arow arow--text" data-testid="row-guess-empty">
             {/* 원인을 표시한 행이 아래에 있으면 "나눠 볼 것이 없어요"라고 하지 않고 찍음 표시가 없다는 사실만 적는다. */}
-            {an.causeMarkedCount > 0
-              ? S.anatomy.emptyGuessOnly(an.actual)
-              : an.hasAnyMark
-                ? S.anatomy.emptyGuess(an.actual)
-                : S.anatomy.emptyMarks(an.actual)}
+            {/* 찍음 표시가 모두 정답 처리 문항에만 있으면 표시가 없다고 하지 않고, 그 문항을 따로 나누지 않았다고 적는다(작업 지시서 3의 4-2). */}
+            {an.allCorrectGuessCount > 0
+              ? S.anatomy.emptyGuessAllCorrect(an.actual)
+              : an.causeMarkedCount > 0
+                ? S.anatomy.emptyGuessOnly(an.actual)
+                : an.hasAnyMark
+                  ? S.anatomy.emptyGuess(an.actual)
+                  : S.anatomy.emptyMarks(an.actual)}
           </p>
         )}
 

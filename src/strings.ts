@@ -232,6 +232,8 @@ export const S = {
     emptyMarks: (actual: number) => `표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
     emptyGuess: (actual: number) => `찍었다고 표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
     emptyGuessOnly: (actual: number) => `찍었다고 표시한 문항이 없어요. ${actual}점 그대로예요.`,
+    // 찍음 표시가 모두 정답 처리 문항에만 있을 때. 그 문항은 표시가 없는 정답으로 다뤄서 나눠 보지 않는다(작업 지시서 3의 4-2).
+    emptyGuessAllCorrect: (actual: number) => `찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. ${actual}점 그대로예요.`,
     causesUnmarked: '아직 원인을 표시하지 않았어요',
     causesPartly: (n: number) => `원인을 표시하지 않은 문항이 ${n}개 있어요`,
     toCauses: '오답 원인 표시하기',

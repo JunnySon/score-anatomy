@@ -5,7 +5,7 @@ import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import { gradeExam } from '../logic/scoring';
 import type { SessionHandle } from '../state/hooks';
 import { newSession } from '../state/session';
-import type { Causes as CauseMap, Exam, Marks as MarkMap, Session } from '../types';
+import type { Causes as CauseMap, Exam, ExamItem, Marks as MarkMap, Session } from '../types';
 import { Anatomy } from './Anatomy';
 import { Causes } from './Causes';
 import { Retry } from './Retry';
@@ -42,6 +42,11 @@ function text(html: string): string {
 
 function anatomy(h: SessionHandle): string {
   return renderToStaticMarkup(<Anatomy h={h} grade={gradeExam(h.exam, h.session)} />);
+}
+
+/** 예시 시험 A의 문항 하나를 고친 사본(테스트 전용 자료, 작업 지시서 3의 4-2). */
+function withItem(exam: Exam, no: number, more: Partial<ExamItem>): Exam {
+  return { ...exam, items: exam.items.map((it) => (it.no === no ? { ...it, ...more } : it)) };
 }
 
 describe('점수 해부 화면의 상태별 문구', () => {
@@ -123,6 +128,24 @@ describe('점수 해부 화면의 상태별 문구', () => {
     const t = text(anatomy(handleFor(examA, exampleMarks(), exampleCauses(), { gradedBefore: 'already', answersEditedAfterGrading: [3, 11] })));
     expect(t).toContain('채점한 뒤에 표시한 기록이에요');
     expect(t).toContain('채점한 뒤에 답을 고친 문항: 3번과 11번');
+  });
+
+  it('찍음 표시가 모두 정답 처리 문항에만 있으면 표시가 없다고 하지 않고 찍기 운 줄도 없다(작업 지시서 3의 4-2)', () => {
+    // 20번(4점, 넣은 답 3)을 모두 정답 처리로 바꾸면 78 + 4 = 82점이다. 찍음 표시는 20번에만 있다.
+    const exam = withItem(examA, 20, { allCorrect: true });
+    const html = anatomy(handleFor(exam, { 20: 'guess' }, {}, { targetGrade: '2' }));
+    const t = text(html);
+    expect(t).toContain('82점 30문항 가운데 25문항을 맞혔어요.');
+    expect(t).toContain('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. 82점 그대로예요.');
+    expect(t).not.toContain('표시한 문항이 없어');
+    expect(t).not.toContain('추측했다고 표시한 정답');
+    expect(t).not.toContain('찍기 운을 평균으로 보면');
+    // 모두 정답 처리 문항은 표시가 없는 정답으로 막대의 채움 구간에 들어간다.
+    expect(html).toContain('aria-label="100점 막대. 찍음 표시 없이 맞힌 점수 82점, 오답 18점."');
+    // 원인을 고른 행이 아래에 있어도 같은 문장이다.
+    expect(text(anatomy(handleFor(exam, { 20: 'guess' }, exampleCauses())))).toContain('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요.');
+    // 고민 표시만 있으면 표시는 있으니 "표시한 문항이 없어서"가 아니라 찍었다고 표시한 문항이 없다고 적는다.
+    expect(text(anatomy(handleFor(exam, { 20: 'doubt' }, {})))).toContain('찍었다고 표시한 문항이 없어서 나눠 볼 것이 없어요. 82점 그대로예요.');
   });
 });
 

@@ -1,18 +1,22 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EXAMS, findExam } from '../exams';
 import { parseExam, validateExam } from '../exams/validate';
-import type { Answers, Exam, Marks } from '../types';
+import type { Answers, AnswerValue, Exam, ExamItem, Marks } from '../types';
 import { cutView, gapFor, gradeKeys } from './cuts';
 import { exampleResponses } from './example';
-import { analyze, findMissing, GradeError, gradeExam, luckFraction, roundLuck } from './scoring';
+import { analyze, findMissing, GradeError, gradeExam, isCorrectResponse, luckFraction, roundLuck } from './scoring';
 import { sectionsOf } from './sections';
 import { rankTypes, selectSteps } from './steps';
+import { luckLine } from './text';
 
 const examA = findExam('sample-a') as Exam;
 const examB = findExam('sample-b') as Exam;
 const examC = findExam('sample-c') as Exam;
 
-function allCorrect(exam: Exam): Answers {
+/** 모든 문항에 정답(answer)을 넣은 답. 시험 칸 allCorrect(모두 정답 처리)와 헷갈리지 않게 이름을 correctAnswers 로 둔다. */
+function correctAnswers(exam: Exam): Answers {
   const a: Answers = {};
   for (const it of exam.items) a[it.no] = it.answer as number;
   return a;
@@ -225,7 +229,7 @@ describe('추가 경우', () => {
   });
 
   it('전부 정답: 100점, 계단 없음', () => {
-    const grade = gradeExam(examA, { answers: allCorrect(examA), marks: {}, causes: {} });
+    const grade = gradeExam(examA, { answers: correctAnswers(examA), marks: {}, causes: {} });
     const an = analyze(examA, grade);
     expect(an.actual).toBe(100);
     expect(an.correctCount).toBe(30);
@@ -235,7 +239,7 @@ describe('추가 경우', () => {
   });
 
   it('전부 정답이어도 찍음 표시 정답은 계단이 된다', () => {
-    const grade = gradeExam(examA, { answers: allCorrect(examA), marks: { 14: 'guess' }, causes: {} });
+    const grade = gradeExam(examA, { answers: correctAnswers(examA), marks: { 14: 'guess' }, causes: {} });
     const an = analyze(examA, grade);
     expect(an.actual).toBe(100);
     expect(an.guessCorrectPoints).toBe(4);
@@ -267,7 +271,7 @@ describe('추가 경우', () => {
 
   it('계단 70% 경계: 3위가 2위의 정확히 70%면 3개, 바로 아래면 2개', () => {
     const wrongAt = (nos: number[]): Answers => {
-      const answers = allCorrect(examA);
+      const answers = correctAnswers(examA);
       for (const no of nos) {
         const item = examA.items.find((i) => i.no === no)!;
         const right = item.answer as number;
@@ -292,12 +296,12 @@ describe('추가 경우', () => {
 
   it('고민 표시와 자신 없음 표시가 붙은 정답은 계단 점수에 들어가지 않는다', () => {
     const marks: Marks = { 14: 'doubt', 20: 'doubt', 22: 'unsure' };
-    const grade = gradeExam(examA, { answers: allCorrect(examA), marks, causes: {} });
+    const grade = gradeExam(examA, { answers: correctAnswers(examA), marks, causes: {} });
     expect(selectSteps(examA, grade)).toEqual([]);
   });
 
   it('미입력이 남아 있으면 채점하지 않는다', () => {
-    const answers = allCorrect(examA);
+    const answers = correctAnswers(examA);
     delete answers[14];
     delete answers[22];
     expect(findMissing(examA, answers)).toEqual([14, 22]);
@@ -312,7 +316,7 @@ describe('추가 경우', () => {
   });
 
   it('범위를 벗어난 값은 미입력으로 본다', () => {
-    const answers = allCorrect(examA);
+    const answers = correctAnswers(examA);
     answers[1] = 6;
     answers[22] = 1000;
     answers[23] = 1.5;
@@ -340,7 +344,7 @@ describe('추가 경우', () => {
 
   it('컷 범위 안인 실제 점수', () => {
     // 15번(4점)만 틀리면 96점. 12번(4점)과 13번(4점)도 틀리면 88점으로 1등급 컷 88~92 안이다.
-    const answers = allCorrect(examA);
+    const answers = correctAnswers(examA);
     for (const no of [12, 13, 15]) answers[no] = wrongValue(examA, no);
     const an = analyze(examA, gradeExam(examA, { answers, marks: {}, causes: {} }));
     expect(an.actual).toBe(88);
@@ -379,7 +383,7 @@ describe('추가 경우', () => {
   it('찍기 운 평균은 문항의 보기 수를 따른다(1 나누기 보기 수)', () => {
     // 보기 6개: 2점 문항을 찍어 틀림. G = 98, D = 6, N = 2. (98 x 6 + 2) / 6 = 590 / 6 = 98.33..., 약 98점.
     const six: Exam = { ...examA, items: examA.items.map((it) => (it.kind === 'mc' ? { ...it, choices: 6 } : it)) };
-    const answers = allCorrect(six);
+    const answers = correctAnswers(six);
     answers[1] = wrongValue(six, 1);
     const an = analyze(six, gradeExam(six, { answers, marks: { 1: 'guess' }, causes: {} }));
     expect(an.actual).toBe(98);
@@ -410,7 +414,7 @@ describe('추가 경우', () => {
   });
 
   it('섞인 배열 시험 B: 채점, 확정 컷, 계단', () => {
-    const answers = allCorrect(examB);
+    const answers = correctAnswers(examB);
     // 7번(mc, 3점, 적분), 12번(mc, 4점, 적분), 17번(short, 3점, 수열), 24번(mc, 3점, 확률), 30번(short, 4점, 확률)을 틀린다.
     for (const no of [7, 12, 17, 24, 30]) answers[no] = wrongValue(examB, no);
     answers[21] = 'skip'; // 21번(short, 4점, 함수의 극한과 연속)은 안 풂
@@ -450,7 +454,7 @@ describe('추가 경우', () => {
 
   it('반올림 값이 실제 점수와 같으면 추정 점수를 보여 주지 않는다', () => {
     // 찍음 표시 1개가 틀린 2점 문항이면 0.2 x 2 = 0.4점이 더해져 반올림해도 실제 점수와 같다.
-    const answers = allCorrect(examA);
+    const answers = correctAnswers(examA);
     answers[1] = wrongValue(examA, 1);
     const an = analyze(examA, gradeExam(examA, { answers, marks: { 1: 'guess' }, causes: {} }));
     expect(an.actual).toBe(98);
@@ -463,7 +467,7 @@ describe('추가 경우', () => {
   it('추정 점수는 가장 가까운 정수로 반올림한다', () => {
     // 1~6번(2, 2, 2, 3, 3, 3점)을 찍어서 틀리고 14번(4점)을 찍어서 맞힌 경우.
     // 실제 100 - 15 = 85, 찍음 전체 배점 19, 85 - 4 + 0.2 x 19 = 84.8, 화면에는 약 85점(실제와 같아 숨김).
-    const answers = allCorrect(examA);
+    const answers = correctAnswers(examA);
     for (const no of [1, 2, 3, 4, 5, 6]) answers[no] = wrongValue(examA, no);
     const marks: Marks = { 1: 'guess', 2: 'guess', 3: 'guess', 4: 'guess', 5: 'guess', 6: 'guess', 14: 'guess' };
     const an = analyze(examA, gradeExam(examA, { answers, marks, causes: {} }));
@@ -484,32 +488,37 @@ describe('추가 경우', () => {
   });
 });
 
+/** 찍음 표시 문항에 더할 수 있는 정답 칸(작업 지시서 3의 4-2). */
+type GuessExtra = Pick<ExamItem, 'altAnswers' | 'allCorrect'>;
+
 /**
- * 찍음 표시 문항을 마음대로 만든 시험. guess 는 [배점, 보기 수, 맞혔는지] 목록이다.
+ * 찍음 표시 문항을 마음대로 만든 시험(테스트 전용 자료). guess 는 [배점, 보기 수, 맞혔는지, 더할 정답 칸] 목록이다.
+ * 찍음 표시 문항의 정답(answer)은 1이고 맞혔으면 1을, 아니면 2를 넣는다. 그래서 복수 정답(altAnswers)은 3 이상으로 적는다.
+ * 모두 정답 처리(allCorrect) 문항은 넣은 답과 상관없이 배점을 받는다.
  * 나머지 배점은 단답형 두 문항으로 채워 실제 점수가 actual 이 되게 한다(합 100점).
  */
-function luckExam(actual: number, guess: [number, number, boolean][]): { exam: Exam; answers: Answers; marks: Marks } {
+function luckExam(actual: number, guess: [number, number, boolean, GuessExtra?][]): { exam: Exam; answers: Answers; marks: Marks } {
   const items: Exam['items'] = [];
   const answers: Answers = {};
   const marks: Marks = {};
   let no = 0;
-  let guessCorrect = 0;
+  let guessScored = 0;
   let guessTotal = 0;
-  for (const [points, choices, correct] of guess) {
+  for (const [points, choices, correct, extra] of guess) {
     no += 1;
-    items.push({ no, kind: 'mc', choices, points, answer: 1, typeId: 't' });
+    items.push({ no, kind: 'mc', choices, points, answer: 1, typeId: 't', ...extra });
     answers[no] = correct ? 1 : 2;
     marks[no] = 'guess';
     guessTotal += points;
-    if (correct) guessCorrect += points;
+    if (correct || extra?.allCorrect === true) guessScored += points;
   }
-  const restCorrect = actual - guessCorrect;
+  const restCorrect = actual - guessScored;
   const restWrong = 100 - guessTotal - restCorrect;
   items.push({ no: ++no, kind: 'short', points: restCorrect, answer: 1, typeId: 't' });
   answers[no] = 1;
   items.push({ no: ++no, kind: 'short', points: restWrong, answer: 1, typeId: 't' });
   answers[no] = 2;
-  const exam: Exam = { id: 'luck', title: '보기 수 시험', note: '', isSample: true, isPast: false, answerReleased: true, items, types: { t: { name: '유형' } } };
+  const exam: Exam = { id: 'luck', title: '보기 수 시험', note: '테스트 전용으로 지은 시험이에요.', isSample: true, isPast: false, answerReleased: true, items, types: { t: { name: '유형' } } };
   return { exam, answers, marks };
 }
 
@@ -577,9 +586,168 @@ describe('찍기 운 평균의 보기 수', () => {
   });
 });
 
+/** 작업 지시서 3의 4-2 테스트에 쓰는 작은 시험(테스트 전용 자료). 문항은 테스트마다 그 자리에서 짓는다. */
+function testExam(items: ExamItem[]): Exam {
+  return { id: 'test-4-2', title: '테스트 전용 시험', note: '테스트 전용으로 지은 시험이에요.', isSample: true, isPast: false, answerReleased: true, items, types: { t: { name: '테스트 유형' } } };
+}
+
+describe('정답 정정과 복수 정답(4-2)', () => {
+  it('복수 정답 문항은 answer 도 altAnswers 의 답도 정답이고 그 밖의 답은 오답이다', () => {
+    // 1번(5지선다, 4점): 정답 2, 복수 정답 4. 2번(단답형, 3점): 정답 12, 복수 정답 21. 3번(5지선다, 3점): 정답 5만.
+    const exam = testExam([
+      { no: 1, kind: 'mc', points: 4, answer: 2, altAnswers: [4], typeId: 't' },
+      { no: 2, kind: 'short', points: 3, answer: 12, altAnswers: [21], typeId: 't' },
+      { no: 3, kind: 'mc', points: 3, answer: 5, typeId: 't' },
+    ]);
+    expect(validateExam(exam)).toEqual([]);
+    const grade = (a1: AnswerValue, a2: AnswerValue, a3: AnswerValue = 5) => gradeExam(exam, { answers: { 1: a1, 2: a2, 3: a3 }, marks: {}, causes: {} });
+    // answer 를 넣어도, altAnswers 의 답을 넣어도 배점을 받는다.
+    for (const [a1, a2] of [[2, 12], [4, 21], [2, 21], [4, 12]] as const) {
+      const g = grade(a1, a2);
+      expect(g.actual, `${a1}, ${a2}`).toBe(10);
+      expect(g.wrong).toEqual([]);
+    }
+    // 그 밖의 답과 안 풂은 오답이다.
+    for (const a1 of [1, 3, 5, 'skip'] as const) {
+      const g = grade(a1, 12);
+      expect(g.actual, `${a1}`).toBe(6);
+      expect(g.wrong.map((w) => w.no)).toEqual([1]);
+    }
+    for (const a2 of [0, 13, 120, 'skip'] as const) {
+      const g = grade(2, a2);
+      expect(g.actual, `${a2}`).toBe(7);
+      expect(g.wrong.map((w) => w.no)).toEqual([2]);
+    }
+    // 복수 정답이 없는 문항은 answer 만 정답이다.
+    expect(grade(2, 12, 4).wrong.map((w) => w.no)).toEqual([3]);
+    // 재풀이의 맞춰 보기도 같은 판정(isCorrectResponse)을 쓴다.
+    const [mc, short, single] = exam.items;
+    expect([1, 2, 3, 4, 5].filter((v) => isCorrectResponse(mc!, v))).toEqual([2, 4]);
+    expect([12, 21, 0, 13].filter((v) => isCorrectResponse(short!, v))).toEqual([12, 21]);
+    expect([1, 2, 3, 4, 5].filter((v) => isCorrectResponse(single!, v))).toEqual([5]);
+    expect(isCorrectResponse(mc!, 'skip')).toBe(false);
+  });
+
+  it('모두 정답 처리 문항은 오답을 넣어도 안 풂이어도 배점을 받는다', () => {
+    // 1번(5지선다, 4점): 정답 2를 남긴 채 모두 정답 처리. 2번(단답형, 3점): 정답 없이 모두 정답 처리. 3번(5지선다, 3점): 정답 5.
+    const exam = testExam([
+      { no: 1, kind: 'mc', points: 4, answer: 2, allCorrect: true, typeId: 't' },
+      { no: 2, kind: 'short', points: 3, allCorrect: true, typeId: 't' },
+      { no: 3, kind: 'mc', points: 3, answer: 5, typeId: 't' },
+    ]);
+    expect(validateExam(exam)).toEqual([]);
+    for (const [a1, a2] of [[2, 7], [3, 0], [5, 999], ['skip', 'skip']] as const) {
+      // 3번은 틀린다(1을 넣음). 1번과 2번은 넣은 답과 상관없이 맞은 것이다.
+      const g = gradeExam(exam, { answers: { 1: a1, 2: a2, 3: 1 }, marks: {}, causes: { 1: 'blank', 2: 'slip', 3: 'unknown' } });
+      expect(g.actual, `${a1}, ${a2}`).toBe(7);
+      expect(g.correctCount).toBe(2);
+      expect(g.wrong.map((w) => [w.no, w.cause])).toEqual([[3, 'unknown']]);
+      // 맞은 문항이라 원인을 붙이지 않는다.
+      expect(g.items.filter((i) => i.no !== 3).every((i) => i.correct && i.cause === null)).toBe(true);
+    }
+    // 안 풂은 안 풂으로 남고(넣은 답을 바꾸지 않는다) 배점은 받는다.
+    const skipped = gradeExam(exam, { answers: { 1: 'skip', 2: 'skip', 3: 5 }, marks: {}, causes: {} });
+    expect(skipped.items.map((i) => [i.no, i.response, i.skipped, i.correct])).toEqual([
+      [1, 'skip', true, true],
+      [2, 'skip', true, true],
+      [3, 5, false, true],
+    ]);
+    expect(skipped.actual).toBe(10);
+    // 미입력이 남아 있으면 모두 정답 처리 문항이어도 지금처럼 채점하지 않는다.
+    expect(() => gradeExam(exam, { answers: { 2: 7, 3: 5 }, marks: {}, causes: {} })).toThrow(GradeError);
+    expect(isCorrectResponse(exam.items[1]!, 'skip')).toBe(true);
+  });
+
+  it('실제 60점, 찍음 표시 4점 문항 하나(보기 5개, 인정하는 답 2개, 오답): 61.6, 약 62점', () => {
+    // 손으로 계산한 값: 맞힐 확률을 인정하는 답 2개 나누기 보기 5개로 본다.
+    // G = 60 - 0 = 60, D = 5, N = 4 x 2 x (5 / 5) = 8. (60 x 5 + 8) / 5 = 308 / 5 = 61.6.
+    // 약 N점: (2 x 308 + 5) / (2 x 5) = 621 / 10 의 몫 62.
+    expect(luckFraction(60, [{ points: 4, choices: 5, accepted: 2 }], 0)).toEqual({ numerator: 308, denominator: 5 });
+    const { exam, answers, marks } = luckExam(60, [[4, 5, false, { altAnswers: [3] }]]);
+    expect(validateExam(exam)).toEqual([]);
+    const an = analyze(exam, gradeExam(exam, { answers, marks, causes: {} }));
+    expect(an.actual).toBe(60);
+    expect(an.guessCorrectPoints).toBe(0);
+    expect(an.guessTotalPoints).toBe(4);
+    expect(an.luck).toEqual({ numerator: 308, denominator: 5 });
+    expect(an.luckAverage).toBe(61.6);
+    expect(an.luckAverageRounded).toBe(62);
+    expect(an.showLuckAverage).toBe(true);
+  });
+
+  it('같은 문항을 맞혔고 실제 60점: 57.6, 약 58점', () => {
+    // 손으로 계산한 값: G = 60 - 4 = 56, D = 5, N = 4 x 2 x (5 / 5) = 8. (56 x 5 + 8) / 5 = 288 / 5 = 57.6.
+    // 약 N점: (2 x 288 + 5) / (2 x 5) = 581 / 10 의 몫 58.
+    expect(luckFraction(60, [{ points: 4, choices: 5, accepted: 2 }], 4)).toEqual({ numerator: 288, denominator: 5 });
+    const { exam, answers, marks } = luckExam(60, [[4, 5, true, { altAnswers: [3] }]]);
+    // answer(1)로 맞혀도, 복수 정답(3)으로 맞혀도 같다.
+    for (const picked of [1, 3]) {
+      const an = analyze(exam, gradeExam(exam, { answers: { ...answers, 1: picked }, marks, causes: {} }));
+      expect(an.actual, `${picked}`).toBe(60);
+      expect(an.guessCorrectPoints).toBe(4);
+      expect(an.luck).toEqual({ numerator: 288, denominator: 5 });
+      expect(an.luckAverage).toBe(57.6);
+      expect(an.luckAverageRounded).toBe(58);
+      expect(an.showLuckAverage).toBe(true);
+    }
+  });
+
+  it('실제 60점, 찍음 표시가 모두 정답 처리 문항 하나뿐이면 둘째 줄을 보여 주지 않는다', () => {
+    // 1번(5지선다, 4점)은 모두 정답 처리이고, 오답(2)을 넣고 찍음 표시를 붙였다. 표시가 없는 정답으로 다뤄서
+    // 추측 표시 정답 0점, 찍음 전체 배점 0점, G = 60, D = 1, N = 0. 값은 60 / 1 이라 실제 점수와 같고 둘째 줄이 없다.
+    // 인정하는 답을 보기 수만큼으로 세어 찍음 표시에 남겨도 60 이 나오므로, 추측 표시 정답과 찍음 표시 수도 함께 본다.
+    const { exam, answers, marks } = luckExam(60, [[4, 5, false, { allCorrect: true }]]);
+    expect(validateExam(exam)).toEqual([]);
+    const grade = gradeExam(exam, { answers, marks, causes: {} });
+    const an = analyze(exam, grade);
+    expect(an.actual).toBe(60);
+    // 학생이 붙인 표시는 지우지 않고, 계산에 쓰는 찍음 표시만 붙이지 않는다.
+    expect(grade.items[0]).toMatchObject({ no: 1, response: 2, correct: true, guess: false, mark: 'guess' });
+    expect(an.hasGuessMark).toBe(false);
+    expect(an.guessMarkCount).toBe(0);
+    expect(an.allCorrectGuessCount).toBe(1);
+    expect(an.guessCorrectPoints).toBe(0);
+    expect(an.guessTotalPoints).toBe(0);
+    expect(an.plainCorrectPoints).toBe(60);
+    expect(an.luck).toEqual({ numerator: 60, denominator: 1 });
+    expect(an.showLuckAverage).toBe(false);
+    // 등급컷 상자의 둘째 줄이 없다.
+    const withCuts: Exam = { ...exam, cuts: { source: '예시 값', asOf: '2026-11-22', confirmed: false, grades: { '2': [81, 85] } } };
+    const cv = cutView(withCuts, an, '2')!;
+    expect(cv.luckGap).toBeNull();
+    expect(luckLine(cv, an.luckAverageRounded)).toBeNull();
+    // 계단과 다시 풀기에도 넣지 않는다.
+    expect(rankTypes(exam, grade).flatMap((s) => s.retryNos)).toEqual([3]);
+  });
+
+  it('모두 정답 처리 문항의 찍음 표시는 다른 찍음 표시와 함께 있어도 계산에 넣지 않는다', () => {
+    // 1번(4점)은 모두 정답 처리이고 찍음 표시가 있다. 2번(3점, 보기 5개)은 찍어서 틀렸다.
+    // 손으로 계산한 값: G = 60 - 0 = 60, D = 5, N = 3 x 1 x (5 / 5) = 3. (300 + 3) / 5 = 303 / 5 = 60.6, 약 61점.
+    const { exam, answers, marks } = luckExam(60, [
+      [4, 5, false, { allCorrect: true }],
+      [3, 5, false],
+    ]);
+    const an = analyze(exam, gradeExam(exam, { answers, marks, causes: {} }));
+    expect(an.actual).toBe(60);
+    expect(an.guessMarkCount).toBe(1);
+    expect(an.allCorrectGuessCount).toBe(1);
+    expect(an.guessTotalPoints).toBe(3);
+    expect(an.luck).toEqual({ numerator: 303, denominator: 5 });
+    expect(an.luckAverageRounded).toBe(61);
+    expect(an.showLuckAverage).toBe(true);
+  });
+
+  it('재풀이의 맞춰 보기는 채점과 같은 판정을 쓴다', () => {
+    // 재풀이 화면은 서버 그리기로 답을 넣어 볼 수 없어서 소스를 읽어 확인한다. answer 와 바로 견주면 복수 정답을 놓친다.
+    const src = readFileSync(resolve(process.cwd(), 'src/screens/Retry.tsx'), 'utf8');
+    expect(src).toContain('isCorrectResponse(item, value)');
+    expect(src).not.toMatch(/===\s*item\.answer|item\.answer\s*===/);
+  });
+});
+
 describe('계단 선정 규칙', () => {
   function gradeWithWrong(nos: number[], marks: Marks = {}) {
-    const answers = allCorrect(examA);
+    const answers = correctAnswers(examA);
     for (const no of nos) answers[no] = wrongValue(examA, no);
     return gradeExam(examA, { answers, marks, causes: {} });
   }

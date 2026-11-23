@@ -3,7 +3,7 @@ import { DigitPad, EntryBox, McPad } from '../components/pads';
 import { Badge, IconCross, IconRing, LiveRegion, Message, Option, Screen, TopBar } from '../components/ui';
 import { choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, pressDigit, type DigitEntry } from '../logic/entry';
-import type { Grade } from '../logic/scoring';
+import { isCorrectResponse, type Grade } from '../logic/scoring';
 import { rankTypes } from '../logic/steps';
 import { retryLabel, retrySentence, selfCheckLabel, selfCheckSentence } from '../logic/text';
 import { navigate } from '../router';
@@ -53,7 +53,8 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       return;
     }
     setMsg(null);
-    const correct = value === item.answer;
+    // 맞춰 보기도 채점과 같은 판정을 쓴다. 복수 정답이면 인정하는 답 가운데 하나면 맞힌 것이다(작업 지시서 3의 4-2).
+    const correct = isCorrectResponse(item, value);
     h.update((s) => recordRetry(s, no, correct, answerKnown, new Date().toISOString()));
     setChecked(true);
   };

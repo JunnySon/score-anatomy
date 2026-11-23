@@ -234,6 +234,18 @@ describe('발행 도구 exams:check(작업 지시서 3의 6-4)', () => {
     expect(checkData(pending).warnings.filter((w) => w.includes('유형 분류를 마치는 판인데'))).toEqual([]);
   });
 
+  it('변경 요약에서 같은 이름의 다른 유형으로 옮긴 문항은 유형 id 도 적는다(이름만 적으면 바뀐 것이 없어 보임, 2차 검토 T8)', () => {
+    const ready = published(releasedExam());
+    // t02 를 이름이 같은 t03 으로 바꾼 판(rev 를 올린 수정). t02 를 가리키던 문항이 모두 t03 으로 옮긴다.
+    const items = (releasedExam().items as Record<string, unknown>[]).map((it) => (it.typeId === 't02' ? { ...it, typeId: 't03' } : it));
+    const moved = items.filter((it) => it.typeId === 't03').map((it) => it.no as number);
+    expect(moved.length).toBeGreaterThan(0);
+    writeExam(ready, releasedExam({ rev: 2, types: { t01: { name: '테스트 유형 가' }, t03: { name: '테스트 유형 나' } }, items }));
+    const r = checkData(ready);
+    expect(r.errors).toEqual([]);
+    expect(r.lines).toContain(`  유형이 바뀌는 문항: ${moved.map((no) => `${no}번(발행한 판 t02 테스트 유형 나, 지금 t03 테스트 유형 나)`).join(', ')}.`);
+  });
+
   it('시험 파일의 검사는 src/exams/validate.ts 의 규칙을 그대로 쓴다', () => {
     const dir = dataDir();
     writeExam(dir, withItem(testExam(), 1, { typeId: 't09' }));

@@ -387,8 +387,14 @@ export function compareWithPublished(prev: StateEntry, exam: Exam): ExamComparis
   // 유형 분류를 마친 판끼리: 문항의 유형(typeId)과 유형 이름이 바뀐 것(별도 검토 B2). 학생 화면의 계단(유형별 점수, 유형 이름, 다시 풀 문항)이 바뀐다.
   // 발행 기록에 유형이 적혀 있지 않으면(이 칸을 더하기 전의 기록) 견주지 않는다.
   if (prev.typesReady && typesReady && structure.length === 0) {
+    // 두 이름이 같으면(같은 이름의 다른 유형으로 옮김) 유형 id 도 적어서, 바뀐 것이 없어 보이지 않게 한다(별도 검토 2차 T8).
+    const retypedText = (no: number, was: string, is: string) => {
+      const a = typeLabel(prev.types, was);
+      const b = typeLabel(nowTypes, is);
+      return a === b ? `${no}번(발행한 판 ${was} ${a}, 지금 ${is} ${b})` : `${no}번(발행한 판 ${a}, 지금 ${b})`;
+    };
     const retyped = prev.items.flatMap((p, i) =>
-      p.typeId !== undefined && now[i].typeId !== p.typeId ? [`${p.no}번(발행한 판 ${typeLabel(prev.types, p.typeId)}, 지금 ${typeLabel(nowTypes, now[i].typeId as string)})`] : [],
+      p.typeId !== undefined && now[i].typeId !== p.typeId ? [retypedText(p.no, p.typeId, now[i].typeId as string)] : [],
     );
     if (retyped.length > 0) changes.push(`유형이 바뀌는 문항: ${retyped.join(', ')}.`);
     const oldNames = prev.types ?? {};

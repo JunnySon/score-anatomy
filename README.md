@@ -32,6 +32,7 @@ npm run dev
 | `npm run build:single` | 모든 자산을 넣은 HTML 파일 1개를 dist-single/index.html 로 만들어요(시스템 글꼴만 사용) |
 | `npm test` | 단위 테스트(Vitest) |
 | `npm run e2e` | 빌드 뒤 화면 흐름 테스트(Playwright) |
+| `npm run build:app` | 아이폰 앱 껍데기에 싣는 묶음 두 가지와 manifest.json 을 ios/ScoreAnatomy/Web 에 만들어요 |
 | `npm run verify` | 자동 검증 전체를 돌리고 docs/검증결과.md 와 docs/screens 를 새로 써요 |
 
 dist 폴더는 상대 경로와 해시 라우팅을 쓰기 때문에 어떤 정적 호스팅의 어떤 하위 경로에 올려도 열려요. 서비스 워커는 없어요.
@@ -89,6 +90,25 @@ SA_CHROMIUM_PATH=/usr/bin/chromium npm run verify
 입력 방식은 주소로 바꿀 수 있어요. 주소 끝에 `#/?input=rows`(5행 방식)나 `#/?input=keypad`(키패드 방식, 기본)를 붙여요.
 테스트 진행자용 화면은 주소 끝에 `#/test` 를 붙이거나 기록 화면 맨 아래 링크로 들어가요.
 
+## 아이폰 앱용 묶음
+
+아이폰 앱은 화면 전체를 차지하는 웹뷰 하나에 이 웹 코드를 싣는 얇은 껍데기예요. 이 저장소는 껍데기에 실을 묶음 두 가지를 만들어 커밋해요(맥에서는 Node 없이 이 파일만 써요).
+
+```bash
+npm run build:app
+```
+
+| 파일 | 뜻 |
+| --- | --- |
+| ios/ScoreAnatomy/Web/app-test/index.html | 시험용 묶음. 진행자용 화면과 입력 방식 전환을 포함해요(아이폰에서 사용성 테스트를 할 때, Debug 빌드) |
+| ios/ScoreAnatomy/Web/app-release/index.html | 배포용 묶음. 진행자용 화면과 그리로 가는 링크, 입력 방식 전환과 5행 방식 화면, "준비 중인 기능" 목록이 코드와 글자에서 빠져 있어요(Release 빌드) |
+| ios/ScoreAnatomy/Web/manifest.json | 묶음을 만든 때의 커밋, 버전, 다리 규격 번호, 파일별 SHA-256 |
+
+- 둘 다 시스템 글꼴을 쓰는 단일 HTML이고 외부 요청이 없어요.
+- 껍데기와 주고받는 약속(저장, 햅틱, 복사, 글자 크기)은 docs/앱_다리_규격.md 에 있어요. 껍데기가 window.__SA_APP__ 를 넣어 주지 않으면(브라우저에서 열면) 일반 웹 빌드와 똑같이 동작해요.
+- 소스를 고쳤으면 먼저 커밋한 뒤 `npm run build:app` 을 돌려 세 파일을 함께 커밋해요. `npm run verify` 가 지금 코드로 묶음을 다시 만들어 커밋된 묶음과 같은지(11번), 가짜 다리를 넣은 브라우저에서 두 묶음이 동작하는지(12번) 확인해요. Playwright 의 WebKit 이 설치돼 있으면(`npx playwright install webkit`) 앱 시험용 묶음의 흐름을 WebKit 으로도 한 번 돌려요.
+- 아이폰 앱 껍데기(Xcode 프로젝트)는 작업 지시서 2에서 맥으로 만들어요.
+
 ## 폴더 구조
 
 ```
@@ -101,7 +121,8 @@ src/
   screens/          화면 12종
   components/       공통 부품(화면 틀, 키패드, 바텀시트, 점수 막대)
 e2e/                화면 흐름 테스트와 화면 검사(Playwright)
-scripts/            검증 스크립트, 단일 HTML 빌드, 전달용 파일 묶기
+scripts/            검증 스크립트, 단일 HTML 빌드, 앱용 묶음 빌드, 전달용 파일 묶기
+ios/ScoreAnatomy/Web/ 앱용 묶음 두 가지와 manifest.json(커밋해요)
 docs/               문서와 화면 캡처
 ```
 
@@ -117,6 +138,7 @@ verify-out/         npm run verify 가 쓰는 중간 결과와 검증용 변형 
 ## 문서
 
 - docs/작업지시서.md: 이 시제품의 작업 지시서 원문
+- docs/앱_다리_규격.md: 아이폰 앱 껍데기와 웹이 주고받는 약속(다리 규격 1)
 - docs/결정기록.md: 지시서의 결정과 만들면서 정한 것, 제안
 - docs/시험_추가_방법.md: 시험 JSON 작성법, 시험 당일 정답과 등급컷을 넣는 절차, 좌표 표기 규칙
 - docs/사용성테스트_진행안내.md: 진행 순서, 입력 방식 2종 비교 방법, 측정 기록 내보내기, 통과 기준

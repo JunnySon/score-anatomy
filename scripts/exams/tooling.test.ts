@@ -274,6 +274,17 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     expect(c.out).toContain('다음 차례: npm run exams:check 로 검사해요.');
   });
 
+  it('다음 차례 안내의 경로에 큰따옴표 안에서도 셸이 바꾸는 글자가 들었으면 그대로 치지 말라는 말을 덧붙인다(2차 검토 T6)', () => {
+    // 달러, 백틱, 퍼센트, 큰따옴표, 잇단 역슬래시 둘(공유 폴더 경로)은 파워셸, cmd, Git Bash 가 큰따옴표 안에서도 서로 다르게 바꾼다.
+    const caution = '(경로에 셸이 바꿀 수 있는 글자가 있어요. 그대로 치지 말고 경로를 셸에 맞게 직접 넣어요)';
+    for (const risky of ['C:\\Temp\\a$HOME\\data', 'C:\\Temp\\a`b', 'C:\\Temp\\%PATHEXT%', '\\\\srv\\share\\data', 'C:\\Temp\\a"b']) {
+      expect(commandHint('check', [], [['--data', risky]]), risky).toBe(`npm run exams:check -- --data "${risky}"${caution}`);
+    }
+    for (const plain of ['C:\\Temp\\a b', 'C:\\Users\\학생\\data', 'data']) {
+      expect(commandHint('check', [], [['--data', plain]]), plain).not.toContain(caution);
+    }
+  });
+
   it('npm run exams:check 와 같은 길(node scripts/exams.mjs)로 빈 자료 폴더를 검사하면 통과한다', () => {
     const dir = makeDataDir();
     dirs.push(dir);

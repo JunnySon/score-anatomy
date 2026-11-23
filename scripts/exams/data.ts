@@ -113,13 +113,18 @@ export function writeTextFile(path: string, text: string): void {
 
 /**
  * 다음 차례로 칠 명령의 글자(별도 검토 D5). 위치 인자와 선택지(값이 null 이면 뺌)가 없으면 "npm run exams:<명령>" 만이고,
- * 있으면 "npm run exams:verify -- out --data data"(형식 예시)처럼 붙인다. 빈칸이나 셸이 다르게 읽는 글자가 든 값은 큰따옴표로 감싼다.
+ * 있으면 "npm run exams:verify -- out --data data"(형식 예시)처럼 붙인다. 빈칸이나 역슬래시처럼 셸이 나눠 읽는 글자가 든 값은 큰따옴표로 감싼다.
  * 리허설처럼 --data, --out 을 준 실행에서 안내를 그대로 치면 저장소의 진짜 폴더를 보게 되는 일을 막는다.
+ * 큰따옴표 안에서도 셸이 바꾸는 글자(달러, 백틱, 퍼센트, 큰따옴표)나 잇단 역슬래시 둘(Git Bash 가 하나로 줄임, 공유 폴더 경로의 앞)이 들었으면
+ * 셸마다 지키는 방법이 달라서, 그대로 치지 말고 경로를 직접 넣으라는 말을 덧붙인다(별도 검토 2차 T6).
  */
 export function commandHint(command: string, positional: readonly string[], options: readonly (readonly [string, string | null])[]): string {
   const quote = (v: string) => (/^[A-Za-z0-9_./:-]+$/.test(v) ? v : `"${v}"`);
+  const values = [...positional, ...options.flatMap(([, value]) => (value === null ? [] : [value]))];
   const args = [...positional.map(quote), ...options.flatMap(([name, value]) => (value === null ? [] : [name, quote(value)]))];
-  return args.length === 0 ? `npm run exams:${command}` : `npm run exams:${command} -- ${args.join(' ')}`;
+  const hint = args.length === 0 ? `npm run exams:${command}` : `npm run exams:${command} -- ${args.join(' ')}`;
+  const risky = values.some((v) => /[$`%"]/.test(v) || v.includes('\\\\'));
+  return risky ? `${hint}(경로에 셸이 바꿀 수 있는 글자가 있어요. 그대로 치지 말고 경로를 셸에 맞게 직접 넣어요)` : hint;
 }
 
 /** 출력에 쓰는 경로. base 안이면 base 기준의 상대 경로(/ 로 구분), 밖이면 절대 경로다. */

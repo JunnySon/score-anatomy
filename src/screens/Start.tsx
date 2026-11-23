@@ -44,6 +44,9 @@ export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResum
   return (
     <Screen
       tabs="current"
+      // 넘겨받은 새 자료로 "이어서 보기"가 생기거나 없어지면 "예시 결과 보기"의 폭과 자리가 바뀐다. 학생이 누르지 않았어도 잠깐 막아
+      // 바뀌기 전 자리를 누른 것이 다른 버튼에 닿지 않게 한다(별도 검토 2차 W7).
+      shiftKey={resumeTo ? 'resume' : 'none'}
       actions={
         <>
           <div className="actions__row">

@@ -11,6 +11,10 @@ export interface ExamItem {
   points: number;
   /** 정답 공개 전에는 없다. */
   answer?: number | null;
+  /** answer 말고도 정답으로 인정하는 답(복수 정답). answer 가 있을 때만 쓰고 범위는 answer 와 같다. 인정하는 답은 acceptedAnswers 로 읽는다. */
+  altAnswers?: number[];
+  /** 모두 정답 처리. true 만 쓴다. 넣은 답이 무엇이든, 안 풂이어도 맞은 것으로 채점한다. */
+  allCorrect?: true;
   typeId: string;
 }
 
@@ -26,6 +30,7 @@ export interface ExamType {
 
 export interface ExamCuts {
   source: string;
+  /** 기준. "YYYY-MM-DD" 또는 "YYYY-MM-DDTHH:mm"(한국 시간). Date 로 바꾸지 않고 문자열을 잘라 쓴다(src/logic/dates.ts 의 parseAsOf). */
   asOf: string;
   confirmed: boolean;
   grades: Record<string, [number, number]>;
@@ -40,6 +45,15 @@ export interface Exam {
   answerReleased: boolean;
   /** 시험 시행일("YYYY-MM-DD"). 없어도 된다. 있으면 시험 목록에서 최근 날짜가 위로 온다. */
   examDate?: string;
+  // 아래 네 칸은 작업 지시서 3의 4-1~4-3 에서 더한 선택 칸이다. 없을 때의 값은 src/exams/validate.ts 의 revOf, answersRevOf, typesReadyOf 로 읽는다.
+  /** 판 번호. 1 이상의 정수이고 없으면 1이다. 같은 id 의 시험을 고쳐 낼 때마다 1씩 올린다. */
+  rev?: number;
+  /** 정답 판 번호. 1 이상의 정수이고 없으면 1이다. 채점에 영향을 주는 값(answer, altAnswers, allCorrect, points)을 공개한 뒤에 고칠 때만 올린다. */
+  answersRev?: number;
+  /** 정답 정정 안내. 학생에게 그대로 보이는 한 문장이다. answersRev 가 2 이상이면 꼭 있어야 한다. */
+  answersNote?: string;
+  /** 유형 분류가 끝났는지. 없으면 true 로 본다. false 면 계단 대신 유형 분류를 준비하고 있다는 안내를 보여 준다. */
+  typesReady?: boolean;
   items: ExamItem[];
   cuts?: ExamCuts;
   types: Record<string, ExamType>;

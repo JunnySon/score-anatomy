@@ -93,6 +93,27 @@ describe('시험 시행일(examDate)', () => {
   it('시행일(examDate)은 날짜만 받는다(시각을 붙이면 오류)', () => {
     expect(validateExam(testExam('x', '2030-01-02T20:10')).join(' ')).toContain('examDate');
   });
+
+  it('등급컷 기준(cuts.asOf)에는 한국 시간의 시각도 적을 수 있고, 실제로 있는 날짜와 시각만 받는다', () => {
+    const withAsOf = (asOf: unknown) => ({ ...examA, cuts: { ...examA.cuts!, asOf } });
+    for (const ok of ['2026-11-22', '2030-01-02T20:10', '2030-01-02T00:00', '2030-01-02T12:00', '2030-01-02T23:59', '2028-02-29T08:40']) {
+      expect(validateExam(withAsOf(ok)), ok).toEqual([]);
+    }
+    for (const bad of [
+      '2030-01-02T24:00',
+      '2030-01-02T23:60',
+      '2030-01-02T8:10',
+      '2027-02-29T10:00',
+      '2030-01-02 20:10',
+      '2030-01-02T20:10:00',
+      '2030-01-02T20:10Z',
+      '2030-01-02T',
+      20300102,
+      null,
+    ]) {
+      expect(validateExam(withAsOf(bad)).join(' '), String(bad)).toContain('cuts.asOf');
+    }
+  });
 });
 
 describe('날짜와 시각 문자열(작업 지시서 3의 4-4)', () => {

@@ -1,0 +1,37 @@
+/* 테스트 진행자용 화면의 모양. 이 화면 모듈에서만 불러서, 사용성 테스트 도구가 없는 빌드(앱 배포용 묶음)에는 들어가지 않는다(src/tools). */
+
+/* 테스트 진행자용 */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.field__input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--outline);
+  border-radius: var(--r-chip);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+textarea.field__input {
+  min-height: 96px;
+  resize: vertical;
+}
+.kv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s1) var(--s3);
+}
+.kv dt {
+  color: var(--text-sub);
+}
+.kv dd {
+  margin: 0;
+  color: var(--text);
+  text-align: right;
+}

@@ -9,6 +9,7 @@ import { putAnswer, type SessionHandle } from '../state/hooks';
 import { firstMissingIndex } from '../state/session';
 import { S, S_ROWS } from '../strings';
 import { InputTop } from './InputTop';
+import './InputRows.css';
 
 // (3) 답 입력 화면의 5행 방식. 한 쪽에 5문항이고 자동으로 넘기지 않는다.
 // 사용성 테스트에서 키패드 방식과 견주는 데만 쓴다. 앱 배포용 묶음에는 싣지 않는다(src/tools).

@@ -1,5 +1,6 @@
 import { href } from '../router';
 import { S_TOOLS } from '../strings';
+import './HistoryExtras.css';
 
 /**
  * 기록 화면 아래의 "준비 중인 기능" 목록과 "테스트 진행자용" 링크.

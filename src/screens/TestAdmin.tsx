@@ -7,6 +7,7 @@ import { finishTestRun, resetTestRuns, setRunAnswerKey, startTestRun, useAppData
 import { exportCsv, exportJson, finalAnswersOf, parseAnswerKey, PARTICIPANT_PATTERN, type RunExportRow, runMetrics, startOf } from '../state/testlog';
 import { S, S_TEST } from '../strings';
 import type { InputMode, TestRun } from '../types';
+import './TestAdmin.css';
 
 // (12) 테스트 진행자용 화면(#/test). 측정 기록은 이 기기 안에만 두고 네트워크로 보내지 않는다.
 
@@ -21,6 +22,20 @@ function downloadText(filename: string, text: string, type: string): boolean {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 내보내기 복사. 앱에서는 다리(saCopy)로 한다. 브라우저에서는 1.1처럼 클립보드 API만 쓴다
+ * (일반 웹 빌드의 진행자용 화면 동작을 바꾸지 않는다. 쓸 수 없으면 "파일 저장"을 쓰라고 안내한다).
+ */
+async function copyText(text: string): Promise<boolean> {
+  if (platform.isApp) return platform.copy(text);
+  try {
+    await navigator.clipboard.writeText(text);
     return true;
   } catch {
     return false;
@@ -174,7 +189,7 @@ export function TestAdmin() {
       setExportMsg(platform.isApp ? S_TEST.copyFailedApp : S_TEST.copyFailed);
       return;
     }
-    void platform.copy(text).then((ok) => setExportMsg(ok ? S_TEST.copied : platform.isApp ? S_TEST.copyFailedApp : S_TEST.copyFailed));
+    void copyText(text).then((ok) => setExportMsg(ok ? S_TEST.copied : platform.isApp ? S_TEST.copyFailedApp : S_TEST.copyFailed));
   };
 
   const stamp = () => {

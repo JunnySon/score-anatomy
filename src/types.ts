@@ -38,6 +38,8 @@ export interface Exam {
   isSample: boolean;
   isPast: boolean;
   answerReleased: boolean;
+  /** 시험 시행일("YYYY-MM-DD"). 없어도 된다. 있으면 시험 목록에서 최근 날짜가 위로 온다. */
+  examDate?: string;
   items: ExamItem[];
   cuts?: ExamCuts;
   types: Record<string, ExamType>;
@@ -71,6 +73,14 @@ export interface RetryRecord {
   at: string;
 }
 
+/** 찍었다고 표시하고 맞은 문항을 다시 볼 때 학생이 스스로 고른 결과. solved는 "끝까지 풀었어요", stuck은 "풀어 봤는데 막혀요". */
+export type SelfCheck = 'solved' | 'stuck';
+
+export interface SelfCheckRecord {
+  result: SelfCheck;
+  at: string;
+}
+
 export interface Session {
   id: string;
   examId: string;
@@ -94,6 +104,8 @@ export interface Session {
   answerViewed: Record<number, true>;
   targetGrade: string | null;
   retries: Record<number, RetryRecord>;
+  /** 찍었다고 표시하고 맞은 문항의 스스로 확인한 결과. 이 칸이 없는 옛 기록도 빈 값으로 읽는다. */
+  selfChecks: Record<number, SelfCheckRecord>;
 }
 
 /** 사용성 테스트 한 번의 측정 기록. 이 기기 안에만 둔다. */
@@ -124,6 +136,8 @@ export interface TestRun extends RunPart {
   examSelectAt: number | null;
   /** 측정 중에 다른 시험 기록으로 옮겨 간 횟수. */
   examReselects: number;
+  /** 측정 중에 연달아 누르기 보호가 받지 않은 누름의 수(측정에 묶인 화면에서만 센다). */
+  discardedTaps: number;
   /** 지금 묶인 기록이 아닌 기록에서 재던 값(기록 id별). 그 기록으로 돌아오면 이어 쓴다. */
   parts: Record<string, RunPart>;
   answerKeyText: string;
@@ -136,4 +150,6 @@ export interface AppData {
   inputMode: InputMode;
   testRuns: TestRun[];
   activeRunId: string | null;
+  /** 앱: 앞서 저장된 기록을 읽지 못해 보관해 달라고 한 뒤, 기록 화면이 그 안내를 아직 보여 주지 않았다. 없어도 읽힌다(version 1 그대로). */
+  archiveNotice?: true;
 }

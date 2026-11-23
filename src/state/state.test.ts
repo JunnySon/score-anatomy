@@ -4,7 +4,6 @@ import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import { GradeError } from '../logic/scoring';
 import type { Exam, Session, TestRun } from '../types';
 import {
-  clearMarks,
   cycleMark,
   isMarkedAfterGrading,
   markGraded,
@@ -14,6 +13,7 @@ import {
   resumePath,
   setAnswer,
   setCause,
+  setSelfCheck,
   stageOf,
   toggleUnsure,
   viewAnswer,
@@ -128,14 +128,26 @@ describe('기록 고치기', () => {
     expect(isMarkedAfterGrading(t)).toBe(true);
   });
 
-  it('"없어요"는 표시를 모두 지운다. 채점한 뒤에 지웠으면 그것도 적어 둔다', () => {
-    let s = cycleMark(cycleMark(filled(), 9), 14);
-    expect(clearMarks(s).marks).toEqual({});
-    expect(clearMarks(s).marksEditedAfterGrading).toBe(false);
-    const none = filled();
-    expect(clearMarks(none)).toBe(none);
-    s = markGraded(s, examA, NOW);
-    expect(clearMarks(s).marksEditedAfterGrading).toBe(true);
+  it('채점은 붙어 있는 표시를 그대로 둔다(1.1에서 "없어요"와 "채점하기"를 하나로 합쳤다)', () => {
+    const s = cycleMark(cycleMark(cycleMark(filled(), 9), 9), 14);
+    const g = markGraded(s, examA, NOW);
+    expect(g.marks).toEqual({ 9: 'guess', 14: 'doubt' });
+    expect(g.marksEditedAfterGrading).toBe(false);
+  });
+
+  it('찍음 표시 정답의 스스로 확인: 마지막 선택이 기록이 되고, "아직 안 풀어 봤어요"는 기록을 지운다', () => {
+    const LATER = '2026-11-22T11:00:00.000Z';
+    let s = markGraded(filled(), examA, NOW);
+    s = setSelfCheck(s, 14, 'solved', NOW);
+    expect(s.selfChecks[14]).toEqual({ result: 'solved', at: NOW });
+    s = setSelfCheck(s, 14, 'stuck', LATER);
+    expect(s.selfChecks[14]).toEqual({ result: 'stuck', at: LATER });
+    s = setSelfCheck(s, 14, null, LATER);
+    expect(s.selfChecks[14]).toBeUndefined();
+    expect(setSelfCheck(s, 14, null, LATER)).toBe(s);
+    // 답을 고치면 그 문항의 스스로 확인 기록도 지운다(원인, 재풀이 기록과 같다).
+    s = setSelfCheck(s, 9, 'solved', NOW);
+    expect(setAnswer(s, 9, 1).selfChecks[9]).toBeUndefined();
   });
 
   it('원인, 정답 확인, 재풀이 기록', () => {
@@ -243,6 +255,35 @@ describe('저장소', () => {
     expect(ok!.currentId).toBeNull();
     expect(ok!.inputMode).toBe('rows');
     expect(ok!.testRuns).toEqual([]);
+  });
+
+  it('1.1에서 더한 칸(스스로 확인 기록, 받지 않은 누름 수)이 없는 옛 기록도 version 1 그대로 읽는다', () => {
+    const old = parseStored(
+      JSON.stringify({
+        version: 1,
+        sessions: [{ id: 'a', examId: 'sample-a', answers: { 1: 3 } }],
+        currentId: 'a',
+        testRuns: [{ id: 'r', participant: 'P01', startedAt: 5 }],
+      }),
+    )!;
+    expect(old.version).toBe(1);
+    expect(old.sessions[0]!.selfChecks).toEqual({});
+    expect(old.testRuns[0]!.discardedTaps).toBe(0);
+    const fresh = parseStored(
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            id: 'a',
+            examId: 'sample-a',
+            selfChecks: { 9: { result: 'solved', at: NOW }, 14: { result: 'maybe', at: NOW }, 20: 'stuck' },
+          },
+        ],
+        testRuns: [{ id: 'r', participant: 'P01', discardedTaps: 3 }, { id: 's', participant: 'P02', discardedTaps: -1 }],
+      }),
+    )!;
+    expect(fresh.sessions[0]!.selfChecks).toEqual({ 9: { result: 'solved', at: NOW } });
+    expect(fresh.testRuns.map((r) => r.discardedTaps)).toEqual([3, 0]);
   });
 
   it('기록 속의 모양이 맞지 않는 값은 버린다', () => {
@@ -387,8 +428,12 @@ describe('사용성 테스트 측정 기록', () => {
     const head = csv[0]!.split(',');
     const cells = csv[1]!.split(',');
     expect(head.slice(0, 6)).toEqual(['participant', 'input_mode', 'planned_exam', 'exam', 'exam_reselects', 'started_at']);
-    expect(head).toHaveLength(14 + 30);
+    expect(head).toHaveLength(15 + 30);
     expect(cells[head.indexOf('exam_reselects')]).toBe('0');
+    // 1.1: 연달아 누르기 보호가 받지 않은 누름의 수.
+    expect(cells[head.indexOf('discarded_taps')]).toBe('0');
+    const csv2 = exportCsv([{ run: { ...r, discardedTaps: 3 }, session, exam: examA }]).trim().split('\n');
+    expect(csv2[1]!.split(',')[head.indexOf('discarded_taps')]).toBe('3');
     expect(cells[0]).toBe('P01');
     expect(cells[head.indexOf('input_seconds')]).toBe('60.4');
     expect(cells[head.indexOf('residual_errors')]).toBe('1');
@@ -467,5 +512,84 @@ describe('사용성 테스트 측정 기록', () => {
     expect(m.residualErrors).toBeNull();
     expect(m.inputSeconds).toBeNull();
     expect(m.selectToScoreSeconds).toBeNull();
+  });
+});
+
+/** 앱의 다리처럼 보관(archive)을 받는 저장소. 받은 순서를 calls 에 남긴다. */
+class ArchiveStorage implements StorageLike {
+  calls: string[] = [];
+  constructor(
+    private text: string | null,
+    private archiveSent = true,
+  ) {}
+  getItem(): string | null {
+    return this.text;
+  }
+  setItem(_key: string, value: string): void {
+    this.calls.push(`save:${value}`);
+  }
+  archive(): boolean {
+    this.calls.push('archive');
+    return this.archiveSent;
+  }
+}
+const noListen = () => () => undefined;
+
+describe('앱 저장소(다리): 읽지 못한 기록의 보관', () => {
+  it('읽지 못한 기록은 보관을 먼저 요청하고, 보관 안내 표시를 남긴 새 기록을 곧바로 저장한다', () => {
+    for (const text of ['{not json', JSON.stringify({ version: 2, sessions: [] }), JSON.stringify({ version: 0, sessions: [] }), '']) {
+      const s = new ArchiveStorage(text);
+      const store = new Store(s, noListen);
+      expect(s.calls[0]).toBe('archive');
+      expect(s.calls).toHaveLength(2);
+      const saved = JSON.parse(s.calls[1]!.slice('save:'.length));
+      expect(saved.archiveNotice).toBe(true);
+      expect(saved.sessions).toEqual([]);
+      expect(store.get().archiveNotice).toBe(true);
+      expect(store.storageOk).toBe(true);
+    }
+  });
+
+  it('읽을 수 있는 기록과 기록 없음(null)은 보관하지 않고 저장도 바로 하지 않는다', () => {
+    const readable = new ArchiveStorage(JSON.stringify({ ...defaultData(), sessions: [filled()] }));
+    expect(new Store(readable, noListen).get().sessions).toHaveLength(1);
+    expect(readable.calls).toEqual([]);
+    const none = new ArchiveStorage(null);
+    expect(new Store(none, noListen).get()).toEqual(defaultData());
+    expect(none.calls).toEqual([]);
+  });
+
+  it('보관 요청을 보내지 못하면 이 실행 동안 저장하지 않는다(읽지 못한 기록을 덮어쓰지 않는다)', () => {
+    const s = new ArchiveStorage('{not json', false);
+    const store = new Store(s, noListen);
+    store.update((d) => ({ ...d, sessions: [filled()] }));
+    expect(store.get().sessions).toHaveLength(1);
+    expect(s.calls).toEqual(['archive']);
+    expect(store.storageOk).toBe(false);
+  });
+
+  it('껍데기가 저장 실패를 알리면 storageOk 가 false 가 되고, 다음 저장을 보내면 다시 true 가 된다', () => {
+    let notifyFailed: () => void = () => undefined;
+    const s = new ArchiveStorage(null);
+    const store = new Store(s, (fn) => {
+      notifyFailed = fn;
+      return () => undefined;
+    });
+    let changes = 0;
+    store.subscribeStatus(() => {
+      changes += 1;
+    });
+    notifyFailed();
+    expect(store.storageOk).toBe(false);
+    expect(store.getStatus()).toEqual({ ok: false });
+    store.update((d) => ({ ...d, inputMode: 'rows' }));
+    expect(store.storageOk).toBe(true);
+    expect(changes).toBe(2);
+  });
+
+  it('보관 안내 표시는 기록에 남아 다시 읽어도 있고, true 가 아닌 값은 읽지 않는다', () => {
+    expect(parseStored(JSON.stringify({ ...defaultData(), archiveNotice: true }))!.archiveNotice).toBe(true);
+    expect(parseStored(JSON.stringify({ ...defaultData(), archiveNotice: 'yes' }))!.archiveNotice).toBeUndefined();
+    expect('archiveNotice' in parseStored(JSON.stringify(defaultData()))!).toBe(false);
   });
 });

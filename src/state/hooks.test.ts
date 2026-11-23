@@ -3,9 +3,11 @@ import { findExam } from '../exams';
 import { exampleAnswers } from '../logic/example';
 import type { Answers, Exam } from '../types';
 import {
+  countDiscardedTap,
   deleteAllSessions,
   deleteSession,
   finishTestRun,
+  isTestDevice,
   logReviewConfirm,
   logScreenEvent,
   openSession,
@@ -587,6 +589,85 @@ describe('테스트 측정과 시험 기록', () => {
     startSession('sample-a', 'not_yet', null);
     logScreenEvent('input');
     enter(answersA, [1, 2, 3]);
+    countDiscardedTap('input', false);
     expect(store.get().testRuns).toEqual([]);
+  });
+
+  it('받지 않은 누름은 측정에 묶인 화면에서만 센다(진행자용 화면, 예시 결과, 남의 기록 화면은 빼고)', () => {
+    startTestRun('P08', 'keypad', 'sample-a');
+    countDiscardedTap('start', false);
+    countDiscardedTap('exams', false);
+    startSession('sample-a', 'not_yet', null);
+    countDiscardedTap('input', false);
+    countDiscardedTap('review', false);
+    expect(activeRun(store.get())!.discardedTaps).toBe(4);
+    countDiscardedTap('test', false);
+    countDiscardedTap('anatomy', true);
+    countDiscardedTap('unknown', false);
+    expect(activeRun(store.get())!.discardedTaps).toBe(4);
+    // 측정에 묶이지 않은 기록(앞 참가자의 기록 등)을 보고 있으면 세지 않는다.
+    const mine = current()!.id;
+    store.update((d) => ({ ...d, currentId: 'someone-else' }));
+    countDiscardedTap('input', false);
+    expect(activeRun(store.get())!.discardedTaps).toBe(4);
+    store.update((d) => ({ ...d, currentId: mine }));
+    countDiscardedTap('marks', false);
+    expect(activeRun(store.get())!.discardedTaps).toBe(5);
+    const csv = exportCsv([{ run: activeRun(store.get())!, session: current(), exam: examA }]).split('\n');
+    expect(csv[1]!.split(',')[csv[0]!.split(',').indexOf('discarded_taps')]).toBe('5');
+  });
+});
+
+describe('테스트 기기(3-11)', () => {
+  it('참가자를 마치면 지금 보는 기록을 비우고, 다음 참가자를 시작하기 전에는 어떤 기록도 이어 보지 않는다', () => {
+    startTestRun('P01', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    enter(answersA, ALL);
+    const a = current()!.id;
+    expect(isTestDevice(store.get())).toBe(false);
+    finishTestRun();
+    expect(store.get().currentId).toBeNull();
+    expect(isTestDevice(store.get())).toBe(true);
+    expect(resumeCandidate(store.get())).toBeNull();
+    // 기록 자체는 지우지 않는다(진행자용 화면에서 최종 답과 측정값을 본다).
+    expect(store.get().sessions.some((s) => s.id === a)).toBe(true);
+    // 다음 참가자를 시작해도 앞 참가자의 기록은 이어 보지 않는다.
+    tick(1000);
+    startTestRun('P02', 'keypad', 'sample-a');
+    expect(isTestDevice(store.get())).toBe(false);
+    expect(resumeCandidate(store.get())).toBeNull();
+    // 같은 시험을 골라도 앞 참가자의 기록을 이어 쓰지 않는다.
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    expect(current()!.id).not.toBe(a);
+    expect(current()!.answers).toEqual({});
+  });
+
+  it('대기 중에 같은 시험을 골라도 앞 참가자의 채점 전 기록을 이어 쓰지 않는다', () => {
+    startTestRun('P01', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    enter(answersA, ALL);
+    const a = current()!.id;
+    expect(current()!.firstGradedAt).toBeNull();
+    finishTestRun();
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    expect(current()!.id).not.toBe(a);
+    expect(current()!.answers).toEqual({});
+    // 앞 참가자의 기록은 앱이 지우지 않는다(지우는 것은 진행자가 한다. 대조는 마칠 때 옮겨 둔 사본을 쓴다).
+    expect(store.get().sessions.find((s) => s.id === a)!.answers).toEqual(answersA);
+  });
+
+  it('진행자가 측정 기록을 모두 지우면 평소대로 돌아간다', () => {
+    startTestRun('P01', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    finishTestRun();
+    expect(isTestDevice(store.get())).toBe(true);
+    store.update((d) => ({ ...d, testRuns: [], activeRunId: null }));
+    expect(isTestDevice(store.get())).toBe(false);
+    expect(resumeCandidate(store.get())).not.toBeNull();
   });
 });

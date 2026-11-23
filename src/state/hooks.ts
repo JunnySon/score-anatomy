@@ -33,7 +33,8 @@ function updateCurrent(fn: (s: Session) => Session, log?: (run: TestRun, prev: S
       sessions[idx] = next;
       nd = { ...d, sessions };
     }
-    if (log) nd = withActiveRun(nd, (run) => (run.sessionId === prev.id ? log(run, prev, next) : run));
+    // 사용성 테스트 도구가 없는 빌드(앱 배포용)에는 측정 기록 코드가 실리지 않는다.
+    if (__SA_TOOLS__ && log) nd = withActiveRun(nd, (run) => (run.sessionId === prev.id ? log(run, prev, next) : run));
     return nd;
   });
 }
@@ -71,7 +72,7 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
   const now = Date.now();
   updateCurrent(
     (s) => setAnswer(s, no, value),
-    value !== undefined
+    __SA_TOOLS__ && value !== undefined
       ? (run, prev, next) => logAnswer(run, no, where, prev !== next, findMissing(h.exam, next.answers).length === 0, now)
       : undefined,
   );
@@ -81,12 +82,16 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
  * 시험을 골라 기록을 시작한다. 같은 시험의 채점 전 기록이 있으면 그 기록을 이어 쓴다.
  * "채점은 아직인가요?"의 답은 방금 고른 것으로 바꾼다(잘못 눌렀다가 다시 고른 것을 받아 준다).
  * 테스트가 진행 중이면 이번 참가자가 만든 기록(측정을 시작한 뒤에 만든 기록)만 이어 쓰고, 측정 기록을 그 기록에 묶는다.
+ * 테스트 기기의 대기 중(참가자를 마친 뒤, 다음 참가자를 시작하기 전)에는 어떤 기록도 이어 쓰지 않고 새 기록을 만든다.
+ * 앞 참가자의 채점 전 기록이 열리면 그 답과 점수가 다음 사람에게 보이기 때문이다.
  */
 export function startSession(examId: string, gradedBefore: GradedBefore, seenBefore: SeenBefore | null): void {
   const nowIso = new Date().toISOString();
   store.update((d) => {
-    const run = activeRun(d);
-    const reusable = d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && (!run || isMine(run, s)));
+    const run = __SA_TOOLS__ ? activeRun(d) : null;
+    const reusable = isTestDevice(d)
+      ? undefined
+      : d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && (!run || isMine(run, s)));
     let sessions = d.sessions;
     let session: Session;
     if (reusable) {
@@ -96,7 +101,8 @@ export function startSession(examId: string, gradedBefore: GradedBefore, seenBef
       session = newSession(examId, gradedBefore, seenBefore, nowIso);
       sessions = [session, ...sessions];
     }
-    return rebind({ ...d, sessions, currentId: session.id }, session);
+    const nd: AppData = { ...d, sessions, currentId: session.id };
+    return __SA_TOOLS__ ? rebind(nd, session) : nd;
   });
 }
 
@@ -119,12 +125,14 @@ function rebind(d: AppData, session: Session): AppData {
  * 테스트가 진행 중이면 이번 참가자의 측정에 묶인 기록만 대상으로 한다(앞 참가자의 기록이 열리지 않게).
  */
 export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | null {
+  // 테스트 기기에서 측정이 진행 중이 아니면(참가자를 마친 뒤, 다음 참가자를 시작하기 전) 어떤 기록도 열지 않는다.
+  if (isTestDevice(d)) return null;
   const pick = (s: Session | undefined) => {
     const exam = s ? findExam(s.examId) : null;
     return s && exam ? { session: s, exam } : null;
   };
   const current = pick(d.sessions.find((s) => s.id === d.currentId));
-  const run = activeRun(d);
+  const run = __SA_TOOLS__ ? activeRun(d) : null;
   if (run) {
     // 테스트 중: 지금 보는 기록이 이번 참가자의 것이면 그 기록, 아니면 측정에 묶인 기록.
     if (current && isMine(run, current.session)) return current;
@@ -156,7 +164,7 @@ export function openSession(id: string): void {
     const session = d.sessions.find((s) => s.id === id);
     if (!session) return d;
     const nd: AppData = { ...d, currentId: id };
-    const run = activeRun(d);
+    const run = __SA_TOOLS__ ? activeRun(d) : null;
     if (run && isMine(run, session) && session.firstGradedAt === null) return rebind(nd, session);
     return nd;
   });
@@ -164,6 +172,7 @@ export function openSession(id: string): void {
 
 /** 시험 기록이 사라지기 전에, 그 기록에 묶인 측정 기록에 최종 답을 옮겨 둔다. 이미 끝난 측정은 건드리지 않는다. */
 function keepFinalAnswers(d: AppData, ids: Set<string> | null): TestRun[] {
+  if (!__SA_TOOLS__) return d.testRuns;
   return d.testRuns.map((r) => {
     if (r.endedAt !== null || r.sessionId === null || (ids !== null && !ids.has(r.sessionId))) return r;
     const session = d.sessions.find((s) => s.id === r.sessionId) ?? null;
@@ -186,13 +195,23 @@ export function deleteAllSessions(): void {
   store.update((d) => ({ ...d, testRuns: keepFinalAnswers(d, null), sessions: [], currentId: null }));
 }
 
+/** 앱: 기록 화면이 보관 안내를 보여 줬으면 기록에 남은 표시를 지운다. */
+export function clearArchiveNotice(): void {
+  store.update((d) => {
+    if (!d.archiveNotice) return d;
+    const next = { ...d };
+    delete next.archiveNotice;
+    return next;
+  });
+}
+
 export function setInputMode(mode: InputMode): void {
   store.update((d) => (d.inputMode === mode ? d : { ...d, inputMode: mode }));
 }
 
 /** 화면 진입 시각을 남긴다. 테스트가 진행 중일 때만 기록된다. */
 export function logScreenEvent(name: string): void {
-  if (!store.get().activeRunId) return;
+  if (!__SA_TOOLS__ || !store.get().activeRunId) return;
   const now = Date.now();
   store.update((d) =>
     withActiveRun(d, (run) => {
@@ -212,7 +231,7 @@ export function logScreenEvent(name: string): void {
 }
 
 export function logReviewConfirm(): void {
-  if (!store.get().activeRunId) return;
+  if (!__SA_TOOLS__ || !store.get().activeRunId) return;
   const now = Date.now();
   // 측정에 묶인 기록의 입력 확인만 적는다.
   store.update((d) =>
@@ -238,9 +257,35 @@ export function startTestRun(participant: string, inputMode: InputMode, plannedE
   });
 }
 
+/**
+ * 참가자를 마친다. 다음 참가자가 앞 참가자의 기록을 열지 않게 지금 보는 기록도 비운다.
+ */
 export function finishTestRun(): void {
   const now = Date.now();
-  store.update((d) => (d.activeRunId ? { ...d, testRuns: closeActiveRun(d, now), activeRunId: null } : d));
+  store.update((d) => (d.activeRunId ? { ...d, testRuns: closeActiveRun(d, now), activeRunId: null, currentId: null } : d));
+}
+
+/**
+ * 테스트 기기인지: 측정 기록이 남아 있는데 진행 중인 측정이 없다(참가자를 마친 뒤, 다음 참가자를 시작하기 전).
+ * 이때는 기록 화면과 "이어서 보기"에 어떤 기록도 보여 주지 않는다. 진행자가 측정 기록을 모두 지우면 평소대로 돌아간다.
+ */
+export function isTestDevice(d: AppData): boolean {
+  return __SA_TOOLS__ && d.activeRunId === null && d.testRuns.length > 0;
+}
+
+/**
+ * 연달아 누르기 보호가 버린 누름을 측정 기록에 센다. counted 는 지금 화면이 측정에 묶인 화면인지다
+ * (진행자용 화면, 예시 결과, 측정에 묶이지 않은 기록의 화면에서는 세지 않는다).
+ */
+export function countDiscardedTap(screen: string, isDemo: boolean): void {
+  if (!__SA_TOOLS__ || !store.get().activeRunId) return;
+  store.update((d) =>
+    withActiveRun(d, (run) => {
+      if (isDemo || screen === 'test' || screen === 'unknown') return run;
+      if (screenLogName(screen, d.currentId !== null && d.currentId === run.sessionId) !== screen) return run;
+      return { ...run, discardedTaps: run.discardedTaps + 1 };
+    }),
+  );
 }
 
 export function setRunAnswerKey(runId: string, text: string): void {

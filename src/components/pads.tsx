@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { platform } from '#platform';
 import { choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, initEntry, pressDigit, type DigitEntry } from '../logic/entry';
 import { S } from '../strings';
 import type { AnswerValue, ExamItem } from '../types';
-import { BottomSheet, Message } from './ui';
+import { BottomSheet, LiveRegion, Message } from './ui';
 
 // 답 키패드. 기기 기본 자판은 띄우지 않는다.
 
@@ -11,6 +12,16 @@ export interface FnKey {
   key: 'skip' | 'erase' | 'go';
   label: string;
   onPress: () => void;
+  /** 키패드가 잠겨도 받는 키("지우기"). */
+  live?: boolean;
+}
+
+/**
+ * 잠긴 키의 속성. 흐리게 보이고(점선 테두리, 보조 글자색), 눌러도 아무것도 들어가지 않으며,
+ * 화면 낭독기에도 쓸 수 없는 상태(aria-disabled)로 전해진다.
+ */
+function lockProps(locked: boolean) {
+  return locked ? { 'aria-disabled': 'true' as const } : {};
 }
 
 /** 5지선다 키패드: 1부터 보기 수까지의 키(높이 64px)와 그 아래 기능 키. */
@@ -21,6 +32,8 @@ export function McPad({
   onPick,
   fn,
   inSheet,
+  locked = false,
+  onLocked,
 }: {
   choices: number;
   selected?: number | null;
@@ -29,6 +42,10 @@ export function McPad({
   onPick: (n: number) => void;
   fn: FnKey[];
   inSheet?: boolean;
+  /** 키패드 잠금. "지우기"(live)만 받는다. */
+  locked?: boolean;
+  /** 잠긴 키를 눌렀을 때(아무것도 들어가지 않는다). 화면 낭독기에 잠금 안내를 다시 전하는 데 쓴다. */
+  onLocked?: () => void;
 }) {
   const nums = Array.from({ length: choices }, (_, i) => i + 1);
   return (
@@ -41,7 +58,15 @@ export function McPad({
             className="key key--num"
             data-key={n}
             aria-pressed={selected === undefined ? undefined : selected === n}
-            onClick={() => onPick(n)}
+            {...lockProps(locked)}
+            onClick={() => {
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              platform.haptic();
+              onPick(n);
+            }}
           >
             <span>{n}</span>
             {selectedLabel && selected === n ? <small>{selectedLabel}</small> : null}
@@ -49,11 +74,28 @@ export function McPad({
         ))}
       </div>
       <div className="pad__fn">
-        {fn.map((f) => (
-          <button key={f.key} type="button" className={`key key--fn${f.key === 'go' ? ' key--go' : ''}`} data-key={f.key} onClick={f.onPress}>
-            {f.label}
-          </button>
-        ))}
+        {fn.map((f) => {
+          const off = locked && !f.live;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              className={`key key--fn${f.key === 'go' ? ' key--go' : ''}`}
+              data-key={f.key}
+              {...lockProps(off)}
+              onClick={() => {
+                if (off) {
+                  onLocked?.();
+                  return;
+                }
+                platform.haptic();
+                f.onPress();
+              }}
+            >
+              {f.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -72,6 +114,9 @@ export function DigitPad({
   onGo,
   goLabel,
   inSheet,
+  locked = false,
+  eraseLocked = false,
+  onLocked,
 }: {
   onDigit: (d: number) => void;
   onErase: () => void;
@@ -79,27 +124,87 @@ export function DigitPad({
   onGo: () => void;
   goLabel: string;
   inSheet?: boolean;
+  /** 키패드 잠금. "지우기"만 받는다. */
+  locked?: boolean;
+  /** "지우기"도 잠근다(빈칸 없이 연 화면의 잠금). */
+  eraseLocked?: boolean;
+  /** 잠긴 키를 눌렀을 때(아무것도 들어가지 않는다). */
+  onLocked?: () => void;
 }) {
   return (
     <div className={`pad${inSheet ? ' pad--sheet' : ''}`} role="group" aria-label={S.input.keypadLabel}>
       <div className="pad__digits">
         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 0].map((d) => (
           // 숫자 키는 화면이 바뀐 직후에 같은 자리를 눌러도 버리지 않는다(src/tapGuard.ts).
-          <button key={d} type="button" className="key key--num" data-key={d} data-tap-safe="" onClick={() => onDigit(d)}>
+          <button
+            key={d}
+            type="button"
+            className="key key--num"
+            data-key={d}
+            data-tap-safe=""
+            {...lockProps(locked)}
+            onClick={() => {
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              platform.haptic();
+              onDigit(d);
+            }}
+          >
             {d}
           </button>
         ))}
       </div>
       <div className="pad__fn">
         {onSkip ? (
-          <button type="button" className="key key--fn" data-key="skip" onClick={onSkip}>
+          <button
+            type="button"
+            className="key key--fn"
+            data-key="skip"
+            {...lockProps(locked)}
+            onClick={() => {
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              platform.haptic();
+              onSkip();
+            }}
+          >
             {S.common.skip}
           </button>
         ) : null}
-        <button type="button" className="key key--fn" data-key="erase" onClick={onErase}>
+        <button
+          type="button"
+          className="key key--fn"
+          data-key="erase"
+          {...lockProps(eraseLocked)}
+          onClick={() => {
+            if (eraseLocked) {
+              onLocked?.();
+              return;
+            }
+            platform.haptic();
+            onErase();
+          }}
+        >
           {S.common.erase}
         </button>
-        <button type="button" className="key key--fn key--go" data-key="go" onClick={onGo}>
+        <button
+          type="button"
+          className="key key--fn key--go"
+          data-key="go"
+          {...lockProps(locked)}
+          onClick={() => {
+            if (locked) {
+              onLocked?.();
+              return;
+            }
+            platform.haptic();
+            onGo();
+          }}
+        >
           {goLabel}
         </button>
       </div>
@@ -174,7 +279,9 @@ export function AnswerSheet({
     <BottomSheet title={title} onClose={onClose}>
       <div className="stack gap2">
         <EntryBox wide text={shown} label={S.input.entryLabel} />
-        {msg ? <Message>{msg}</Message> : null}
+        {/* 키패드 위 안내문은 시트가 열릴 때부터 붙어 있는 알림 영역으로 전하고, 보이는 안내문은 낭독에서 뺀다(결정기록 89번). */}
+        <LiveRegion text={msg ?? ''} testId="sheet-live" />
+        {msg ? <Message live={false}>{msg}</Message> : null}
         <DigitPad
           inSheet
           goLabel={S.common.put}

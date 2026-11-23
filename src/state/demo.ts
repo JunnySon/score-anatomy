@@ -28,6 +28,7 @@ export function buildDemoSession(): Session | null {
     answerViewed: {},
     targetGrade: null,
     retries: {},
+    selfChecks: {},
   };
 }
 

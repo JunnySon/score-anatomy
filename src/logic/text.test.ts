@@ -5,7 +5,7 @@ import { cutView } from './cuts';
 import { exampleResponses } from './example';
 import { analyze, gradeExam } from './scoring';
 import { selectSteps } from './steps';
-import { actualLine, anatomySentences, luckLine, retryLabel, retrySentence, stepReasons } from './text';
+import { actualLine, anatomySentences, luckLine, retryLabel, retrySentence, selfCheckLabel, selfCheckSentence, stepReasons } from './text';
 
 const examA = findExam('sample-a') as Exam;
 const grade = gradeExam(examA, exampleResponses(examA));
@@ -74,12 +74,12 @@ describe('검산 예시의 화면 문장', () => {
     const steps = selectSteps(examA, grade);
     expect(stepReasons(steps[0]!)).toEqual([
       '이번 시험에서 이 유형으로 8점을 놓쳤고, 둘 다 풀이가 안 떠올랐다고 표시했어요.',
-      '이 유형의 14번은 찍어서 맞혔다고 표시했어요.',
+      '이 유형의 14번은 찍었다고 표시했고, 채점해 보니 맞았어요.',
     ]);
     expect(stepReasons(steps[1]!)).toEqual(['이번 시험에서 이 유형으로 8점을 놓쳤고, 둘 다 실수라고 표시했어요.']);
     expect(stepReasons(steps[2]!)).toEqual([
       '이번 시험에서 이 유형으로 3점을 놓쳤고, 풀이가 안 떠올랐다고 표시했어요.',
-      '이 유형의 9번은 찍어서 맞혔다고 표시했어요.',
+      '이 유형의 9번은 찍었다고 표시했고, 채점해 보니 맞았어요.',
     ]);
   });
 
@@ -123,28 +123,53 @@ describe('재풀이 기록 라벨', () => {
     expect(retrySentence(rec(true, 1, true))).toBe('정답을 확인한 뒤 다시 맞혔어요.');
   });
 
-  it('틀리면 계단에 남긴다', () => {
+  it('틀리면 "다시 풀었지만 답이 다름"이고, 계단에 남긴다는 말은 하지 않는다', () => {
     expect(retryLabel(rec(false), 'slip')).toBe('다시 풀었지만 답이 다름');
-    expect(retrySentence(rec(false))).toBe('이번에도 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.');
+    expect(retrySentence(rec(false))).toBe('이번에도 답이 달랐어요.');
   });
 
-  it('다시 풀다 틀린 뒤에 맞혀도 라벨은 지시서의 세 가지뿐이다', () => {
-    expect(retryLabel(rec(true, 2), 'slip')).toBe('실수로 표시함, 다시 풀어 맞힘');
-    expect(retryLabel(rec(true, 5), 'blank')).toBe('다시 풀어 맞힘');
+  it('여러 번 만에 맞히면 "풀어"를 빼고 몇 번째로 넣은 답이 맞았는지 적는다', () => {
+    expect(retryLabel(rec(true, 2), 'blank')).toBe('2번째로 넣은 답이 맞음');
+    expect(retryLabel(rec(true, 2), null)).toBe('2번째로 넣은 답이 맞음');
+    expect(retryLabel(rec(true, 3), 'slip')).toBe('실수로 표시함, 3번째로 넣은 답이 맞음');
+    expect(retrySentence(rec(true, 2))).toBe('2번째로 넣은 답이 맞았어요.');
+    expect(retrySentence(rec(true, 5))).toBe('5번째로 넣은 답이 맞았어요.');
+    // 처음 맞은 차례가 기준이다. 맞힌 뒤에 또 맞혀도 바뀌지 않는다.
+    expect(retryLabel(rec(true, 4, false, 2), 'blank')).toBe('2번째로 넣은 답이 맞음');
+  });
+
+  it('정답을 확인한 뒤에 맞힌 경우는 차례와 상관없이 "정답 확인 후 다시 맞힘"이 먼저다', () => {
     expect(retryLabel(rec(true, 3, true), 'blank')).toBe('정답 확인 후 다시 맞힘');
-    // 문장과 라벨이 같은 말을 한다.
-    expect(retrySentence(rec(true, 2))).toBe('다시 풀어 맞혔어요.');
+    expect(retryLabel(rec(true, 3, true), 'slip')).toBe('정답 확인 후 다시 맞힘');
+    expect(retrySentence(rec(true, 3, true))).toBe('정답을 확인한 뒤 다시 맞혔어요.');
   });
 
   it('처음에 바로 맞힌 문항은 또 맞혀도 라벨이 바뀌지 않는다', () => {
     expect(retryLabel(rec(true, 2, false, 1), 'slip')).toBe('실수로 표시함, 다시 풀어 맞힘');
     expect(retryLabel(rec(true, 3, false, 1), 'blank')).toBe('다시 풀어 맞힘');
-    // 가장 최근에 틀렸으면 틀린 것으로 적는다.
-    expect(retryLabel(rec(false, 2, false, 1), 'slip')).toBe('다시 풀었지만 답이 다름');
+    expect(retrySentence(rec(true, 3, false, 1))).toBe('다시 풀어 맞혔어요.');
   });
 
-  it('처음에 맞혔던 문항을 다시 풀어 틀리면 "이번에도"라고 하지 않는다', () => {
-    expect(retrySentence(rec(false), true)).toBe('이번에는 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.');
-    expect(retrySentence(rec(true), true)).toBe('다시 풀어 맞혔어요.');
+  it('맞힌 뒤에 다시 넣어 틀리면 최근 결과를 따른다', () => {
+    expect(retryLabel(rec(false, 2, false, 1), 'slip')).toBe('다시 풀었지만 답이 다름');
+    expect(retryLabel(rec(false, 3, false, 2), 'blank')).toBe('다시 풀었지만 답이 다름');
+    expect(retrySentence(rec(false, 3, false, 2))).toBe('이번에도 답이 달랐어요.');
+  });
+});
+
+describe('찍음 표시 정답의 스스로 확인', () => {
+  it('라벨과 결과 문장', () => {
+    expect(selfCheckLabel('solved')).toBe('찍음 표시 정답, 끝까지 풀었다고 표시함');
+    expect(selfCheckLabel('stuck')).toBe('찍음 표시 정답, 막힌다고 표시함');
+    expect(selfCheckSentence('solved')).toBe('끝까지 풀었다고 표시했어요.');
+    expect(selfCheckSentence('stuck')).toBe('막힌다고 표시했어요.');
+  });
+
+  it('맞음, 틀림, 다시 풀어 맞힘, 정답 확인 후라는 말을 쓰지 않는다', () => {
+    for (const r of ['solved', 'stuck'] as const) {
+      for (const text of [selfCheckLabel(r), selfCheckSentence(r)]) {
+        expect(text).not.toMatch(/맞힘|맞혔|틀림|틀렸|정답 확인/);
+      }
+    }
   });
 });

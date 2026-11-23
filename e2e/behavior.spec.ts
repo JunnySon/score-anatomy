@@ -26,27 +26,43 @@ test('키패드 방식: 지우기, 칸 누르기, 안 풂, 전체 보기', async
   await expect(page.locator('[data-cell="2"] .cell__val')).toHaveText('안 풂');
   await expect(page.getByTestId('now-no')).toHaveText('3번');
 
-  // 칸을 누르면 그 문항으로 간다. 현재 칸에는 표시가 붙는다.
+  // 답이 든 칸을 누르면 그 문항을 고친다. 현재 칸에는 표시가 붙고, 아무것도 바꾸지 않고 돌아가는 버튼이 있다.
   await page.locator('[data-cell="1"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('1번');
   await expect(page.locator('[data-cell="1"]')).toHaveAttribute('aria-current', 'true');
-  // 첫 칸에서는 뒤로 갈 칸이 없어 "지우기"가 아무것도 지우지 않는다.
+  await expect(page.getByTestId('pad-panel')).toContainText('1번을 고치는 중이에요.');
+  await expect(page.getByTestId('continue-from')).toHaveText('3번부터 이어서 넣기');
+  // "지우기"는 눈에 보이는 지금 칸부터 지우고, 무엇을 지웠는지 알린다.
   await tapKey(page, 'erase');
   await expect(page.getByTestId('now-no')).toHaveText('1번');
-  await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('3');
-  // 답이 있는 칸에서 키를 누르면 그 칸의 답이 바뀌고 다음 문항으로 넘어간다.
+  await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('');
+  await expect(page.getByTestId('pad-panel')).toContainText('1번 답을 지웠어요.');
+  // 고치기로 들어온 빈칸에서는 다른 문항을 지우지 않는다.
+  await tapKey(page, 'erase');
+  await expect(page.getByTestId('pad-panel')).toContainText('지울 답이 없어요.');
+  await expect(page.locator('[data-cell="2"] .cell__val')).toHaveText('안 풂');
+  // 고친 문항에 답을 넣으면 그 칸에 머물고 키패드가 잠긴다. 다음에 할 일을 버튼으로 고른다.
   await tapKey(page, 4);
   await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('4');
-  await expect(page.getByTestId('now-no')).toHaveText('2번');
-  // "지우기"는 지금 칸에 답이 있어도 지시서대로 한 칸 뒤로 가서 지우고, 무엇을 지웠는지 알린다.
-  await page.locator('[data-cell="3"]').click();
-  await tapKey(page, 'erase');
-  await expect(page.getByTestId('now-no')).toHaveText('2번');
-  await expect(page.locator('[data-cell="2"] .cell__val')).toHaveText('');
-  await expect(page.getByText('2번 답을 지웠어요.')).toBeVisible();
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
+  await expect(page.getByTestId('pad-panel')).toContainText('1번에 답을 넣었어요. 다음에 할 일을 골라 주세요.');
+  await expect(page.getByTestId('fix-next')).toHaveText('2번도 고치기');
+  await expect(page.getByTestId('continue-from')).toHaveText('3번부터 이어서 넣기');
+  // 잠긴 키는 흐리게 보이고 화면 낭독기에도 쓸 수 없는 상태로 전해지며, 눌러도 들어가지 않는다.
+  await expect(page.locator('[data-key="2"]')).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.locator('[data-key="skip"]')).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.locator('[data-key="erase"]')).not.toHaveAttribute('aria-disabled', 'true');
+  // Playwright 는 aria-disabled 요소를 누르지 않고 기다리므로 force 로 누른다(실제 누름은 그대로 보낸다).
+  await page.locator('[data-key="2"]').click({ force: true });
+  await page.locator('[data-key="skip"]').click({ force: true });
+  await expect(page.locator('[data-cell="1"] .cell__val')).toHaveText('4');
+  await expect(page.locator('[data-cell="2"] .cell__val')).toHaveText('안 풂');
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
+  await page.getByTestId('continue-from').click();
+  await expect(page.getByTestId('now-no')).toHaveText('3번');
+  await expect(page.getByTestId('pad-panel')).toHaveCount(0);
 
   // 묶음이 넘어가면 직전 묶음과 현재 묶음 두 줄이 보인다.
-  await tapKey(page, 1);
   await tapKey(page, 1);
   await tapKey(page, 1);
   await tapKey(page, 1);
@@ -93,7 +109,7 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   // 빈 채로는 넘어가지 않는다.
   await tapKey(page, 'go');
   await expect(page.getByTestId('now-no')).toHaveText('22번');
-  await expect(page.getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
 
   // 한 자리만 눌렀다고 넘어가지 않는다. 누른 숫자는 크게 보이고, "다음" 전에는 칸에 들어가지 않는다.
   await tapKey(page, 0);
@@ -110,7 +126,7 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   // 네 자리는 받지 않는다.
   await tapKey(page, 1);
   await expect(page.getByTestId('entry')).toContainText('753');
-  await expect(page.getByText('답은 0부터 999까지예요.')).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText('답은 0부터 999까지예요.')).toBeVisible();
   // 지우기는 한 자리씩 지운다.
   await tapKey(page, 'erase');
   await expect(page.getByTestId('entry')).toContainText('75');
@@ -135,11 +151,11 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   await page.locator('[data-cell="24"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('24번');
   await expect(page.locator('[data-cell="23"] .cell__val')).toHaveText('');
-  await expect(page.getByText("23번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("23번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
   // "전체 보기"를 눌러도 확정하지 않은 숫자는 들어가지 않는다. 먼저 그 사실을 알리고, 다시 누르면 넘어간다.
   await tapKey(page, 7);
   await page.getByRole('button', { name: '전체 보기' }).click();
-  await expect(page.getByText("24번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("24번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
   await expectHash(page, '/input');
   await page.getByRole('button', { name: '전체 보기' }).click();
   await expectHash(page, '/review');
@@ -290,20 +306,29 @@ test('표시 화면: 누를 때마다 고민, 찍음, 표시 없음 순으로 �
   await short.click();
   await expect(short).not.toContainText('자신 없음');
 
-  // 주 버튼 "채점하기"와 보조 버튼 "없어요"가 함께 있다.
-  await expect(page.getByRole('button', { name: '없어요' })).toBeVisible();
-  await expect(page.getByRole('button', { name: '채점하기' })).toBeVisible();
+  // 채점 버튼은 하나다. 표시가 하나도 없으면 "없어요, 채점하기", 하나라도 있으면 "채점하기"이고 자리와 크기는 같다.
+  const gradeBtn = page.getByTestId('grade');
+  await expect(page.getByRole('button', { name: /채점하기/ })).toHaveCount(1);
+  await expect(gradeBtn).toHaveText('없어요, 채점하기');
+  const boxNone = (await gradeBtn.boundingBox())!;
   await cell.click();
+  await expect(gradeBtn).toHaveText('채점하기');
+  const boxOne = (await gradeBtn.boundingBox())!;
+  expect(boxOne).toEqual(boxNone);
   await cell.click();
-  await expect(page.getByRole('button', { name: '없어요' })).toBeVisible();
+  await expect(cell).toHaveAttribute('data-mark', 'guess');
+  await expect(gradeBtn).toHaveText('채점하기');
+  await expect(page.getByRole('button', { name: '없어요', exact: true })).toHaveCount(0);
   await page.getByTestId('time-missed').click();
   await expect(page.getByTestId('time-missed')).toHaveAttribute('aria-checked', 'true');
 
-  // 9번을 찍음으로 표시해도 실제 점수는 그대로다(4번 안 풂 3점만 더 빠진 75점).
-  await page.getByRole('button', { name: '채점하기' }).click();
+  // 9번을 찍음으로 표시해도 실제 점수는 그대로다(4번 안 풂 3점만 더 빠진 75점). 붙여 둔 표시는 지우지 않고 채점한다.
+  await gradeBtn.click();
   await expectHash(page, '/score');
   await expect(page.getByTestId('score')).toHaveText('75점');
   await expect(page.getByText('30문항 가운데 23문항을 맞혔어요.')).toBeVisible();
+  const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'));
+  expect(stored.sessions[0].marks).toEqual({ 9: 'guess' });
 
   // 채점한 뒤에 표시를 바꾸면 "채점한 뒤 표시"로 따로 적는다.
   await page.getByRole('button', { name: '입력 고치기' }).click();
@@ -382,7 +407,7 @@ test('저장이 안 되는 브라우저에서도 화면은 동작한다', async 
   await chooseExam(page, 'sample-a');
   await enterKeypad(page, exam, answers);
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expect(page.getByTestId('score')).toHaveText('78점');
   await page.getByRole('link', { name: '기록', exact: true }).click();
   await expect(page.getByText('이 브라우저에서는 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.')).toBeVisible();

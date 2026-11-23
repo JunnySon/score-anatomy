@@ -1,5 +1,5 @@
 import { S } from '../strings';
-import type { Cause, RetryRecord } from '../types';
+import type { Cause, RetryRecord, SelfCheck } from '../types';
 import type { CutView, Gap } from './cuts';
 import type { Anatomy } from './scoring';
 import type { Step } from './steps';
@@ -57,21 +57,40 @@ export function stepReasons(step: Step): string[] {
 }
 
 /**
- * 재풀이 기록 라벨(지시서 8장 (10)). 지시서가 정한 세 가지만 쓴다.
- * 맞혔고 정답을 본 적이 없으면 "다시 풀어 맞힘"(원인이 실수였으면 "실수로 표시함, 다시 풀어 맞힘"),
- * 정답을 먼저 봤거나 "이미 했어요" 경로면 "정답 확인 후 다시 맞힘".
- * 몇 번째에 맞혔는지(firstCorrectAttempt)는 기록에만 남기고 라벨에는 쓰지 않는다.
+ * 재풀이 기록 라벨(틀린 문항을 다시 풀어 답을 넣은 경우).
+ * 가장 최근 결과가 틀렸으면 "다시 풀었지만 답이 다름"이다.
+ * 맞았으면: 정답을 먼저 봤거나 "이미 했어요" 경로면 "정답 확인 후 다시 맞힘"이 먼저다.
+ * 그 밖에는 처음 맞은 차례(firstCorrectAttempt)가 첫 차례면 "다시 풀어 맞힘"(원인이 실수였으면 "실수로 표시함, 다시 풀어 맞힘"),
+ * 둘째 차례 이후면 "풀어"라는 말을 빼고 "N번째로 넣은 답이 맞음"이라고 적는다(5지선다는 틀린 보기를 지워 가며 맞힐 수 있다).
  * 같은 문항을 다시 맞힌 것만으로 처음 틀린 이유를 단정하지 않는다.
  */
 export function retryLabel(rec: RetryRecord, cause: Cause | null): string {
   if (!rec.correct) return S.retry.labelWrong;
   if (rec.answerKnown) return S.retry.labelCorrectKnown;
-  if (cause === 'slip') return S.retry.labelCorrectSlip;
-  return S.retry.labelCorrect;
+  const n = firstCorrect(rec);
+  if (n >= 2) return cause === 'slip' ? S.retry.labelCorrectNthSlip(n) : S.retry.labelCorrectNth(n);
+  return cause === 'slip' ? S.retry.labelCorrectSlip : S.retry.labelCorrect;
 }
 
-/** 재풀이 결과 문장. wasCorrect는 처음 채점에서 맞혔던 문항인지(찍어서 맞혔다고 표시한 문항). */
-export function retrySentence(rec: RetryRecord, wasCorrect = false): string {
-  if (!rec.correct) return wasCorrect ? S.retry.wrongAfterCorrect : S.retry.wrong;
-  return rec.answerKnown ? S.retry.correctKnown : S.retry.correct;
+/** 재풀이 결과 문장. */
+export function retrySentence(rec: RetryRecord): string {
+  if (!rec.correct) return S.retry.wrong;
+  if (rec.answerKnown) return S.retry.correctKnown;
+  const n = firstCorrect(rec);
+  return n >= 2 ? S.retry.correctNth(n) : S.retry.correct;
+}
+
+/** 처음 맞은 차례. 옛 기록에 값이 없으면 맞힌 마지막 차례로 본다. */
+function firstCorrect(rec: RetryRecord): number {
+  return rec.firstCorrectAttempt ?? rec.attempts;
+}
+
+/** 찍었다고 표시하고 맞은 문항을 스스로 확인한 기록의 라벨. 정답 대조가 아니므로 맞음과 틀림을 말하지 않는다. */
+export function selfCheckLabel(result: SelfCheck): string {
+  return result === 'solved' ? S.retry.labelSelfSolved : S.retry.labelSelfStuck;
+}
+
+/** 스스로 확인한 결과 문장. */
+export function selfCheckSentence(result: SelfCheck): string {
+  return result === 'solved' ? S.retry.selfSolved : S.retry.selfStuck;
 }

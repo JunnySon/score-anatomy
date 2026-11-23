@@ -1,56 +1,43 @@
 import { useState } from 'react';
+import { platform } from '#platform';
 import { Badge, Message, Screen, TopBar } from '../components/ui';
 import type { Grade } from '../logic/scoring';
 import { selectSteps, type Step } from '../logic/steps';
-import { retryLabel, stepReasons } from '../logic/text';
+import { retryLabel, selfCheckLabel, stepReasons } from '../logic/text';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { S } from '../strings';
 
 // (9) 계단 화면. 먼저 고칠 유형을 내 기록만으로 정해 보여 준다.
 
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text);
-      return true;
-    }
-  } catch {
-    // 아래의 다른 방법으로 넘어간다.
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok;
-  } catch {
-    return false;
-  }
-}
-
 function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; step: Step; index: number }) {
   const { exam, session } = h;
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const reasons = stepReasons(step);
   const coordLines = step.coords.map((c) => S.steps.coord(c.label, c.itemNo));
-  const retried = step.retryNos.filter((no) => session.retries[no] !== undefined);
+  // 다시 푼 기록: 틀린 문항은 다시 넣은 답의 결과, 찍었다고 표시하고 맞은 문항은 스스로 확인한 결과.
+  // 찍음 표시 정답에 1.0에서 남긴 답 기록(다시 풀어 맞힘)이 있어도 보여 주지 않는다.
+  const statusOf = (no: number): string | null => {
+    const result = grade.items.find((it) => it.no === no);
+    if (!result) return null;
+    if (result.correct) {
+      const self = session.selfChecks[no];
+      return self ? selfCheckLabel(self.result) : null;
+    }
+    const rec = session.retries[no];
+    return rec ? retryLabel(rec, result.cause) : null;
+  };
+  const retried = step.retryNos.map((no) => ({ no, label: statusOf(no) })).filter((r): r is { no: number; label: string } => r.label !== null);
   const titleId = `step-title-${step.typeId}`;
   return (
     <li className="card" data-testid={`step-${index + 1}`} data-type={step.typeId} aria-labelledby={titleId}>
-      <div className="input-head__row">
-        <h3 className="title" id={titleId}>
-          {index + 1}. {step.name}
-        </h3>
-        <span className="sub nowrap" data-testid="step-points">
-          {step.wrongPoints > 0 ? S.steps.missed(step.wrongPoints) : S.steps.guessOnly(step.guessCorrectPoints)}
-        </span>
-      </div>
+      <h3 className="title" id={titleId}>
+        {index + 1}. {step.name}
+      </h3>
+      {/* 배점 문장은 유형 이름 아래 줄에 두고 줄바꿈을 허용한다. */}
+      <p className="sub" data-testid="step-points">
+        {S.steps.points(step.wrongPoints, step.guessCorrectPoints)}
+      </p>
       <p className="mt2" data-testid="step-reason">
         {reasons.join(' ')}
       </p>
@@ -64,7 +51,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
               <span>2. {S.steps.coordsTitle}</span>
               {exam.isSample ? <Badge>{S.steps.coordsSample}</Badge> : null}
             </div>
-            <ul className="sub mt2">
+            <ul className="sub mt2 selectable">
               {coordLines.map((line) => (
                 <li key={line}>{line}</li>
               ))}
@@ -74,7 +61,7 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
               className="btn btn--text btn--left"
               data-testid="copy-coords"
               onClick={() => {
-                void copyText(coordLines.join('\n')).then((ok) => setCopyMsg(ok ? S.steps.copied : S.steps.copyFailed));
+                void platform.copy(coordLines.join('\n')).then((ok) => setCopyMsg(ok ? S.steps.copied : S.steps.copyFailed));
               }}
             >
               {S.steps.copy}
@@ -88,10 +75,9 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
         <div className="mt3" data-testid="retry-status">
           <h4 className="sub">{S.steps.retryStatusTitle}</h4>
           <ul className="mt2">
-            {retried.map((no) => {
-              const cause = grade.items.find((it) => it.no === no)?.cause ?? null;
-              return <li key={no}>{S.steps.retryStatus(no, retryLabel(session.retries[no]!, cause))}</li>;
-            })}
+            {retried.map((r) => (
+              <li key={r.no}>{S.steps.retryStatus(r.no, r.label)}</li>
+            ))}
           </ul>
         </div>
       ) : null}

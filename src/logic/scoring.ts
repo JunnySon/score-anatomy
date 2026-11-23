@@ -1,4 +1,4 @@
-import { isValidAnswerNumber } from '../exams/validate';
+import { DEFAULT_CHOICES, isValidAnswerNumber } from '../exams/validate';
 import type { Answers, AnswerValue, Cause, Causes, Exam, ExamItem, ItemKind, Mark, Marks } from '../types';
 
 // 계산 규칙(작업 지시서 7장).
@@ -123,8 +123,10 @@ export interface Anatomy {
   guessCorrectPoints: number;
   /** 찍음 전체 배점: 찍음 표시가 있는 5지선다 문항(맞음과 틀림 모두) 배점의 합. */
   guessTotalPoints: number;
-  /** 찍기 운을 평균으로 본 점수(반올림 전). */
+  /** 찍기 운을 평균으로 본 점수(반올림 전). 화면에는 쓰지 않고 테스트와 설명에만 쓴다. */
   luckAverage: number;
+  /** 찍기 운을 평균으로 본 점수의 분자와 분모(정수). */
+  luck: LuckFraction;
   /** 화면에 "약 N점"으로 보여 주는 값. */
   luckAverageRounded: number;
   /** 찍음 표시가 없거나 반올림 값이 실제 점수와 같으면 보여 주지 않는다. */
@@ -138,20 +140,52 @@ export interface Anatomy {
   plainCorrectPoints: number;
 }
 
-/** 찍어서 맞힐 평균 비율. 지시서 7장의 식 그대로 0.2(5지선다)를 쓴다. */
-export const GUESS_RATE = 0.2;
-
-function round6(x: number): number {
-  return Math.round(x * 1e6) / 1e6;
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
 }
 
-export function analyze(_exam: Exam, grade: Grade): Anatomy {
+function lcm(a: number, b: number): number {
+  return (a / gcd(a, b)) * b;
+}
+
+/** 찍기 운을 평균으로 본 점수의 분자와 분모. 값은 numerator / denominator 다. */
+export interface LuckFraction {
+  numerator: number;
+  denominator: number;
+}
+
+/**
+ * 찍기 운을 평균으로 본 점수를 정수로 계산한다(소수 계산에 기대지 않는다).
+ * 찍음 표시 문항마다 1 나누기 보기 수(choices 가 없으면 5)를 맞힐 확률로 본다.
+ * G = 실제 점수 - 추측 표시 정답 점수, D = 찍음 표시 문항들의 보기 수의 최소공배수,
+ * N = 찍음 표시 문항마다 배점 x (D / 보기 수)를 더한 값. 값은 (G x D + N) / D 다.
+ * 찍음 표시가 하나도 없으면 D = 1, N = 0 이다.
+ */
+export function luckFraction(actual: number, guessItems: { points: number; choices: number }[], guessCorrectPoints: number): LuckFraction {
+  const g = actual - guessCorrectPoints;
+  const d = guessItems.reduce((acc, it) => lcm(acc, it.choices), 1);
+  const n = guessItems.reduce((acc, it) => acc + it.points * (d / it.choices), 0);
+  return { numerator: g * d + n, denominator: d };
+}
+
+/** 화면에 보이는 "약 N점". (2 x 분자 + 분모)를 (2 x 분모)로 나눈 몫이다. 딱 0.5는 올라간다. */
+export function roundLuck(f: LuckFraction): number {
+  return Math.floor((2 * f.numerator + f.denominator) / (2 * f.denominator));
+}
+
+export function analyze(exam: Exam, grade: Grade): Anatomy {
   const guessItems = grade.items.filter((it) => it.guess);
   const guessCorrectPoints = guessItems.filter((it) => it.correct).reduce((s, it) => s + it.points, 0);
   const guessTotalPoints = guessItems.reduce((s, it) => s + it.points, 0);
-  // 찍기 운을 평균으로 본 점수 = 실제 점수 - 추측 표시 정답 점수 + 0.2 x 찍음 전체 배점
-  const luckAverage = round6(grade.actual - guessCorrectPoints + GUESS_RATE * guessTotalPoints);
-  const luckAverageRounded = Math.round(luckAverage);
+  // 찍기 운을 평균으로 본 점수: 찍음 표시 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균.
+  const choicesByNo = new Map(exam.items.map((it) => [it.no, it.choices ?? DEFAULT_CHOICES]));
+  const luck = luckFraction(
+    grade.actual,
+    guessItems.map((it) => ({ points: it.points, choices: choicesByNo.get(it.no) ?? DEFAULT_CHOICES })),
+    guessCorrectPoints,
+  );
+  const luckAverage = luck.numerator / luck.denominator;
+  const luckAverageRounded = roundLuck(luck);
   const wrongPoints = grade.wrong.reduce((s, it) => s + it.points, 0);
   const slipPoints = grade.wrong.filter((it) => it.cause === 'slip').reduce((s, it) => s + it.points, 0);
   return {
@@ -167,6 +201,7 @@ export function analyze(_exam: Exam, grade: Grade): Anatomy {
     guessCorrectPoints,
     guessTotalPoints,
     luckAverage,
+    luck,
     luckAverageRounded,
     showLuckAverage: guessItems.length > 0 && luckAverageRounded !== grade.actual,
     causeMarkedCount: grade.wrong.filter((it) => it.cause !== null).length,

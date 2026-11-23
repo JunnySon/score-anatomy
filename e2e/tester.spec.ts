@@ -50,7 +50,7 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
   await expectHash(page, '/marks');
   await page.waitForTimeout(1200);
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expectHash(page, '/score');
 
   // 진행자 화면으로 돌아와 측정 기록을 본다.
@@ -147,12 +147,11 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await expectHash(page, '/');
   await expect(page.getByRole('button', { name: '시험 고르기' })).toBeVisible();
   await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
-  // 앞 참가자의 시험 기록을 모두 지워도 측정 기록의 남은 오입력은 그대로 남는다.
+  // 측정 중에는 기록 탭에 이번 참가자의 기록만 보이고 "이 기기의 기록 모두 지우기"를 숨긴다. 앞 참가자의 측정값은 그대로다.
   await openApp(page, '/history');
-  await page.getByTestId('history-remove-all').click();
-  await expect(page.getByRole('alertdialog')).toContainText('테스트 측정 기록은 테스트 진행자용 화면에서 따로 지워요.');
-  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
   await expect(page.getByTestId('history-empty')).toBeVisible();
+  await expect(page.getByTestId('history-item')).toHaveCount(0);
+  await expect(page.getByTestId('history-remove-all')).toHaveCount(0);
   await openApp(page, '/test');
   await expect(page.getByTestId('run-card')).toHaveCount(2);
   await expect(page.getByTestId('run-card').first().getByTestId('m-residual')).toHaveText('2개');
@@ -180,17 +179,18 @@ test('시험 기록을 지운 뒤에 답지를 넣어도 옮겨 둔 최종 답�
   await enterKeypad(page, exam, { ...answers, 3: 5 });
   await expectHash(page, '/review');
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expectHash(page, '/score');
+
+  // 답지를 넣기 전에 참가자가 측정 중에 자기 시험 기록을 지운다(측정 중에는 자기 기록만 보이고 하나씩 지울 수 있다).
+  await openApp(page, '/history');
+  await expect(page.getByTestId('history-item')).toHaveCount(1);
+  await page.getByTestId('history-remove').click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
+  await expect(page.getByTestId('history-empty')).toBeVisible();
   await openApp(page, '/test');
   await page.getByTestId('finish-run').click();
   await expect(page.getByTestId('active-run')).toHaveCount(0);
-
-  // 답지를 넣기 전에 시험 기록을 모두 지운다.
-  await openApp(page, '/history');
-  await page.getByTestId('history-remove-all').click();
-  await page.getByRole('alertdialog').getByRole('button', { name: '지우기' }).click();
-  await expect(page.getByTestId('history-empty')).toBeVisible();
 
   await openApp(page, '/test');
   const card = page.getByTestId('run-card');
@@ -293,3 +293,103 @@ test('측정 카드: 망가진 시작 시각은 비워 보여 주고, 카드 안
   expect(colors.borderColor).not.toBe(colors.input);
 });
 
+
+test('테스트 기기: 참가자 A를 마친 뒤 대기, 참가자 B를 시작하기 전과 후에 A의 점수가 학생이 보는 화면에 나오지 않는다', async ({ page }) => {
+  const exam = loadExam('a');
+  // A의 점수를 다른 화면의 숫자와 겹치지 않게 97점으로 만든다(27번 3점만 틀림).
+  const answersA = Object.fromEntries(exam.items.map((it) => [it.no, it.answer as number]));
+  answersA[27] = 146;
+  const studentText = async () => (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+
+  // 참가자 A
+  await openApp(page, '/test');
+  await page.getByLabel('참가자 코드').fill('P01');
+  await page.getByTestId('mode-keypad').click();
+  await page.getByTestId('start-run').click();
+  await expectHash(page, '/');
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-a');
+  await enterKeypad(page, exam, answersA);
+  // 마지막 문항을 넣어 입력 확인으로 넘어간 직후, 기다리지 않고 "맞아요, 다음으로" 자리를 누른다: 받지 않고 알린다(측정에 센다).
+  const go = page.getByRole('button', { name: '맞아요, 다음으로' });
+  const box = (await go.boundingBox())!;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByTestId('tap-notice')).toHaveText('화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.');
+  await expectHash(page, '/review');
+  await go.click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
+  await expect(page.getByTestId('score')).toHaveText('97점');
+  // A는 예시 시험 B도 넣다가 채점하지 않고 멈춘다(채점 전 기록이 기기에 남는다).
+  await openApp(page, '/exams');
+  await chooseExam(page, 'sample-b', 'not_yet', 'first');
+  for (const k of [2, 4, 1, 5, 3]) await tapKey(page, k);
+  await expect(page.getByTestId('entered-count')).toHaveText('5문항 입력');
+
+  // 진행자가 A를 마친다. 진행자용 화면에서 버린 누름은 세지 않는다.
+  await openApp(page, '/test');
+  const finish = page.getByTestId('finish-run');
+  const fb = (await finish.boundingBox())!;
+  await finish.click();
+  await page.mouse.click(fb.x + fb.width / 2, fb.y + fb.height / 2);
+  const cardA = page.locator('[data-testid="run-card"][data-participant="P01"]');
+  await expect(cardA.getByTestId('m-discarded')).toHaveText('1번');
+
+  // 대기: 학생이 보는 화면 어디에도 A의 기록과 점수가 없다.
+  await openApp(page, '/');
+  await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
+  expect(await studentText()).not.toContain('97점');
+  await page.getByRole('link', { name: '기록', exact: true }).click();
+  await expectHash(page, '/history');
+  await expect(page.getByTestId('history-test-device')).toHaveText('테스트 기기예요. 기록은 진행자용 화면에서 확인해요.');
+  await expect(page.getByTestId('history-item')).toHaveCount(0);
+  await expect(page.getByTestId('history-remove-all')).toHaveCount(0);
+  expect(await studentText()).not.toContain('97점');
+  for (const hash of ['/anatomy', '/score', '/steps', '/marks', '/review', '/input']) {
+    await openApp(page, hash);
+    expect(await studentText(), hash).not.toContain('97점');
+    await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
+  }
+  // 대기 중에 A가 넣다 만 시험(예시 시험 B)을 골라도 A의 답이 열리지 않고 새로 시작한다.
+  await openApp(page, '/exams');
+  await chooseExam(page, 'sample-b', 'not_yet', 'first');
+  await expect(page.getByTestId('entered-count')).toHaveText('0문항 입력');
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
+
+  // 참가자 B를 시작한다.
+  await openApp(page, '/test');
+  await page.getByLabel('참가자 코드').fill('P02');
+  await page.getByTestId('mode-keypad').click();
+  await page.getByTestId('start-run').click();
+  await expectHash(page, '/');
+  await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
+  expect(await studentText()).not.toContain('97점');
+  await page.getByRole('link', { name: '기록', exact: true }).click();
+  await expectHash(page, '/history');
+  // 측정 중에는 이번 참가자의 기록만 보이고, "이 기기의 기록 모두 지우기"를 숨긴다.
+  await expect(page.getByTestId('history-empty')).toBeVisible();
+  await expect(page.getByTestId('history-item')).toHaveCount(0);
+  await expect(page.getByTestId('history-remove-all')).toHaveCount(0);
+  expect(await studentText()).not.toContain('97점');
+  // B가 같은 시험을 골라도 A의 기록을 이어 쓰지 않는다.
+  await page.getByRole('link', { name: '이번 시험' }).click();
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-a');
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
+  await expect(page.getByTestId('entered-count')).toHaveText('0문항 입력');
+  await tapKey(page, 1);
+  await openApp(page, '/history');
+  await expect(page.getByTestId('history-item')).toHaveCount(1);
+  await expect(page.getByTestId('history-item')).toContainText('입력 중');
+  expect(await studentText()).not.toContain('97점');
+
+  // 진행자용 화면에는 두 참가자의 측정 기록이 모두 있고, A의 받지 않은 누름은 1번이다(CSV 에도 남는다).
+  await openApp(page, '/test');
+  await expect(page.getByTestId('run-card')).toHaveCount(2);
+  await expect(cardA.getByTestId('m-discarded')).toHaveText('1번');
+  await page.getByTestId('copy-csv').click();
+  await expect(page.getByText('복사했어요.')).toBeVisible();
+  const csv = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n').trim().split('\n');
+  const head = csv[0]!.split(',');
+  const rowA = csv.find((l) => l.startsWith('P01,'))!.split(',');
+  expect(rowA[head.indexOf('discarded_taps')]).toBe('1');
+});

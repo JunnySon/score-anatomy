@@ -14,7 +14,7 @@ export interface Step {
   guessCorrectItems: ItemResult[];
   /** 이 유형에서 점수에 들어간 문항 가운데 가장 앞선 번호. 동점일 때 순서를 정한다. */
   firstNo: number;
-  /** 오늘 시험지에서 다시 풀 문항 번호. 틀린 문항과 찍어서 맞혔다고 표시한 문항. */
+  /** 오늘 시험지에서 다시 볼 문항 번호. 틀린 문항과, 찍었다고 표시했고 채점해 보니 맞은 문항. */
   retryNos: number[];
   coords: Coord[];
 }

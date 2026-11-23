@@ -249,6 +249,20 @@ a {
   background: var(--bg);
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* 연달아 누르기 보호가 누름을 버렸을 때의 알림(src/tapNotice.ts). 고정 위치라 화면 구성을 밀지 않고, 누름을 받지 않는다. */
+.tap-notice {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  font-size: var(--fs-sub);
+  line-height: var(--lh-sub);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r-chip);
+  padding: var(--s2) var(--s3);
+}
 /* 화면이 바뀐 직후 잠깐 누름을 받지 않는 자리의 표시(src/tapGuard.ts). 보이지 않고 누름도 받지 않는다. */
 .tap-shield {
   position: fixed;
@@ -415,6 +429,10 @@ a {
 }
 .tag--ok {
   color: var(--ok);
+}
+/* 긴 중립 표식(스스로 확인한 기록)은 줄을 바꿔도 된다. */
+.tag--wrap {
+  white-space: normal;
 }
 
 /* 카드와 상자: 표면색(지시서 5장). 그 안의 안내문은 배경색으로 바꿔서 구분한다. 입력 칸은 표면색 그대로 두고 테두리로 구분한다. */
@@ -748,402 +766,32 @@ a {
 .key[aria-pressed='true'] {
   border: 2px solid var(--accent);
 }
-
-/* 답 입력: 5행 방식. 폭 360px에서도 터치 영역 48px과 간격 8px를 지키려고 좌우 여백을 16px까지 줄인다. */
-.body--rows {
-  padding-left: max(16px, min(var(--gutter), calc((100vw - 328px) / 2)), env(safe-area-inset-left));
-  padding-right: max(16px, min(var(--gutter), calc((100vw - 328px) / 2)), env(safe-area-inset-right));
-}
-.rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-  margin-top: var(--s3);
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: var(--touch);
-}
-.row__no {
-  flex: none;
-  width: var(--touch);
-  height: var(--touch);
-  border: 1px solid var(--outline);
-  border-radius: var(--r-chip);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-}
-.row__no small {
-  font-size: var(--fs-cap);
-  line-height: var(--lh-cap);
-  font-weight: 400;
-  color: var(--text-sub);
-}
-.row__choices {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(var(--touch), 1fr);
-  gap: var(--s2);
-}
-.radio {
-  min-width: var(--touch);
-  height: var(--touch);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.radio__circle {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--outline);
-  background: var(--bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  transition:
-    background-color var(--t),
-    color var(--t);
-}
-.radio[aria-checked='true'] .radio__circle {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.row__short {
-  flex: 1;
-  min-width: 0;
-  min-height: var(--touch);
-  padding: 0 var(--s3);
-  border: 1px solid var(--outline);
-  border-radius: var(--r-chip);
-  background: var(--surface);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s2);
-  text-align: left;
-}
-.row__short-val {
-  font-weight: 600;
-}
-/* 지원 범위(360px)보다 좁은 화면에서는 간격과 터치 영역을 조금 줄여 화면 밖으로 나가지 않게 한다. */
-@media (max-width: 359px) {
-  .body--rows {
-    padding-left: var(--s3);
-    padding-right: var(--s3);
-  }
-  .row,
-  .row__choices {
-    gap: var(--s1);
-  }
-  .row__choices {
-    grid-auto-columns: minmax(0, 1fr);
-  }
-  .radio {
-    min-width: 0;
-  }
-}
-
-/* 입력 확인과 표시 격자 */
-.grid5 {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--s2);
-}
-.mark-cell {
-  min-width: 0;
-  min-height: 68px;
-  padding: 3px 2px;
-  border: 1px solid var(--outline);
-  border-radius: var(--r-chip);
-  background: var(--surface);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-.mark-cell span {
-  padding: 0 3px;
-  border-radius: 4px;
-}
-/* 표시 격자에서도 "안 풂" 글자가 옆 칸의 답 숫자와 같은 높이에 오게 위아래 3px을 준다. */
-.mark-cell .cell__val--small {
-  padding: 3px;
-}
-.mark-cell__tag {
-  min-height: var(--lh-cap);
-  font-size: var(--fs-cap);
-  line-height: var(--lh-cap);
-  font-weight: 400;
-}
-/* 고민: 윤곽 무늬 */
-.mark-cell--doubt {
-  border: 2px solid var(--text);
-  padding: 2px 1px;
-  background: var(--bg);
-}
-/* 찍음: 빗금 무늬 */
-.mark-cell--guess {
-  border: 2px solid var(--text);
-  padding: 2px 1px;
-  background: repeating-linear-gradient(135deg, var(--outline) 0 1.5px, var(--bg) 1.5px 7px);
-}
-.mark-cell--guess span {
-  background: var(--bg);
-}
-.mark-cell--off {
+/* 잠긴 키(키패드 잠금, src/logic/keypad.ts): 흐리게 보인다. 색 대비는 보조 글자 기준을 지킨다. */
+.key[aria-disabled='true'],
+.key--go[aria-disabled='true'] {
   border-style: dashed;
+  border-color: var(--outline);
+  background: var(--surface);
   color: var(--text-sub);
   cursor: default;
+  filter: none;
 }
-/* 단답형 번호는 같은 폭의 칸으로 둔다(기본 글자 크기에서는 한 줄에 네 칸). "자신 없음"이 붙어도 칸의 크기와 자리가 바뀌지 않는다.
-   내용에 맞춰 폭이나 높이가 늘면 뒤 번호가 밀려서, 같은 자리를 다시 눌렀을 때 옆 번호가 눌린다.
-   - 칸의 최소 폭을 rem 으로 잡아서, 글자를 키우면 한 줄의 칸 수가 줄고 "자신 없음"은 늘 한 줄에 들어간다.
-   - 번호 줄과 "자신 없음" 줄의 높이를 늘 잡아 두어서, 붙고 떨어질 때 칸의 높이가 그대로다. */
-.short-marks {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(var(--short-mark), 1fr));
-  gap: var(--s2);
-}
-.short-mark {
-  min-width: var(--touch);
-  min-height: max(var(--touch), calc(var(--lh-body) + var(--lh-cap) + 4px));
-  padding: 0 var(--s1);
-  border: 1px solid var(--outline);
-  border-radius: var(--r-chip);
+.key[aria-disabled='true']:active {
   background: var(--surface);
+}
+/* 키패드 위 안내문 자리의 버튼(잠금과 고치기). */
+.pad-actions {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-.short-mark[aria-pressed='true'] {
-  border: 2px solid var(--text);
-  padding: 0 calc(var(--s1) - 1px);
-  background: var(--bg);
-}
-.short-mark small {
-  font-size: var(--fs-cap);
-  line-height: var(--lh-cap);
-  font-weight: 400;
-  white-space: nowrap;
-}
-
-/* 점수 해부: 100점 막대. 색이 아니라 무늬로 가른다(채움, 빗금, 윤곽만, 점선 윤곽). */
-.bar {
-  display: flex;
-  width: 100%;
-  height: var(--bar-h);
-}
-.seg {
-  flex: none;
-  height: 100%;
-  min-width: 0;
-}
-.seg--solid {
-  background: var(--outline);
-}
-.seg--hatch {
-  border: 2px solid var(--outline);
-  background: repeating-linear-gradient(135deg, var(--outline) 0 2px, var(--under, var(--bg)) 2px 6px);
-}
-.seg--outline {
-  border: 2px solid var(--outline);
-  background: var(--under, var(--bg));
-}
-.seg--dashed {
-  border: 2px dashed var(--outline);
-  background: var(--under, var(--bg));
-}
-.bar--mini {
-  height: 16px;
-}
-.ticks {
-  position: relative;
-  height: 28px;
-  margin-top: 2px;
-}
-.tick-mark {
-  position: absolute;
-  top: 0;
-  width: 1px;
-  height: 6px;
-  background: var(--outline);
-}
-.tick-label {
-  position: absolute;
-  top: 8px;
-  font-size: var(--fs-cap);
-  line-height: var(--lh-cap);
-  color: var(--text-sub);
-  white-space: nowrap;
-}
-.ticks--stacked {
-  height: 46px;
-}
-.ticks--stacked .tick-label--total {
-  top: 26px;
-}
-.swatch {
-  flex: none;
-  width: 20px;
-  height: 20px;
-}
-.arow {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr) auto;
-  column-gap: var(--s3);
-  align-items: center;
-  padding: var(--s3) 0;
-  border-top: 1px solid var(--line);
-}
-.arow__sub {
-  grid-column: 2 / 4;
-}
-.arow--text {
-  display: block;
-}
-.cut-line {
-  display: flex;
-  flex-direction: column;
-}
-.cut-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--s2);
+  margin-top: var(--s2);
+}
+.btn--panel {
+  flex: 1 1 auto;
   min-height: var(--touch);
+  padding: 0 var(--s3);
 }
 
-/* 펼침 설명 */
-details > summary {
-  list-style: none;
-  min-height: var(--touch);
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  color: var(--accent);
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-details > summary::-webkit-details-marker {
-  display: none;
-}
-details > summary::after {
-  content: '';
-  flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  transform: rotate(45deg);
-  transition: transform var(--t);
-}
-details[open] > summary::after {
-  margin-top: 4px;
-  transform: rotate(-135deg);
-}
-
-/* 바텀시트와 삭제 확인 대화상자 */
-.layer {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
-.layer--center {
-  justify-content: center;
-  padding: var(--gutter);
-}
-.scrim {
-  position: absolute;
-  inset: 0;
-  background: var(--scrim);
-  animation: fade var(--t) ease-out;
-}
-.sheet {
-  position: relative;
-  max-height: 92%;
-  overflow-y: auto;
-  background: var(--bg);
-  border-top: 1px solid var(--line);
-  border-radius: var(--r-card) var(--r-card) 0 0;
-  padding-bottom: env(safe-area-inset-bottom);
-  animation: rise var(--t) ease-out;
-}
-.sheet:focus,
-.dialog:focus {
-  outline: none;
-}
-.sheet__head {
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-  padding: var(--s1) var(--s1) var(--s1) var(--gutter);
-}
-.sheet__title {
-  flex: 1;
-}
-.sheet__body {
-  padding: var(--s1) var(--gutter) var(--s4);
-}
-.dialog {
-  position: relative;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: var(--r-card);
-  padding: var(--s5);
-  animation: fade var(--t) ease-out;
-}
-
-@keyframes rise {
-  from {
-    transform: translateY(24px);
-    opacity: 0;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
-}
-@keyframes fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-/* 목록 */
-.rule-list > li {
-  border-top: 1px solid var(--line);
-}
-.rule-list > li:last-child {
-  border-bottom: 1px solid var(--line);
-}
-.hitem {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s2) 0;
-}
 .hitem__open {
   flex: 1;
   min-width: 0;
@@ -1154,49 +802,6 @@ details[open] > summary::after {
   justify-content: center;
   text-align: left;
 }
-.upcoming {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--s3);
-  padding: var(--s3) 0;
-}
-
-/* 테스트 진행자용 */
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s2);
-}
-.field__input {
-  width: 100%;
-  min-height: var(--touch);
-  padding: var(--s2) var(--s3);
-  border: 1px solid var(--outline);
-  border-radius: var(--r-chip);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-}
-textarea.field__input {
-  min-height: 96px;
-  resize: vertical;
-}
-.kv {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--s1) var(--s3);
-}
-.kv dt {
-  color: var(--text-sub);
-}
-.kv dd {
-  margin: 0;
-  color: var(--text);
-  text-align: right;
-}
-
 /* 움직임 줄이기 설정을 따른다 */
 @media (prefers-reduced-motion: reduce) {
   *,

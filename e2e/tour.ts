@@ -128,9 +128,20 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await stop('답입력-키패드-처음', { mustFit: true });
   await enterKeypad(page, examA, answersA, 1, 11);
   await stop('답입력-키패드-객관식', { mustFit: true });
-  // "지우기"는 한 칸 뒤로 가서 지우고, 무엇을 지웠는지 알린다.
+  // 답이 든 칸을 누르면 그 문항을 고친다. 아무것도 바꾸지 않고 돌아가는 버튼이 있다.
+  await page.locator('[data-cell="9"]').click();
+  await expect(page.getByTestId('pad-panel')).toContainText('9번을 고치는 중이에요.');
+  await stop('답입력-키패드-고치는중', { mustFit: true });
+  // 고친 문항에 답을 넣으면 그 칸에 머물고 키패드가 잠긴다.
+  await tapKey(page, answersA[9] as number);
+  await expect(page.getByTestId('pad-panel')).toContainText('9번에 답을 넣었어요. 다음에 할 일을 골라 주세요.');
+  await expect(page.getByTestId('fix-next')).toHaveText('10번도 고치기');
+  await stop('답입력-키패드-잠금', { mustFit: true });
+  await page.getByTestId('continue-from').click();
+  await expect(page.getByTestId('now-no')).toHaveText('12번');
+  // 빈칸에서 "지우기"는 이어서 들어왔으면 앞 번호로 가서 지우고, 무엇을 지웠는지 알린다.
   await tapKey(page, 'erase');
-  await expect(page.getByText('11번 답을 지웠어요.')).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText('11번 답을 지웠어요.')).toBeVisible();
   await expect(page.getByTestId('now-no')).toHaveText('11번');
   await stop('답입력-키패드-지우기안내', { mustFit: true });
   await enterKeypad(page, examA, answersA, 11, 21);
@@ -141,15 +152,30 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await stop('답입력-키패드-단답형', { mustFit: true });
   await tapKey(page, 3);
   await tapKey(page, 4);
-  await expect(page.getByText('답은 0부터 999까지예요.')).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText('답은 0부터 999까지예요.')).toBeVisible();
   await stop('답입력-키패드-단답형-안내', { mustFit: true });
   await tapKey(page, 'erase');
   await tapKey(page, 'erase');
   await tapKey(page, 'erase');
   await tapKey(page, 'go');
-  await expect(page.getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
   await stop('답입력-키패드-단답형-빈칸안내', { mustFit: true });
-  await enterKeypad(page, examA, answersA, 22, 30);
+  await enterKeypad(page, examA, answersA, 22, 24);
+  // 단답형 칸을 고친 뒤의 잠금(키패드가 가장 높은 단답형에서도 한 화면에 들어와야 한다).
+  await page.locator('[data-cell="23"]').click();
+  await tapKey(page, 'go');
+  await expect(page.getByTestId('pad-panel')).toContainText('23번에 답을 넣었어요. 다음에 할 일을 골라 주세요.');
+  await stop('답입력-키패드-단답형-잠금', { mustFit: true });
+  await page.getByTestId('continue-from').click();
+  await expect(page.getByTestId('now-no')).toHaveText('25번');
+  await enterKeypad(page, examA, answersA, 25, 30);
+  await expectHash(page, '/review');
+  // 다 찬 채로 답 입력 화면을 열면 잠근 채로 시작한다.
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expectHash(page, '/input');
+  await expect(page.getByTestId('pad-panel')).toContainText('빈칸이 없어요. 고칠 문항을 눌러 주세요.');
+  await stop('답입력-키패드-빈칸없음', { mustFit: true });
+  await page.getByRole('button', { name: '전체 보기' }).click();
   await expectHash(page, '/review');
 
   // (4) 입력 확인
@@ -223,7 +249,8 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await page.getByTestId('step-1').getByTestId('copy-coords').click();
   // 복사 권한을 준 상태다. 실제로 복사됐는지 내용까지 확인한다.
   await expect(page.getByTestId('step-1').getByText('좌표를 복사했어요.')).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('예시 좌표 12번\n예시 좌표 20번');
+  // 윈도우의 클립보드는 줄바꿈을 \r\n 으로 바꿔 돌려주므로 줄바꿈을 맞춘 뒤 견준다.
+  expect((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n')).toBe('예시 좌표 12번\n예시 좌표 20번');
   await page.getByTestId('step-1').getByTestId('copy-coords').scrollIntoViewIfNeeded();
   await stop('계단-펼침');
 
@@ -267,13 +294,16 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await page.getByTestId('wrong-15').scrollIntoViewIfNeeded();
   await stop('오답원인-정답확인');
 
-  // (10) 재풀이: 적분. 14번은 처음에 맞혔던 문항, 21번은 정답을 먼저 본 문항이다.
+  // (10) 재풀이: 적분. 14번은 찍었다고 표시했고 맞은 문항(스스로 확인), 21번은 정답을 먼저 본 문항이다.
   await openApp(page, '/steps');
   await page.getByTestId('step-1').getByTestId('retry-btn').click();
   await expectHash(page, '/retry/t06');
-  await retryAnswer(page, examA, 14, 2);
-  await expect(page.getByTestId('retry-result')).toContainText('이번에는 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.');
-  await stop('재풀이-맞혔던문항-다름');
+  await expect(page.getByTestId('self-check')).toBeVisible();
+  await stop('재풀이-찍음표시정답');
+  await noLeak('재풀이, 찍음 표시 정답');
+  await page.getByTestId('self-stuck').click();
+  await expect(page.getByTestId('retry-label')).toHaveText('찍음 표시 정답, 막힌다고 표시함');
+  await stop('재풀이-찍음표시정답-막힘');
   await page.getByTestId('retry-next').click();
   await retryAnswer(page, examA, 20, 5);
   await expect(page.getByTestId('retry-label')).toHaveText('다시 풀어 맞힘');
@@ -336,7 +366,7 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await expectHash(page, '/marks');
   await expect(page.getByTestId('after-grading-note')).toBeVisible();
   await stop('표시-채점한뒤표시');
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expectHash(page, '/score');
   await page.getByRole('button', { name: '점수 해부 바로 보기' }).click();
   await expectHash(page, '/anatomy');
@@ -448,7 +478,7 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await chooseExam(page, 'sample-a');
   await enterRows(page, examA, answersA);
   await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
-  await page.getByRole('button', { name: '없어요' }).click();
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expectHash(page, '/score');
   await openApp(page, '/test');
   await page.getByLabel('참가자에게 준 답지의 답').fill(examA.items.map((it) => answersA[it.no]).join(','));

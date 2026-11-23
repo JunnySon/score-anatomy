@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatTime, listNos, rangePoints, S } from './strings';
+import { formatDate, formatTime, listNos, rangePoints, S, S_APP, S_ROWS, S_TEST, S_TOOLS } from './strings';
 
 // 화면 문구 검사: 금지 문자, 느낌표, 이모지, 쓰지 않기로 한 말이 없는지 본다.
 
@@ -47,6 +47,10 @@ function collect(value: unknown, path: string, out: { path: string; text: string
 
 const all: { path: string; text: string }[] = [];
 collect(S, 'S', all);
+collect(S_ROWS, 'S_ROWS', all);
+collect(S_TEST, 'S_TEST', all);
+collect(S_TOOLS, 'S_TOOLS', all);
+collect(S_APP, 'S_APP', all);
 
 // 금지 문자와 느낌표는 문자를 직접 적지 않고 코드 값으로 정규식을 만든다.
 const charClass = (codes: number[]) => new RegExp(`[${codes.map((c) => String.fromCodePoint(c)).join('')}]`, 'u');
@@ -88,6 +92,8 @@ describe('화면 문구', () => {
       '풀어서 맞힘',
       '축하',
       '대단',
+      // 1.1: 계단의 순서와 숫자는 다시 풀기 결과로 바뀌지 않으므로 이 말을 쓰지 않는다.
+      '계단에 남겨',
       '순위',
       '등수',
       '연속',
@@ -150,7 +156,7 @@ describe('화면 문구', () => {
       '빠듯했어요',
       '몇 문제는 못 봤어요',
       '채점하기',
-      '없어요',
+      '없어요, 채점하기',
       '정답이 아직 공개되지 않았어요. 답은 저장해 뒀어요. 공개되면 여기서 바로 채점돼요.',
       '틀린 문항 살펴보기',
       '점수 해부 바로 보기',
@@ -180,7 +186,7 @@ describe('화면 문구', () => {
       '다시 풀어 맞힘',
       '실수로 표시함, 다시 풀어 맞힘',
       '정답 확인 후 다시 맞힘',
-      '이번에도 답이 달랐어요. 이 유형을 계단에 남겨 둘게요.',
+      '이번에도 답이 달랐어요.',
       '이 기기의 기록 모두 지우기',
       '7일 뒤 확인',
       '실수 카드',
@@ -198,15 +204,57 @@ describe('화면 문구', () => {
     expect(S.common.correctOf(30, 24)).toBe('30문항 가운데 24문항을 맞혔어요.');
     expect(S.input.section('mc', 1, 21)).toBe('객관식 1~21번');
     expect(S.input.entered(11)).toBe('11문항 입력');
-    expect(S.input.nextPage(5)).toBe('다음 5문항');
+    expect(S_ROWS.nextPage(5)).toBe('다음 5문항');
     expect(S.anatomy.rowGuessSub(78)).toBe('78점 안에 들어 있어요');
     expect(S.anatomy.rowSlipSub(78)).toBe('78점에는 들어 있지 않아요');
     expect(S.anatomy.emptyMarks(78)).toBe('표시한 문항이 없어서 나눠 볼 것이 없어요. 78점 그대로예요.');
     expect(S.anatomy.cutTitle('2', 81, 85)).toBe('2등급 컷 81~85점');
-    expect(S.anatomy.luckDetail(78)).toBe('찍었다고 표시한 문항을 운이 보통이었을 때로 다시 계산한 점수예요. 실제 점수는 78점 그대로예요.');
+    expect(S.anatomy.luckDetail(78)).toBe(
+      '찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요. 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 78점 그대로예요.',
+    );
     expect(S.anatomy.toSteps(2)).toBe('고칠 것 2가지 보기');
     expect(S.steps.title(2)).toBe('먼저 고칠 2가지');
     expect(S.steps.todoToday([15, 29])).toBe('오늘 시험지의 15번과 29번을 다시 풀기');
+  });
+
+  it('작업 지시서 1(1.1과 앱용 묶음)에 적힌 문구를 그대로 쓴다', () => {
+    const texts = new Set(all.map((s) => s.text));
+    for (const text of [
+      '없어요, 채점하기',
+      '빈칸이 없어요. 고칠 문항을 눌러 주세요.',
+      '지울 답이 없어요.',
+      '이 문항은 찍었다고 표시했고, 채점해 보니 맞았어요. 풀이를 끝까지 써 봤나요?',
+      '끝까지 풀었어요',
+      '풀어 봤는데 막혀요',
+      '아직 안 풀어 봤어요',
+      '끝까지 풀었다고 표시했어요.',
+      '막힌다고 표시했어요.',
+      '찍음 표시 정답, 끝까지 풀었다고 표시함',
+      '찍음 표시 정답, 막힌다고 표시함',
+      '이번에도 답이 달랐어요.',
+      '화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.',
+      '테스트 기기예요. 기록은 진행자용 화면에서 확인해요.',
+      '가입 없이 써요. 기록은 이 기기에 저장하고 서버로 보내지 않아요.',
+      '앱을 지우면 기록도 함께 지워져요.',
+      '앞서 저장된 기록을 읽지 못해 따로 보관해 뒀어요.',
+      '이 기기에 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
+    ]) {
+      expect(texts.has(text), text).toBe(true);
+    }
+    expect(S.input.locked(9)).toBe('9번에 답을 넣었어요. 다음에 할 일을 골라 주세요.');
+    expect(S.input.fixing(9)).toBe('9번을 고치는 중이에요.');
+    expect(S.input.fixNext(10)).toBe('10번도 고치기');
+    expect(S.input.continueFrom(12)).toBe('12번부터 이어서 넣기');
+    expect(S.input.erased(6)).toBe('6번 답을 지웠어요.');
+    expect(S.steps.points(8, 4)).toBe('놓친 배점 8점, 찍었다고 표시한 정답 4점');
+    expect(S.steps.points(8, 0)).toBe('놓친 배점 8점');
+    expect(S.steps.points(0, 3)).toBe('찍었다고 표시한 정답 3점');
+    expect(S.steps.reasonGuess([14])).toBe('이 유형의 14번은 찍었다고 표시했고, 채점해 보니 맞았어요.');
+    expect(S.retry.correctNth(2)).toBe('2번째로 넣은 답이 맞았어요.');
+    expect(S.retry.labelCorrectNth(2)).toBe('2번째로 넣은 답이 맞음');
+    expect(S.retry.labelCorrectNthSlip(3)).toBe('실수로 표시함, 3번째로 넣은 답이 맞음');
+    expect(S.exams.held(2030, 1, 2)).toBe('2030년 1월 2일 시행');
+    expect(S.anatomy.barLabel(100, 71, 7, 8, 14)).toBe('100점 막대. 찍음 표시 없이 맞힌 점수 71점, 추측했다고 표시한 정답 7점, 실수라고 표시한 오답 8점, 그 외 오답 14점.');
   });
 });
 

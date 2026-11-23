@@ -193,6 +193,8 @@ export function BottomSheet({ title, onClose, children }: { title: string; onClo
           </button>
         </div>
         <div className="sheet__body">{children}</div>
+        {/* 버린 누름 알림(src/tapNotice.ts)을 이 시트가 열려 있는 동안 화면 낭독기에 전하는 자리. */}
+        <p className="sr-only" aria-live="polite" aria-atomic="true" data-tap-live="" />
       </div>
     </div>
   );
@@ -236,6 +238,8 @@ export function ConfirmDialog({
             {yes}
           </button>
         </div>
+        {/* 버린 누름 알림(src/tapNotice.ts)을 이 대화상자가 열려 있는 동안 화면 낭독기에 전하는 자리. */}
+        <p className="sr-only" aria-live="polite" aria-atomic="true" data-tap-live="" />
       </div>
     </div>
   );
@@ -284,11 +288,30 @@ export function Progress({ value, max, label }: { value: number; max: number; la
   );
 }
 
-/** 안내와 오류를 화면 안에 적는다. 팝업은 쓰지 않는다. */
-export function Message({ children, plain }: { children: ReactNode; plain?: boolean }) {
+/**
+ * 안내와 오류를 화면 안에 적는다. 팝업은 쓰지 않는다.
+ * live 가 false면 늘 붙어 있는 다른 알림 영역(LiveRegion)이 같은 글자를 전하므로, 보이는 안내문은 알림 영역으로 두지 않고
+ * 화면 낭독기에서도 뺀다(aria-hidden, 훑어 읽을 때 같은 문장을 두 번 듣지 않게).
+ */
+export function Message({ children, plain, live = true }: { children: ReactNode; plain?: boolean; live?: boolean }) {
   return (
-    <p className={`msg${plain ? ' msg--plain' : ''}`} role="status" aria-live="polite">
+    <p
+      className={`msg${plain ? ' msg--plain' : ''}`}
+      {...(live ? { role: 'status', 'aria-live': 'polite' as const } : { 'aria-hidden': true as const })}
+    >
       {children}
+    </p>
+  );
+}
+
+/**
+ * 화면 낭독기에 전하는 알림 영역. 처음부터 붙여 두고 글자만 바꾼다(글자를 담은 채 새로 붙은 알림 영역은
+ * 화면 낭독기가 읽지 않는 경우가 많다). 보이지 않는다.
+ */
+export function LiveRegion({ text, testId }: { text: string; testId?: string }) {
+  return (
+    <p className="sr-only" role="status" aria-live="polite" data-testid={testId}>
+      {text}
     </p>
   );
 }

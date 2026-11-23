@@ -1,11 +1,13 @@
 // npm run verify
-// 작업 지시서 10장의 자동 검증을 전부 실행하고 결과를 docs/검증결과.md 에 남긴다.
+// 작업 지시서 10장의 자동 검증(1~10번)과 작업 지시서 1의 앱용 묶음 검증(11, 12번)을 전부 실행하고 결과를 docs/검증결과.md 에 남긴다.
 // 실행해서 확인한 수치만 적는다.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { APP_WEB_DIR, BRIDGE_VERSION, BUNDLES, buildAll, INPUTS as APP_INPUTS } from './app-bundles.mjs';
 import { findForbidden, OUT, ROOT } from './lib.mjs';
 
 const require = createRequire(import.meta.url);
@@ -14,12 +16,22 @@ const npx = isWin ? 'npx.cmd' : 'npx';
 const npm = isWin ? 'npm.cmd' : 'npm';
 const started = Date.now();
 
+/**
+ * 명령을 실행한다. 윈도우의 npm.cmd 와 npx.cmd 는 셸 없이 실행할 수 없어서(Node 18.20.2, 20.12.2 이후의 보안 수정)
+ * 윈도우에서는 인자를 따옴표로 감싼 명령 한 줄을 셸로 실행한다.
+ */
+function spawnTool(cmd, args, options) {
+  if (!isWin || !/\.(cmd|bat)$/i.test(cmd)) return spawnSync(cmd, args, options);
+  const quote = (a) => (/[\s"&|<>^%]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a);
+  return spawnSync([cmd, ...args].map(quote).join(' '), { ...options, shell: true });
+}
+
 function run(label, cmd, args) {
   console.log(`\n=== ${label} ===`);
   const t = Date.now();
   // verify 는 늘 지금 폴더의 빌드로 서버를 새로 띄워서 잰다. 떠 있는 서버를 다시 쓰는 스위치(SA_REUSE_SERVER)가
   // 셸에 켜져 있어도 따르지 않는다(보고서가 "새로 띄워요"라고 적으므로).
-  const r = spawnSync(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '0', SA_REUSE_SERVER: '' } });
+  const r = spawnTool(cmd, args, { cwd: ROOT, stdio: 'inherit', env: { ...process.env, FORCE_COLOR: '0', SA_REUSE_SERVER: '' } });
   const ok = r.status === 0;
   console.log(`--- ${label}: ${ok ? '통과' : '실패'} (${((Date.now() - t) / 1000).toFixed(1)}초)`);
   return { ok, seconds: (Date.now() - t) / 1000 };
@@ -60,6 +72,21 @@ const REQUIRED_UNIT_TESTS = [
   '추가 경우 확정 컷: 범위 대신 한 숫자',
   '추가 경우 섞인 배열 시험 B: 채점, 확정 컷, 계단',
   '추가 경우 미입력이 남아 있으면 채점하지 않는다',
+  // 작업 지시서 1(1.1)의 3-5: 찍기 운 평균을 보기 수로 정수 계산한다(손으로 계산해 고정한 기대값).
+  '찍기 운 평균의 보기 수 보기 수 섞임: 58.2, 약 58점',
+  '찍기 운 평균의 보기 수 딱 0.5는 올라간다: 70.5, 약 71점',
+  '찍기 운 평균의 보기 수 반올림 값이 실제 점수와 같으면 둘째 줄을 보여 주지 않는다: 63.5, 약 64점',
+  // 작업 지시서 1(1.1)의 3-2: 키패드 답 입력의 흐름(꼭 넣을 테스트 a~j).
+  '키패드 답 입력의 흐름(3-2) (a) 1번부터 차례로 30문항을 넣으면 잠금 없이 다음 번호로 가고 입력 확인으로 넘어간다',
+  '키패드 답 입력의 흐름(3-2) (b) 12번을 넣을 차례에 9번을 고치면 9번에 머물고 잠기며, 이어 누른 답 키는 어디에도 들어가지 않는다',
+  '키패드 답 입력의 흐름(3-2) (c) 잠금에서 "10번도 고치기"를 누르면 10번을 한 번 고칠 수 있고 다시 잠긴다',
+  '키패드 답 입력의 흐름(3-2) (d) 5번과 7번이 비어 있을 때 5번을 눌러 채우면 잠기고, 버튼은 "6번도 고치기"와 "7번부터 이어서 넣기"다',
+  '키패드 답 입력의 흐름(3-2) (e) 5번만 비워 둔 채 30번을 넣으면 입력 확인으로 가고 5번은 미입력으로 남는다',
+  '키패드 답 입력의 흐름(3-2) (f) 다 찬 상태에서 9번을 고치면 입력 확인으로 간다(이어 누른 것이 9번을 바꾸지 않는 것은 화면 테스트가 본다)',
+  '키패드 답 입력의 흐름(3-2) (g) 답이 든 칸을 눌러 바로 고친 경우와 지우기로 비운 뒤 다시 넣은 경우의 결과가 같다',
+  '키패드 답 입력의 흐름(3-2) (h) 6번을 넣고 7번으로 넘어온 직후 지우기를 누르면 6번이 지워지고 6번에 머문다. 다시 넣으면 7번으로 간다',
+  '키패드 답 입력의 흐름(3-2) (i) 빈칸을 직접 눌러 들어온 직후의 지우기는 아무것도 지우지 않는다',
+  '키패드 답 입력의 흐름(3-2) (j) 무작위 누름 열 1만 개에서 규칙이 한 번도 깨지지 않는다',
 ];
 
 // 0. 이전 결과를 지운다. 보고서는 "끝나지 않음"으로 바꿔 둔다(도중에 멈춰도 앞 실행의 "통과"가 남지 않게).
@@ -94,7 +121,85 @@ const buildsOk = buildRun.ok && singleRun.ok && variantRun.ok && artifactRun.ok;
 const contrastRun = run('8. 색 대비 계산', process.execPath, [join(ROOT, 'scripts/check-contrast.mjs')]);
 
 // 2, 3, 4, 5, 6, 7(화면), 8(그려진 색), 9, 10. 브라우저로 화면 검사
-const e2eRun = buildsOk ? run('2~10. 화면 검사', npx, ['playwright', 'test', '--trace', 'off']) : { ok: false, seconds: 0 };
+const e2eRun = buildsOk ? run('2~10, 12. 화면 검사(앱용 묶음 포함)', npx, ['playwright', 'test', '--trace', 'off']) : { ok: false, seconds: 0 };
+
+// 11. 앱용 묶음: 커밋된 묶음이 지금 코드로 다시 만든 것과 같은지. 두 번 만들어 같은 코드에서 같은 묶음이 나오는지도 본다.
+console.log('\n=== 11. 앱용 묶음 다시 만들어 견주기 ===');
+// "커밋된 묶음"은 작업 폴더의 파일이 아니라 HEAD 에 든 파일이다. 세 파일이 추적되고 작업 폴더와 같아야 하고,
+// manifest 의 commit 은 HEAD 의 조상이면서 그 뒤로 묶음에 들어가는 파일(APP_INPUTS)이 바뀌지 않았어야 한다.
+const APP_WEB_REL = 'ios/ScoreAnatomy/Web';
+const gitRun = (args, encoding = 'utf8') => spawnSync('git', args, { cwd: ROOT, encoding, maxBuffer: 64 * 1024 * 1024 });
+const gitOk = (args) => gitRun(args).status === 0;
+const appCheck = {
+  ran: false,
+  error: null,
+  rows: [],
+  manifest: null,
+  pkgVersion: null,
+  tracked: false,
+  clean: false,
+  dirtyFlag: null,
+  ancestor: false,
+  inputsSame: false,
+};
+try {
+  const first = buildAll(join(OUT, 'app-check-1'));
+  const second = buildAll(join(OUT, 'app-check-2'));
+  appCheck.manifest = readJson(join(APP_WEB_DIR, 'manifest.json'));
+  appCheck.pkgVersion = readJson(join(ROOT, 'package.json'))?.version ?? null;
+  const committedFiles = [...BUNDLES.map((m) => `${m}/index.html`), 'manifest.json'];
+  appCheck.tracked = committedFiles.every((f) => gitOk(['ls-files', '--error-unmatch', `${APP_WEB_REL}/${f}`]));
+  const status = gitRun(['status', '--porcelain', '--', APP_WEB_REL]);
+  appCheck.clean = status.status === 0 && status.stdout.trim() === '';
+  appCheck.dirtyFlag = appCheck.manifest?.dirty ?? null;
+  const commit = appCheck.manifest?.commit;
+  appCheck.ancestor = typeof commit === 'string' && /^[0-9a-f]{40}$/.test(commit) && gitOk(['merge-base', '--is-ancestor', commit, 'HEAD']);
+  appCheck.inputsSame = appCheck.ancestor && gitOk(['diff', '--quiet', commit, 'HEAD', '--', ...APP_INPUTS]);
+  for (const mode of BUNDLES) {
+    const key = `${mode}/index.html`;
+    const shown = gitRun(['show', `HEAD:${APP_WEB_REL}/${key}`], 'buffer');
+    const committed = shown.status === 0 ? shown.stdout : null;
+    appCheck.rows.push({
+      key,
+      committed: committed ? createHash('sha256').update(committed).digest('hex') : null,
+      committedBytes: committed ? committed.length : null,
+      rebuilt: first[key]?.sha256 ?? null,
+      again: second[key]?.sha256 ?? null,
+      manifest: appCheck.manifest?.files?.[key]?.sha256 ?? null,
+    });
+  }
+  appCheck.ran = true;
+  for (const r of appCheck.rows) console.log(`${r.key}: 커밋된 것 ${r.committed}, 다시 만든 것 ${r.rebuilt}, 한 번 더 ${r.again}, manifest ${r.manifest}`);
+  console.log(
+    `추적됨 ${appCheck.tracked}, 작업 폴더와 같음 ${appCheck.clean}, manifest dirty ${appCheck.dirtyFlag}, manifest 커밋이 HEAD 의 조상 ${appCheck.ancestor}, 그 뒤로 묶음 재료가 그대로 ${appCheck.inputsSame}`,
+  );
+} catch (e) {
+  appCheck.error = e instanceof Error ? e.message : String(e);
+  console.log(`앱용 묶음을 만들지 못했어요: ${appCheck.error}`);
+}
+
+// 12번 가운데 WebKit: Playwright 의 WebKit 이 설치돼 있을 때만 앱 시험용 묶음의 흐름을 한 번 돌린다.
+let webkitPath = '';
+try {
+  webkitPath = require('@playwright/test').webkit.executablePath();
+} catch {
+  webkitPath = '';
+}
+const webkitInstalled = webkitPath !== '' && existsSync(webkitPath);
+let webkitRun = { ok: false, seconds: 0 };
+if (webkitInstalled) {
+  console.log('\n=== 12. WebKit 으로 앱 시험용 묶음 흐름 ===');
+  const t = Date.now();
+  const r = spawnTool(npx, ['playwright', 'test', '--project=webkit', '--trace', 'off', '--reporter=list,json'], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, FORCE_COLOR: '0', SA_REUSE_SERVER: '', SA_WEBKIT: '1', PLAYWRIGHT_JSON_OUTPUT_NAME: join(OUT, 'webkit.json') },
+  });
+  webkitRun = { ok: r.status === 0, seconds: (Date.now() - t) / 1000 };
+  console.log(`--- WebKit: ${webkitRun.ok ? '통과' : '실패'}`);
+} else {
+  console.log('\nWebKit 이 설치돼 있지 않아 앱 묶음의 WebKit 흐름은 확인하지 못했어요(npx playwright install webkit).');
+}
 
 // ---------- 결과 모으기 ----------
 const unit = readJson(join(OUT, 'unit.json'));
@@ -109,6 +214,14 @@ const metrics = existsSync(join(OUT, 'metrics.jsonl'))
 
 const unitTests = unit ? unit.testResults.flatMap((f) => f.assertionResults) : [];
 const missingUnit = REQUIRED_UNIT_TESTS.filter((name) => !unitTests.some((t) => t.fullName === name && t.status === 'passed'));
+// 작업 지시서 1의 5장: 기다리지 않는 좌표 누름 테스트와 3-2 (f)의 뒷부분(화면 테스트가 맡는다, 결정기록 97번).
+// 지워지거나 이름이 바뀌어 빠지면 2번 항목이 실패한다.
+const REQUIRED_E2E_TESTS = [
+  '표시가 0개일 때 같은 칸을 0.2초 간격으로 두 번 누르면 "찍음"이 된다(채점 버튼 라벨이 바뀌어도 둘째 누름을 버리지 않는다)',
+  '잠금 뒤에 0.3초 간격으로 이어 누른 답 키는 어디에도 들어가지 않는다',
+  '마지막 문항 뒤에 이어 누른 키가 입력 확인의 버튼을 누르지 않는다',
+  '다 찬 상태에서 9번을 고친 뒤 이어 누른 키는 9번을 다시 바꾸지 않고 입력 확인의 버튼도 누르지 않는다',
+];
 // 통과도 실패도 아닌 단위 테스트(건너뜀, 나중에 할 일로 표시)는 통과로 세지 않는다.
 const skippedUnit = unitTests.filter((t) => t.status !== 'passed' && t.status !== 'failed');
 
@@ -134,7 +247,9 @@ const byFile = (name) => tests.filter((t) => t.file.endsWith(name));
 const allOk = (list) => list.length > 0 && list.every((t) => t.ok);
 
 const audits = metrics.filter((m) => m.kind === 'audit');
-const net = metrics.filter((m) => m.kind === 'network');
+// 요청 기록: 화면 검사(Chromium)와 WebKit 흐름을 따로 센다. 밖으로 나간 요청은 둘 다 0건이어야 한다.
+const net = metrics.filter((m) => m.kind === 'network' && m.project !== 'webkit');
+const netWebkit = metrics.filter((m) => m.kind === 'network' && m.project === 'webkit');
 const leaks = metrics.filter((m) => m.kind === 'leak');
 const leakControls = metrics.filter((m) => m.kind === 'leak-control');
 const leakDiffRaw = metrics.find((m) => m.kind === 'leak-diff') ?? null;
@@ -151,6 +266,10 @@ const small = metrics.filter((m) => m.kind === 'small');
 const tours = metrics.filter((m) => m.kind === 'tour');
 const conditions = metrics.filter((m) => m.kind === 'condition');
 const single = metrics.find((m) => m.kind === 'single') ?? null;
+const appFlows = metrics.filter((m) => m.kind === 'app');
+const appFonts = metrics.filter((m) => m.kind === 'app-font');
+const appReleaseText = metrics.find((m) => m.kind === 'app-release-text') ?? null;
+const webkitMetric = metrics.find((m) => m.kind === 'webkit') ?? null;
 const artifact = metrics.find((m) => m.kind === 'artifact') ?? null;
 
 /** 보고서에 적을 값. 잰 값이 없으면(null, NaN) "없음"으로 적는다. */
@@ -169,15 +288,16 @@ const fitAudits = smallAudits.filter((a) => a.mustFit);
 // 화면 검사가 줄거나 빠졌는데도 통과로 적히는 일을 막으려고, 꼭 있어야 하는 양을 따로 정해 둔다.
 // 화면 코스(e2e/tour.ts)나 테스트를 일부러 바꿨다면 이 값도 함께 고친다.
 const REQUIRED = {
-  shots: 64, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
-  auditStates: 300, // 화면 검사를 거친 화면 상태 수의 최소
-  smallStates: 100, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 78, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 149, // 통과한 단위 테스트 수의 최소
-  leakChecks: 44, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
+  shots: 69, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
+  auditStates: 334, // 화면 검사를 거친 화면 상태 수의 최소
+  smallStates: 123, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
+  e2eTests: 125, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  unitTests: 202, // 통과한 단위 테스트 수의 최소
+  leakChecks: 48, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
   leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
-  fitStates: 64, // 작은 화면에서 스크롤 없이 들어와야 하는 답 입력 상태 수의 최소
+  fitStates: 68, // 작은 화면에서 스크롤 없이 들어와야 하는 답 입력 상태 수의 최소
+  appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
 const AUDIT_LISTS = [
@@ -245,7 +365,8 @@ const unitOk =
   unit.numPassedTests >= REQUIRED.unitTests &&
   missingUnit.length === 0;
 const flowTests = byFile('flow.spec.ts');
-const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4;
+const missingE2e = REQUIRED_E2E_TESTS.filter((title) => !tests.some((t) => t.file.endsWith('rhythm.spec.ts') && t.title === title && t.ok));
+const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
 const smallOk =
   allOk(smallTests) &&
@@ -287,6 +408,34 @@ const shots = { light: pngCount('light'), dark: pngCount('dark'), small: pngCoun
 const expectedShots = REQUIRED.shots;
 const tourShots = tours.find((t) => t.shots > 0)?.shots ?? 0;
 const shotsOk = tourShots === expectedShots && shots.light === expectedShots && shots.dark === expectedShots && shots.small === expectedShots;
+const appRowsOk =
+  appCheck.ran &&
+  appCheck.rows.length === BUNDLES.length &&
+  appCheck.rows.every((r) => r.committed !== null && r.committed === r.rebuilt && r.rebuilt === r.again && r.manifest === r.committed);
+const manifestOk =
+  appCheck.manifest !== null &&
+  appCheck.manifest.version === appCheck.pkgVersion &&
+  appCheck.manifest.bridge === BRIDGE_VERSION &&
+  appCheck.dirtyFlag === false &&
+  appCheck.tracked &&
+  appCheck.clean &&
+  appCheck.ancestor &&
+  appCheck.inputsSame;
+const appBuildOk = appRowsOk && manifestOk;
+const appTests = byFile('app.spec.ts');
+const appTestsOk = allOk(appTests) && appTests.length === REQUIRED.appTests;
+const appMetricsOk =
+  appFlows.length === 2 &&
+  appFlows.every((m) => m.score === 78 && m.steps === 3) &&
+  appFonts.length === 6 &&
+  BUNDLES.every((b) => appFonts.filter((m) => m.bundle === b).length === 3) &&
+  appReleaseText !== null &&
+  appReleaseText.found === 0 &&
+  appReleaseText.checked > 0;
+const webkitOk =
+  !webkitInstalled ||
+  (webkitRun.ok && webkitMetric !== null && webkitMetric.score === 78 && netWebkit.length === 1 && netWebkit.every((n) => Array.isArray(n.external) && n.external.length === 0));
+const appOk = appTestsOk && appMetricsOk && webkitOk;
 
 // ---------- 보고서 ----------
 // 실행 자체가 실패로 끝난 단계. 항목이 모두 통과로 보여도 이 가운데 하나라도 있으면 전체는 실패다.
@@ -298,6 +447,8 @@ const failedSteps = [
   ['아티팩트용 파일 만들기', artifactRun.ok],
   ['색 대비 계산 실행', contrastRun.ok],
   ['화면 검사 실행', e2eRun.ok],
+  ['앱용 묶음 다시 만들기', appCheck.ran],
+  ...(webkitInstalled ? [['WebKit 흐름 실행', webkitRun.ok]] : []),
 ]
   .filter(([, ok]) => !ok)
   .map(([name]) => name);
@@ -321,7 +472,17 @@ const ver = (name) => {
 };
 let browserVersion = '확인 못 함';
 try {
-  const out = spawnSync(process.execPath, ['-e', "require('@playwright/test').chromium.launch().then(async (b) => { console.log(b.version()); await b.close(); })"], {
+  // 화면 검사(playwright.config.ts)와 같은 브라우저를 띄운다. Playwright 브라우저가 없으면 시스템 크롬을 쓴다.
+  const launch = [
+    "const { chromium } = require('@playwright/test');",
+    "const { existsSync } = require('node:fs');",
+    'let o = {};',
+    'if (process.env.SA_CHROMIUM_PATH) o = { executablePath: process.env.SA_CHROMIUM_PATH };',
+    'else if (process.env.SA_BROWSER_CHANNEL) o = { channel: process.env.SA_BROWSER_CHANNEL };',
+    "else { let p = ''; try { p = chromium.executablePath(); } catch {} if (!p || !existsSync(p)) o = { channel: 'chrome' }; }",
+    'chromium.launch(o).then(async (b) => { console.log(b.version()); await b.close(); });',
+  ].join('\n');
+  const out = spawnSync(process.execPath, ['-e', launch], {
     cwd: ROOT,
     encoding: 'utf8',
   });
@@ -348,7 +509,7 @@ function buildReport(textOk, textResult) {
       '2',
       '화면 흐름(390x844)',
       flowOk,
-      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인`,
+      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인. 꼭 있어야 하는 기다리지 않는 좌표 누름 테스트 ${REQUIRED_E2E_TESTS.length}개 가운데 ${REQUIRED_E2E_TESTS.length - missingE2e.length}개 통과`,
     ],
     [
       '3',
@@ -397,6 +558,20 @@ function buildReport(textOk, textResult) {
       `정답만 다른 두 빌드의 화면 ${leakDiff ? leakDiff.compared : 0}곳을 통째로 견줌: 다른 곳 ${leakDiff ? leakDiff.differences.length : '?'}곳. 화면 글자와 속성을 읽는 검사 ${leaks.length}번: 노출 ${count(leaks, (l) => l.leaks)}건. 대조 검사에서 "정답 보기"를 누른 뒤에는 두 검사 모두 노출을 잡아냄${short('화면을 읽는 검사', leaks.length, REQUIRED.leakChecks, '번')}${short('두 빌드를 견준 화면', leakDiff ? leakDiff.compared : 0, REQUIRED.leakCompared, '곳')}${short('대조 검사', leakControls.length, REQUIRED.leakControls, '번')}${incomplete(leaksComplete, '정답 노출 검사 기록')}`,
     ],
     ['10', '화면 캡처', shotsOk, `밝은 화면 ${shots.light}장, 어두운 화면 ${shots.dark}장(390x844, 2배 해상도), 작은 화면 ${shots.small}장(360x640). 기대한 장수는 묶음마다 ${expectedShots}장`],
+    [
+      '11',
+      '앱용 묶음이 지금 코드로 다시 만든 것과 같음',
+      appBuildOk,
+      appCheck.ran
+        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts ${BRIDGE_VERSION}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
+        : `만들지 못함: ${appCheck.error ?? '알 수 없음'}`,
+    ],
+    [
+      '12',
+      '앱용 묶음 검사(가짜 다리)',
+      appOk,
+      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${BUNDLES.map((b) => `${b} ${appFonts.filter((m) => m.bundle === b).map((m) => `${m.scale}배`).join(', ')}`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
+    ],
   ];
   const failed = items.filter((i) => !i[2]);
   const otherFailed = tests.filter((t) => !t.ok);
@@ -406,7 +581,7 @@ function buildReport(textOk, textResult) {
   const skippedTests = tests.filter((t) => t.skipped);
   say(
     failed.length === 0 && otherFailed.length === 0 && failedSteps.length === 0 && skippedUnit.length === 0
-      ? '결론: 10장의 자동 검증 10개 항목이 모두 통과했어요.'
+      ? '결론: 자동 검증 12개 항목(10장의 10개, 작업 지시서 1의 앱용 묶음 2개)이 모두 통과했어요.'
       : `결론: 실패한 항목이 있어요. 항목 ${failed.length}개, 화면 테스트 ${otherFailed.length}개(건너뛴 것 ${skippedTests.length}개 포함), 건너뛴 단위 테스트 ${skippedUnit.length}개, 실패로 끝난 실행 단계 ${failedSteps.length}개.`,
   );
   say();
@@ -416,7 +591,9 @@ function buildReport(textOk, textResult) {
   say(`- 실행 시각: ${stamp}`);
   say(`- 걸린 시간: ${Math.round((Date.now() - started) / 1000)}초`);
   say(`- 환경: Node ${process.version}, Vite ${ver('vite')}, React ${ver('react')}, Vitest ${ver('vitest')}, Playwright ${ver('@playwright/test')}, Chromium ${browserVersion}(화면 없이 실행), ${process.platform}`);
-  say('- 브라우저: Chromium 하나로만 검사했어요. 실제 아이폰 Safari와 안드로이드 Chrome 기기에서는 확인하지 못했어요.');
+  say(
+    `- 브라우저: 화면 검사는 Chromium 으로 했어요. 앱 시험용 묶음의 흐름은 WebKit 으로도 ${webkitInstalled ? '한 번 돌렸어요(윈도우용 WebKit 이라 아이폰의 WKWebView 와 같지 않아요)' : '돌리지 못했어요(확인하지 못함)'}. 실제 아이폰 Safari, 아이폰 앱, 안드로이드 Chrome 기기에서는 확인하지 못했어요.`,
+  );
   say();
   say('## 항목별 결과');
   say();
@@ -487,12 +664,16 @@ function buildReport(textOk, textResult) {
   say();
   if (conditions.length > 0) {
     say('지시서 범위 밖의 조건에서도 답 입력 화면을 끝까지 쓸 수 있는지 봤어요(키패드의 모든 키와 안내문이 화면 안에 있고, 지금 칸으로 스크롤되는지).');
+    say('1.1의 고치는 중과 잠금 상태는 가로 화면(지원 범위 밖)에서 키패드가 화면 아래로 나간 높이를 재서 적기만 했어요(결정기록 98번).');
     say();
-    say('| 조건 | 확인한 상태 | 내용이 넘쳐 스크롤이 생긴 높이(최대) |');
-    say('| --- | --- | --- |');
+    say('| 조건 | 확인한 상태 | 내용이 넘쳐 스크롤이 생긴 높이(최대) | 키패드가 화면 아래로 나간 높이(최대, 결과만 적은 상태) |');
+    say('| --- | --- | --- | --- |');
     for (const name of [...new Set(conditions.map((c) => c.name))]) {
       const list = conditions.filter((c) => c.name === name);
-      say(`| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px |`);
+      const loose = list.filter((c) => c.strict === false);
+      say(
+        `| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px | ${loose.length > 0 ? `${max(loose, (c) => c.keysCutPx ?? 0)}px(${loose.map((c) => `${c.label} ${c.keysCutPx ?? 0}px`).join(', ')})` : '0px(모든 상태에서 키패드가 화면 안)'} |`,
+      );
     }
     say();
   }
@@ -584,6 +765,7 @@ function buildReport(textOk, textResult) {
   say('- 결과 화면을 학생이 바르게 읽는지. 사용성 테스트의 읽기 질문으로 확인해야 해요.');
   say('- 화면 낭독기(VoiceOver, TalkBack)로 실제로 들었을 때의 흐름.');
   say('- 아티팩트 뷰어 안에서의 동작. 뼈대와 비슷한 틀에 넣어 여는 것까지만 확인했어요.');
+  say('- 아이폰 앱 껍데기(WKWebView) 안에서의 동작: 실제 다리, 햅틱의 느낌, 기기 글자 크기 설정, 길게 누르기와 화면 당김이 실제로 막히는지. 앱용 묶음은 가짜 다리를 넣은 Chromium(과 윈도우용 WebKit)에서만 확인했어요(작업 지시서 2에서 맥으로 확인).');
   say();
   return {
     text: L.join('\n'),

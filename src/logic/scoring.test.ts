@@ -4,7 +4,7 @@ import { parseExam, validateExam } from '../exams/validate';
 import type { Answers, Exam, Marks } from '../types';
 import { cutView, gapFor, gradeKeys } from './cuts';
 import { exampleResponses } from './example';
-import { analyze, findMissing, GradeError, gradeExam } from './scoring';
+import { analyze, findMissing, GradeError, gradeExam, luckFraction, roundLuck } from './scoring';
 import { sectionsOf } from './sections';
 import { rankTypes, selectSteps } from './steps';
 
@@ -133,7 +133,9 @@ describe('7장 검산 예시', () => {
     expect(an.luckAverage).toBe(74.6);
     expect(an.luckAverageRounded).toBe(75);
     expect(an.showLuckAverage).toBe(true);
-    // 정의 그대로: 실제 점수 - 추측 표시 정답 점수 + 0.2 x 찍음 전체 배점
+    // 정수 계산: G = 78 - 7 = 71, D = 5(보기 5개), N = 3 + 3 + 4 + 4 + 4 = 18. (71 x 5 + 18) / 5 = 373 / 5.
+    expect(an.luck).toEqual({ numerator: 373, denominator: 5 });
+    // 보기가 모두 5개면 1 나누기 보기 수는 0.2다: 실제 점수 - 추측 표시 정답 점수 + 0.2 x 찍음 전체 배점과 같다.
     expect(an.luckAverage).toBeCloseTo(an.actual - an.guessCorrectPoints + 0.2 * an.guessTotalPoints, 9);
   });
 
@@ -374,14 +376,16 @@ describe('추가 경우', () => {
     expect(validateExam({ ...raw, cuts: 'x' }).length).toBeGreaterThan(0);
   });
 
-  it('찍기 운 평균은 지시서의 식 그대로 0.2배를 쓴다', () => {
-    // 보기 수 값이 달라도 식은 바뀌지 않는다: 실제 - 추측 표시 정답 + 0.2 x 찍음 전체 배점
+  it('찍기 운 평균은 문항의 보기 수를 따른다(1 나누기 보기 수)', () => {
+    // 보기 6개: 2점 문항을 찍어 틀림. G = 98, D = 6, N = 2. (98 x 6 + 2) / 6 = 590 / 6 = 98.33..., 약 98점.
     const six: Exam = { ...examA, items: examA.items.map((it) => (it.kind === 'mc' ? { ...it, choices: 6 } : it)) };
     const answers = allCorrect(six);
     answers[1] = wrongValue(six, 1);
     const an = analyze(six, gradeExam(six, { answers, marks: { 1: 'guess' }, causes: {} }));
     expect(an.actual).toBe(98);
-    expect(an.luckAverage).toBe(98.4);
+    expect(an.luck).toEqual({ numerator: 590, denominator: 6 });
+    expect(an.luckAverage).toBeCloseTo(98.3333333, 6);
+    expect(an.luckAverageRounded).toBe(98);
   });
 
   it('확정 컷: 범위 대신 한 숫자', () => {
@@ -469,7 +473,7 @@ describe('추가 경우', () => {
     expect(an.luckAverage).toBe(84.8);
     expect(an.luckAverageRounded).toBe(85);
     expect(an.showLuckAverage).toBe(false);
-    // 7번, 9번, 10번(3점씩)도 찍어서 맞혔다고 표시하면 85 - 13 + 0.2 x 28 = 77.6, 화면에는 약 78점.
+    // 7번, 9번, 10번(3점씩)도 찍었다고 표시했고 맞았으면 85 - 13 + 0.2 x 28 = 77.6, 화면에는 약 78점.
     const marks2: Marks = { ...marks, 7: 'guess', 9: 'guess', 10: 'guess' };
     const an2 = analyze(examA, gradeExam(examA, { answers, marks: marks2, causes: {} }));
     expect(an2.guessCorrectPoints).toBe(13);
@@ -477,6 +481,99 @@ describe('추가 경우', () => {
     expect(an2.luckAverage).toBe(77.6);
     expect(an2.luckAverageRounded).toBe(78);
     expect(an2.showLuckAverage).toBe(true);
+  });
+});
+
+/**
+ * 찍음 표시 문항을 마음대로 만든 시험. guess 는 [배점, 보기 수, 맞혔는지] 목록이다.
+ * 나머지 배점은 단답형 두 문항으로 채워 실제 점수가 actual 이 되게 한다(합 100점).
+ */
+function luckExam(actual: number, guess: [number, number, boolean][]): { exam: Exam; answers: Answers; marks: Marks } {
+  const items: Exam['items'] = [];
+  const answers: Answers = {};
+  const marks: Marks = {};
+  let no = 0;
+  let guessCorrect = 0;
+  let guessTotal = 0;
+  for (const [points, choices, correct] of guess) {
+    no += 1;
+    items.push({ no, kind: 'mc', choices, points, answer: 1, typeId: 't' });
+    answers[no] = correct ? 1 : 2;
+    marks[no] = 'guess';
+    guessTotal += points;
+    if (correct) guessCorrect += points;
+  }
+  const restCorrect = actual - guessCorrect;
+  const restWrong = 100 - guessTotal - restCorrect;
+  items.push({ no: ++no, kind: 'short', points: restCorrect, answer: 1, typeId: 't' });
+  answers[no] = 1;
+  items.push({ no: ++no, kind: 'short', points: restWrong, answer: 1, typeId: 't' });
+  answers[no] = 2;
+  const exam: Exam = { id: 'luck', title: '보기 수 시험', note: '', isSample: true, isPast: false, answerReleased: true, items, types: { t: { name: '유형' } } };
+  return { exam, answers, marks };
+}
+
+describe('찍기 운 평균의 보기 수', () => {
+  it('보기 수 섞임: 58.2, 약 58점', () => {
+    // 손으로 계산한 값: G = 60 - (3 + 2) = 55, D = 3, 4, 5의 최소공배수 60,
+    // N = 3 x 20 + 4 x 15 + 2 x 12 + 4 x 12 = 192. (55 x 60 + 192) / 60 = 3492 / 60 = 58.2.
+    // 약 N점: (2 x 3492 + 60) / (2 x 60) = 7044 / 120 의 몫 58.
+    const f = luckFraction(60, [{ points: 3, choices: 3 }, { points: 4, choices: 4 }, { points: 2, choices: 5 }, { points: 4, choices: 5 }], 5);
+    expect(f).toEqual({ numerator: 3492, denominator: 60 });
+    expect(roundLuck(f)).toBe(58);
+    const { exam, answers, marks } = luckExam(60, [
+      [3, 3, true],
+      [4, 4, false],
+      [2, 5, true],
+      [4, 5, false],
+    ]);
+    const an = analyze(exam, gradeExam(exam, { answers, marks, causes: {} }));
+    expect(an.actual).toBe(60);
+    expect(an.luckAverage).toBe(58.2);
+    expect(an.luckAverageRounded).toBe(58);
+    expect(an.showLuckAverage).toBe(true);
+  });
+
+  it('딱 0.5는 올라간다: 70.5, 약 71점', () => {
+    // G = 70, D = 4, N = 2. (280 + 2) / 4 = 70.5. 약 N점: (564 + 4) / 8 = 71.
+    const { exam, answers, marks } = luckExam(70, [[2, 4, false]]);
+    const an = analyze(exam, gradeExam(exam, { answers, marks, causes: {} }));
+    expect(an.actual).toBe(70);
+    expect(an.luck).toEqual({ numerator: 282, denominator: 4 });
+    expect(an.luckAverage).toBe(70.5);
+    expect(an.luckAverageRounded).toBe(71);
+    expect(an.showLuckAverage).toBe(true);
+  });
+
+  it('반올림 값이 실제 점수와 같으면 둘째 줄을 보여 주지 않는다: 63.5, 약 64점', () => {
+    // G = 64 - 3 = 61, D = 60, N = 3 x 20 + 2 x 15 + 5 x 12 = 150. (3660 + 150) / 60 = 63.5. 약 N점: 7680 / 120 = 64.
+    const { exam, answers, marks } = luckExam(64, [
+      [3, 3, true],
+      [2, 4, false],
+      [5, 5, false],
+    ]);
+    const an = analyze(exam, gradeExam(exam, { answers, marks, causes: {} }));
+    expect(an.actual).toBe(64);
+    expect(an.luck).toEqual({ numerator: 3810, denominator: 60 });
+    expect(an.luckAverage).toBe(63.5);
+    expect(an.luckAverageRounded).toBe(64);
+    expect(an.showLuckAverage).toBe(false);
+    // 둘째 줄(등급컷 상자)도 나오지 않는다.
+    const withCuts: Exam = { ...exam, cuts: { source: '예시 값', asOf: '2026-11-22', confirmed: false, grades: { '2': [81, 85] } } };
+    expect(cutView(withCuts, an, '2')!.luckGap).toBeNull();
+  });
+
+  it('찍음 표시가 하나도 없으면 D = 1, N = 0 이다', () => {
+    expect(luckFraction(78, [], 0)).toEqual({ numerator: 78, denominator: 1 });
+    expect(roundLuck({ numerator: 78, denominator: 1 })).toBe(78);
+  });
+
+  it('보기 수가 없는 5지선다는 5개로 본다', () => {
+    const { exam, answers, marks } = luckExam(70, [[2, 5, false]]);
+    const noChoices: Exam = { ...exam, items: exam.items.map((it) => ({ ...it, choices: undefined })) };
+    const an = analyze(noChoices, gradeExam(noChoices, { answers, marks, causes: {} }));
+    expect(an.luck).toEqual({ numerator: 352, denominator: 5 });
+    expect(an.luckAverage).toBe(70.4);
   });
 });
 

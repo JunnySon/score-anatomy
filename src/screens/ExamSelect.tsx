@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { Badge, Message, Option, Screen, TopBar } from '../components/ui';
 import { EXAMS } from '../exams';
+import { parseYmd } from '../logic/dates';
 import { navigate } from '../router';
 import { startSession } from '../state/hooks';
 import { S } from '../strings';
 import type { GradedBefore, SeenBefore } from '../types';
 
 // (2) 시험 선택 화면.
+
+/** 시행일 줄("2030년 1월 2일 시행"). 날짜는 Date 로 바꾸지 않고 문자열을 잘라 쓴다(시간대에 따라 하루가 밀리지 않게). */
+export function heldText(examDate: string | undefined) {
+  const d = parseYmd(examDate);
+  return d ? (
+    <span className="sub" data-testid="exam-date">
+      {S.exams.held(d.y, d.m, d.d)}
+    </span>
+  ) : null;
+}
 
 export function ExamSelect() {
   const [examId, setExamId] = useState<string | null>(null);
@@ -75,6 +86,7 @@ export function ExamSelect() {
           >
             <span>{e.title}</span>
             <span className="sub">{e.note}</span>
+            {heldText(e.examDate)}
           </Option>
         ))}
       </div>

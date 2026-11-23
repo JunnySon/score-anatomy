@@ -55,7 +55,7 @@ describe('점수 해부 화면의 상태별 문구', () => {
     expect(t).toContain('2등급 컷 81~85점');
     expect(t).toContain('실제 78점 기준 3~7점 남았어요');
     expect(t).toContain('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 6~10점이에요 추정');
-    expect(html).toContain('aria-label="100점 막대. 표시 없이 맞힌 점수 71점, 추측했다고 표시한 정답 7점, 실수라고 표시한 오답 8점, 그 외 오답 14점."');
+    expect(html).toContain('aria-label="100점 막대. 찍음 표시 없이 맞힌 점수 71점, 추측했다고 표시한 정답 7점, 실수라고 표시한 오답 8점, 그 외 오답 14점."');
     // 주 숫자는 하나뿐이다.
     expect(html.match(/class="hero/g)).toHaveLength(1);
     // 쓰지 않기로 한 표현이 없다.
@@ -82,7 +82,7 @@ describe('점수 해부 화면의 상태별 문구', () => {
     expect(html).toContain('href="#/causes"');
     expect(t).not.toContain('0점');
     // 막대의 설명 라벨도 값이 없는 구간은 말하지 않는다.
-    expect(html).toContain('aria-label="100점 막대. 표시 없이 맞힌 점수 78점, 오답 22점."');
+    expect(html).toContain('aria-label="100점 막대. 찍음 표시 없이 맞힌 점수 78점, 오답 22점."');
   });
 
   it('표시는 없고 원인만 골랐으면: 실수 행은 보이고 "나눠 볼 것이 없어요"라고 하지 않는다', () => {
@@ -149,27 +149,54 @@ describe('그 밖의 화면', () => {
     expect(html2).not.toContain('257');
   });
 
-  it('계단 화면: 예시 좌표 배지와 할 일, 재풀이 기록 라벨', () => {
+  it('계단 화면: 배점 문장, 예시 좌표 배지와 할 일, 재풀이 기록 라벨', () => {
     const h = handleFor(examA, exampleMarks(), exampleCauses(), {
       retries: {
+        // 찍음 표시 정답(14번)에 1.0에서 남긴 답 기록이 있어도 보여 주지 않는다.
         14: { correct: true, attempts: 1, firstCorrectAttempt: 1, answerKnown: false, at: NOW },
         15: { correct: true, attempts: 2, firstCorrectAttempt: 1, answerKnown: false, at: NOW },
         20: { correct: true, attempts: 3, firstCorrectAttempt: 3, answerKnown: false, at: NOW },
         29: { correct: false, attempts: 1, firstCorrectAttempt: null, answerKnown: false, at: NOW },
       },
+      selfChecks: { 9: { result: 'stuck', at: NOW } },
     });
-    const t = text(renderToStaticMarkup(<Steps h={h} grade={gradeExam(h.exam, h.session)} />));
+    const html = renderToStaticMarkup(<Steps h={h} grade={gradeExam(h.exam, h.session)} />);
+    const t = text(html);
     expect(t).toContain('먼저 고칠 3가지');
-    expect(t).toContain('1. 적분 놓친 배점 8점');
+    // 배점 문장: 두 배점이 모두 있으면 함께 적는다(검산 예시 기대값).
+    const points = [...html.matchAll(/data-testid="step-points">([^<]*)</g)].map((m) => m[1]);
+    expect(points).toEqual(['놓친 배점 8점, 찍었다고 표시한 정답 4점', '놓친 배점 8점', '놓친 배점 3점, 찍었다고 표시한 정답 3점']);
     expect(t).toContain('오늘 시험지의 14번, 20번, 21번을 다시 풀기');
     expect(t).toContain('예시 좌표 12번');
-    expect(t).toContain('14번: 다시 풀어 맞힘');
+    expect(t).not.toContain('14번: 다시 풀어 맞힘');
     expect(t).toContain('15번: 실수로 표시함, 다시 풀어 맞힘');
-    // 세 번째에 맞힌 문항도 라벨은 지시서의 세 가지 가운데 하나다.
-    expect(t).toContain('20번: 다시 풀어 맞힘');
-    expect(t).not.toContain('번째에 맞힘');
+    // 세 번째에 처음 맞힌 문항은 "풀어"를 빼고 몇 번째로 넣은 답이 맞았는지 적는다.
+    expect(t).toContain('20번: 3번째로 넣은 답이 맞음');
     expect(t).toContain('29번: 다시 풀었지만 답이 다름');
+    expect(t).toContain('9번: 찍음 표시 정답, 막힌다고 표시함');
     expect(t).not.toContain('실수 확인');
+    expect(t).not.toContain('계단에 남겨');
+  });
+
+  it('재풀이 화면: 찍었다고 표시하고 맞은 문항은 답을 다시 받지 않고 스스로 확인하게 한다', () => {
+    const h = handleFor(examA, exampleMarks(), exampleCauses());
+    const html = renderToStaticMarkup(<Retry h={h} grade={gradeExam(h.exam, h.session)} typeId="t06" />);
+    const t = text(html);
+    expect(t).toContain('14번');
+    expect(t).toContain('이 문항은 찍었다고 표시했고, 채점해 보니 맞았어요. 풀이를 끝까지 써 봤나요?');
+    expect(t).toContain('끝까지 풀었어요');
+    expect(t).toContain('풀어 봤는데 막혀요');
+    expect(t).toContain('아직 안 풀어 봤어요');
+    // 답 키패드와 큰 칸이 없다.
+    expect(html).not.toContain('data-key=');
+    expect(html).not.toContain('data-testid="entry"');
+    // 기록이 있으면 중립 표시로 보여 준다(정답색, 오답색, 맞음과 틀림 기호 없음).
+    const h2 = handleFor(examA, exampleMarks(), exampleCauses(), { selfChecks: { 14: { result: 'solved', at: NOW } } });
+    const html2 = renderToStaticMarkup(<Retry h={h2} grade={gradeExam(h2.exam, h2.session)} typeId="t06" />);
+    expect(text(html2)).toContain('끝까지 풀었다고 표시했어요.');
+    expect(text(html2)).toContain('찍음 표시 정답, 끝까지 풀었다고 표시함');
+    expect(html2).not.toMatch(/tag--ok|tag--bad/);
+    expect(html2).toContain('aria-checked="true"');
   });
 
   it('재풀이 화면: 없는 유형이면 다시 풀 문항이 없다고 알린다', () => {

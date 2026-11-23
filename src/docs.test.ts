@@ -56,7 +56,9 @@ describe('사용성 테스트 진행 안내의 답지', () => {
 describe('결정 기록의 번호', () => {
   const record = readFileSync(resolve(process.cwd(), 'docs/결정기록.md'), 'utf8');
   const mine = record.slice(record.indexOf('## 2. 내가 정한 것'), record.indexOf('## 3. 제안'));
-  const proposals = record.slice(record.indexOf('## 3. 제안'));
+  // 제안은 3장 안에서만 센다. 4장(1.1에서 바꾼 것), 5장(앱용 묶음)은 표로 적는다.
+  const after = record.indexOf('\n## 4.');
+  const proposals = record.slice(record.indexOf('## 3. 제안'), after < 0 ? undefined : after);
   const numbers = (text: string) => [...text.matchAll(/^(\d+)\. /gm)].map((m) => Number(m[1]));
 
   it('내가 정한 것은 1번부터 빠지거나 겹치는 번호가 없다', () => {
@@ -79,3 +81,17 @@ describe('결정 기록의 번호', () => {
   });
 });
 
+
+describe('앱 다리 규격 번호', () => {
+  it('규격 문서 제목, 웹 코드(src/platform/app.ts)의 번호가 같다', () => {
+    const doc = readFileSync(resolve(process.cwd(), 'docs/앱_다리_규격.md'), 'utf8');
+    const app = readFileSync(resolve(process.cwd(), 'src/platform/app.ts'), 'utf8');
+    const inDoc = doc.match(/^# 앱 다리 규격 \(규격 번호 (\d+)\)$/m);
+    const inCode = app.match(/^export const BRIDGE_VERSION = (\d+);$/m);
+    expect(inDoc).not.toBeNull();
+    expect(inCode).not.toBeNull();
+    expect(Number(inDoc![1])).toBe(Number(inCode![1]));
+    // 문서의 __SA_APP__ 표에 적은 bridge 값도 같다.
+    expect(doc).toContain(`| bridge | ${inCode![1]} |`);
+  });
+});

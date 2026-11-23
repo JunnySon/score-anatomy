@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
-import { ScreenShownContext } from './components/ui';
+import { Screen, ScreenShownContext } from './components/ui';
 import { typesReadyOf } from './exams/validate';
 import { findMissing } from './logic/scoring';
 import { href, inputModeFromUrl, useRoute, navigate, type Route } from './router';
@@ -68,6 +68,25 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
       </div>
     );
   }
+}
+
+/**
+ * 지금 기록이 가리키는 시험을 시험 목록에서 찾지 못했을 때의 작은 화면(작업 지시서 3의 5-2).
+ * 기록은 지우지도 바꾸지도 않고 그대로 둔다. 시험 자료를 받아 목록이 바뀌면 같은 주소의 화면이 그 기록으로 다시 그려진다.
+ */
+export function MissingExam() {
+  return (
+    <Screen tabs="current">
+      <p className="mt2" data-testid="exam-missing">
+        {S.missingExam.body}
+      </p>
+      <p className="mt4">
+        <a className="btn btn--secondary" href={href('/')} data-testid="exam-missing-back">
+          {S.missingExam.back}
+        </a>
+      </p>
+    </Screen>
+  );
 }
 
 /** 채점 결과가 있어야 하는 화면들. 단위 테스트가 서버 그리기로 돌려보내는 곳을 확인할 수 있게 내보낸다. */
@@ -148,7 +167,12 @@ export function Routes({ route, screenKey }: { route: Route; screenKey: string }
       break;
   }
 
-  if (!current) return <Redirect to="/" />;
+  if (!current) {
+    // 지금 기록은 남아 있는데 그 시험을 시험 목록에서 찾지 못하면(넘겨받은 시험 자료가 아직 없을 때, 작업 지시서 3의 5-2)
+    // 처음 화면으로 말없이 보내지 않고 안내한다. 기록은 지우지 않는다.
+    const kept = data.currentId !== null && data.sessions.some((s) => s.id === data.currentId);
+    return kept ? <MissingExam key={key} /> : <Redirect to="/" />;
+  }
 
   switch (route.name) {
     case 'input':

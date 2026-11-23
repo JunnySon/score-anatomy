@@ -20,10 +20,11 @@ import type { Session } from '../types';
 /**
  * 기록 한 건의 점수 글자와, 정답 정정 알림을 아직 확인하지 않았는지(작업 지시서 3의 4-6).
  * 점수는 지금 시험 파일로 계산한 값이다. 정정 알림이 남아 있으면 "정답 정정으로 다시 채점됨"을 붙인다.
+ * 그 시험을 지금 시험 목록에서 찾지 못하면 null 이다(점수도 진행 상태도 알 수 없다, 작업 지시서 3의 5-2).
  */
-function summaryOf(session: Session): { score: string; corrected: boolean } {
+function summaryOf(session: Session): { score: string; corrected: boolean } | null {
   const exam = findExam(session.examId);
-  if (!exam) return { score: S.history.inProgress, corrected: false };
+  if (!exam) return null;
   const stage = stageOf(session, exam);
   if (stage === 'graded') {
     try {
@@ -57,7 +58,11 @@ export function History() {
     .filter((s) => (run ? isMine(run, s) : !testDevice))
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
   const summaries = new Map(sessions.map((s) => [s.id, summaryOf(s)]));
-  const scoreText = (s: Session) => summaries.get(s.id)?.score ?? S.history.inProgress;
+  /** 기록을 구분하는 글자: 넣은 때(날짜, 필요하면 시각)와 점수. 시험을 찾지 못한 기록은 점수를 알 수 없어서 넣은 때만 적는다. */
+  const describe = (s: Session, when: string) => {
+    const summary = summaries.get(s.id);
+    return summary ? `${when}, ${summary.score}` : when;
+  };
 
   const open = (s: Session) => {
     const exam = findExam(s.examId);
@@ -117,34 +122,46 @@ export function History() {
               const title = exam?.title ?? s.examId;
               // 같은 시험의 기록이 여러 건이어도 구분되게, 접근성 이름에 날짜와 점수를 함께 넣는다.
               // 시험, 날짜, 점수가 모두 같은 기록이 또 있으면 넣은 시각(시, 분)도 적고, 분까지 같으면 초도 적는다.
-              const plain = `${formatDate(s.createdAt)}, ${scoreText(s)}`;
-              const twins = sessions.filter(
-                (o) => o.id !== s.id && o.examId === s.examId && `${formatDate(o.createdAt)}, ${scoreText(o)}` === plain,
-              );
+              const plain = describe(s, formatDate(s.createdAt));
+              const twins = sessions.filter((o) => o.id !== s.id && o.examId === s.examId && describe(o, formatDate(o.createdAt)) === plain);
               const sameMinute = twins.some((o) => formatTime(o.createdAt) === formatTime(s.createdAt));
-              const detail = twins.length > 0 ? `${formatDate(s.createdAt)} ${formatTime(s.createdAt, sameMinute)}, ${scoreText(s)}` : plain;
+              const detail = twins.length > 0 ? describe(s, `${formatDate(s.createdAt)} ${formatTime(s.createdAt, sameMinute)}`) : plain;
               // 정답 정정 알림을 아직 확인하지 않은 기록에는 표시를 붙이고 열기 버튼의 이름에도 넣는다.
               // 구분에 쓰는 글자(detail)와 지우기 버튼, 삭제 확인의 글자는 그대로 둔다.
               const corrected = summaries.get(s.id)?.corrected === true;
               return (
                 <li key={s.id} className="hitem" data-testid="history-item">
-                  <button
-                    type="button"
-                    className="hitem__open"
-                    aria-label={corrected ? S.history.openCorrected(title, detail) : S.history.open(title, detail)}
-                    onClick={() => open(s)}
-                  >
-                    <span className="inline">
-                      <span className="strong">{title}</span>
-                      {exam?.isSample ? <Badge>{S.common.sample}</Badge> : null}
-                    </span>
-                    <span className="sub">{detail}</span>
-                    {corrected ? (
-                      <span className="sub" data-testid="history-corrected">
-                        {S.history.corrected}
+                  {exam ? (
+                    <button
+                      type="button"
+                      className="hitem__open"
+                      aria-label={corrected ? S.history.openCorrected(title, detail) : S.history.open(title, detail)}
+                      onClick={() => open(s)}
+                    >
+                      <span className="inline">
+                        <span className="strong">{title}</span>
+                        {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
                       </span>
-                    ) : null}
-                  </button>
+                      <span className="sub">{detail}</span>
+                      {corrected ? (
+                        <span className="sub" data-testid="history-corrected">
+                          {S.history.corrected}
+                        </span>
+                      ) : null}
+                    </button>
+                  ) : (
+                    // 시험을 지금 시험 목록에서 찾지 못한 기록(작업 지시서 3의 5-2): 지우지 않고 그 자리에 안내를 둔다.
+                    // 그릴 시험이 없어서 열지 않는다. 시험 자료를 받으면 목록이 바뀌어 다시 그려지고 보통 기록처럼 열린다.
+                    <div className="hitem__open" data-testid="history-missing-item">
+                      <span className="inline">
+                        <span className="strong">{title}</span>
+                      </span>
+                      <span className="sub">{detail}</span>
+                      <span className="sub" data-testid="history-missing">
+                        {S.missingExam.body}
+                      </span>
+                    </div>
+                  )}
                   <button
                     type="button"
                     className="btn btn--text"

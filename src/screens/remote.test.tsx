@@ -64,6 +64,15 @@ function treeOf(render: () => ReactElement | null): ReactElement | null {
   return out;
 }
 
+/** 저장소가 바뀐 횟수를 센다(바뀌면 저장한다). */
+function countSaves(): { count: () => number; stop: () => void } {
+  let n = 0;
+  const stop = store.subscribe(() => {
+    n += 1;
+  });
+  return { count: () => n, stop };
+}
+
 beforeEach(() => {
   store.update(() => defaultData());
 });
@@ -73,6 +82,65 @@ afterEach(() => {
 });
 
 describe('넘겨받은 시험 자료와 화면(작업 지시서 3의 5-2, 5-3)', () => {
+  it('기록이 가리키는 시험을 찾지 못하면 기록 화면의 그 자리에 안내를 보여 주고, 기록은 지우지도 바꾸지도 않는다', () => {
+    arrive([]);
+    const missing: Session = { ...newSession('test-remote-a', 'not_yet', null, NOW), id: 's-missing', answers: { 1: 3 } };
+    const other: Session = { ...newSession('sample-a', 'not_yet', null, NOW), id: 's-other' };
+    store.update((d) => ({ ...d, sessions: [missing, other], currentId: other.id }));
+    const before = store.get();
+    const saves = countSaves();
+    const html = renderToStaticMarkup(<History />);
+    const date = formatDate(NOW);
+    expect(S.missingExam.body).toBe('시험 자료를 받으면 다시 볼 수 있어요.');
+    expect(html).toContain(`data-testid="history-missing">${S.missingExam.body}</span>`);
+    expect(html.match(/data-testid="history-missing"/g)).toHaveLength(1);
+    // 그릴 시험이 없어서 열기 버튼이 없다. 이름 자리에는 시험 id 를, 점수 자리 없이 넣은 날짜만 적는다.
+    expect(html).toContain(`data-testid="history-missing-item"><span class="inline"><span class="strong">test-remote-a</span></span><span class="sub">${date}</span>`);
+    expect(html).not.toContain('test-remote-a 기록 열기');
+    // 학생이 지우는 것은 그대로 할 수 있다.
+    expect(html).toContain(`aria-label="test-remote-a 기록 지우기, ${date}"`);
+    // 다른 기록은 지금처럼 보이고 열린다.
+    expect(html).toContain(`aria-label="예시 시험 A 기록 열기, ${date}, 입력 중"`);
+    expect(html.match(/data-testid="history-item"/g)).toHaveLength(2);
+    // 그리는 동안 저장소를 바꾸지 않았다(저장하지 않았다).
+    expect(saves.count()).toBe(0);
+    expect(store.get()).toBe(before);
+    // 시험 자료를 받으면 그 기록을 다시 볼 수 있다.
+    arrive([remoteExam()]);
+    const after = renderToStaticMarkup(<History />);
+    expect(after).not.toContain('history-missing');
+    expect(after).toContain(`aria-label="테스트 전용 시험 A 기록 열기, ${date}, 입력 중"`);
+    saves.stop();
+    expect(saves.count()).toBe(0);
+    expect(store.get()).toBe(before);
+  });
+
+  it('지금 기록의 시험을 찾지 못하면 처음 화면으로 보내지 않고 안내와 돌아갈 길이 있는 작은 화면을 보여 주고, 자료를 받으면 그 기록의 화면을 그린다', () => {
+    arrive([]);
+    const s: Session = { ...newSession('test-remote-a', 'not_yet', null, NOW), id: 's-current', answers: { 1: 3, 2: 5 } };
+    store.update((d) => ({ ...d, sessions: [s], currentId: s.id }));
+    const before = store.get();
+    const saves = countSaves();
+    for (const path of ['/input', '/review', '/marks', '/score', '/anatomy', '/causes', '/steps', '/retry/t01']) {
+      const html = routeHtml(path);
+      expect(html, path).toContain(`data-testid="exam-missing">${S.missingExam.body}</p>`);
+      expect(html, path).toContain(`href="#/" data-testid="exam-missing-back">${S.missingExam.back}</a>`);
+    }
+    saves.stop();
+    expect(saves.count()).toBe(0);
+    expect(store.get()).toBe(before);
+    // 지금 기록이 없으면 지금처럼 처음 화면으로 보낸다(그리는 것이 없다).
+    store.update((d) => ({ ...d, currentId: null }));
+    expect(routeHtml('/input')).toBe('');
+    store.update((d) => ({ ...d, currentId: s.id }));
+    // 시험 자료를 받으면 같은 주소가 그 기록의 답 입력 화면으로 다시 그려진다. 넣은 답은 그대로다.
+    arrive([unreleasedA()]);
+    const input = routeHtml('/input');
+    expect(input).not.toContain('exam-missing');
+    expect(input).toContain('data-testid="now-no"');
+    expect(store.get().sessions[0]).toBe(s);
+  });
+
   it('정답 공개 전에 저장해 둔 답은 정답이 든 판을 받으면 앱을 다시 켜지 않아도 채점할 수 있다', () => {
     arrive([unreleasedA()]);
     const answers = exampleAnswers(examA);

@@ -3,7 +3,7 @@ import { choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, initEntry, pressDigit, type DigitEntry } from '../logic/entry';
 import { S } from '../strings';
 import type { AnswerValue, ExamItem } from '../types';
-import { BottomSheet, Message } from './ui';
+import { BottomSheet, LiveRegion, Message } from './ui';
 
 // 답 키패드. 기기 기본 자판은 띄우지 않는다.
 
@@ -272,7 +272,9 @@ export function AnswerSheet({
     <BottomSheet title={title} onClose={onClose}>
       <div className="stack gap2">
         <EntryBox wide text={shown} label={S.input.entryLabel} />
-        {msg ? <Message>{msg}</Message> : null}
+        {/* 키패드 위 안내문은 시트가 열릴 때부터 붙어 있는 알림 영역으로 전하고, 보이는 안내문은 낭독에서 뺀다(결정기록 89번). */}
+        <LiveRegion text={msg ?? ''} testId="sheet-live" />
+        {msg ? <Message live={false}>{msg}</Message> : null}
         <DigitPad
           inSheet
           goLabel={S.common.put}

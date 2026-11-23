@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DigitPad, EntryBox, McPad } from '../components/pads';
-import { Badge, IconCross, IconRing, Message, Option, Screen, TopBar } from '../components/ui';
+import { Badge, IconCross, IconRing, LiveRegion, Message, Option, Screen, TopBar } from '../components/ui';
 import { choicesOf } from '../exams/validate';
 import { entryValue, eraseDigit, pressDigit, type DigitEntry } from '../logic/entry';
 import type { Grade } from '../logic/scoring';
@@ -139,9 +139,11 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       footer={
         pad ? (
           <>
+            {/* 키패드 위 안내문은 늘 붙어 있는 알림 영역으로 전하고, 보이는 안내문은 낭독에서 뺀다(결정기록 89번). */}
+            <LiveRegion text={msg ?? ''} testId="retry-live" />
             {msg ? (
               <div className="pad-msg">
-                <Message>{msg}</Message>
+                <Message live={false}>{msg}</Message>
               </div>
             ) : null}
             {pad}
@@ -187,33 +189,39 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
           <button type="button" className="btn btn--secondary btn--block mt2" data-testid="self-not-yet" onClick={() => chooseSelf('notYet')}>
             {S.retry.selfOptions.notYet}
           </button>
-          {self ? (
-            <div className="card mt4" role="status" data-testid="retry-result" data-self={self.result}>
-              <p>{selfCheckSentence(self.result)}</p>
-              <p className="inline mt2">
-                <span className="sub">{S.retry.recordLabel}</span>
-                {/* 정답 대조가 아니므로 중립 표시로 둔다(정답색, 오답색, 맞음과 틀림 기호 없음). */}
-                <span className="tag tag--wrap" data-testid="retry-label">
-                  {selfCheckLabel(self.result)}
-                </span>
-              </p>
-            </div>
-          ) : null}
+          {/* 결과 카드는 늘 붙어 있는 알림 영역 안에 넣어, 카드가 나타날 때 화면 낭독기에 전한다. */}
+          <div role="status" aria-live="polite" aria-atomic="true">
+            {self ? (
+              <div className="card mt4" data-testid="retry-result" data-self={self.result}>
+                <p>{selfCheckSentence(self.result)}</p>
+                <p className="inline mt2">
+                  <span className="sub">{S.retry.recordLabel}</span>
+                  {/* 정답 대조가 아니므로 중립 표시로 둔다(정답색, 오답색, 맞음과 틀림 기호 없음). */}
+                  <span className="tag tag--wrap" data-testid="retry-label">
+                    {selfCheckLabel(self.result)}
+                  </span>
+                </p>
+              </div>
+            ) : null}
+          </div>
         </section>
       ) : null}
 
-      {result ? (
-        <div className="card mt4" role="status" data-testid="retry-result" data-correct={result.correct ? 'true' : 'false'}>
-          <p>{retrySentence(result)}</p>
-          <p className="inline mt2">
-            <span className="sub">{S.retry.recordLabel}</span>
-            <span className={`tag ${result.correct ? 'tag--ok' : 'tag--bad'}`} data-testid="retry-label">
-              {result.correct ? <IconRing /> : <IconCross />}
-              {retryLabel(result, itemResult.cause)}
-            </span>
-          </p>
-        </div>
-      ) : null}
+      {/* 맞춰 본 결과도 늘 붙어 있는 알림 영역 안에 넣는다(글자를 담은 채 새로 붙는 알림 영역은 화면 낭독기가 읽지 않는 경우가 많다). */}
+      <div role="status" aria-live="polite" aria-atomic="true">
+        {result ? (
+          <div className="card mt4" data-testid="retry-result" data-correct={result.correct ? 'true' : 'false'}>
+            <p>{retrySentence(result)}</p>
+            <p className="inline mt2">
+              <span className="sub">{S.retry.recordLabel}</span>
+              <span className={`tag ${result.correct ? 'tag--ok' : 'tag--bad'}`} data-testid="retry-label">
+                {result.correct ? <IconRing /> : <IconCross />}
+                {retryLabel(result, itemResult.cause)}
+              </span>
+            </p>
+          </div>
+        ) : null}
+      </div>
     </Screen>
   );
 }

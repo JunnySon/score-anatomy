@@ -290,11 +290,15 @@ export function Progress({ value, max, label }: { value: number; max: number; la
 
 /**
  * 안내와 오류를 화면 안에 적는다. 팝업은 쓰지 않는다.
- * live 가 false면 화면 낭독기 알림 영역으로 두지 않는다(늘 붙어 있는 다른 알림 영역이 같은 글자를 전할 때).
+ * live 가 false면 늘 붙어 있는 다른 알림 영역(LiveRegion)이 같은 글자를 전하므로, 보이는 안내문은 알림 영역으로 두지 않고
+ * 화면 낭독기에서도 뺀다(aria-hidden, 훑어 읽을 때 같은 문장을 두 번 듣지 않게).
  */
 export function Message({ children, plain, live = true }: { children: ReactNode; plain?: boolean; live?: boolean }) {
   return (
-    <p className={`msg${plain ? ' msg--plain' : ''}`} {...(live ? { role: 'status', 'aria-live': 'polite' as const } : {})}>
+    <p
+      className={`msg${plain ? ' msg--plain' : ''}`}
+      {...(live ? { role: 'status', 'aria-live': 'polite' as const } : { 'aria-hidden': true as const })}
+    >
       {children}
     </p>
   );

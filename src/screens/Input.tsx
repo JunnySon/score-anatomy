@@ -117,7 +117,13 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   const [state, setState] = useState<KeypadState>(() => initKeypad(items, session.answers));
   const currentRef = useRef<HTMLButtonElement | null>(null);
   // 잠긴 키를 누르면 화면 낭독기에 잠금 안내를 다시 전한다(알림 영역을 잠깐 비웠다가 다시 채운다).
-  const [srBlank, setSrBlank] = useState(false);
+  // 화면을 열 때의 안내(빈칸 없음 등)도 알림 영역을 빈 채로 먼저 그리고 다음 그림 차례에 채워 전한다
+  // (글자를 담은 채 새로 붙은 알림 영역은 화면 낭독기가 읽지 않는 경우가 많다).
+  const [srBlank, setSrBlank] = useState(true);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setSrBlank(false));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
 
   const cursor = Math.min(state.cursor, items.length - 1);
   const item = items[cursor]!;
@@ -212,7 +218,7 @@ function InputKeypad({ h }: { h: SessionHandle }) {
       guardKey={item.kind}
       footer={
         <>
-          {/* 화면 낭독기에는 늘 붙어 있는 이 알림 영역으로 안내문을 전한다. 보이는 안내문은 낭독에서 뺀다. */}
+          {/* 화면 낭독기에는 늘 붙어 있는 이 알림 영역으로 안내문을 전한다. 보이는 안내문은 낭독에서 뺀다(aria-hidden, 두 번 읽히지 않게). */}
           <LiveRegion text={srBlank ? '' : (message ?? '')} testId="pad-live" />
           {message ? (
             <div className="pad-msg" data-testid="pad-panel" data-lock={state.lock ?? 'none'}>

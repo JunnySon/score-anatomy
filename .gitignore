@@ -8,3 +8,4 @@ verify-out/
 *.log
 .DS_Store
 dist-exams/
+dist-exams.*/

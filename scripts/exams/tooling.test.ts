@@ -102,9 +102,11 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     if (parsed.state) expect(stateText(parsed.state)).toBe(text);
     const lines = (path: string) => readFileSync(join(ROOT, path), 'utf8').split(/\r?\n/);
     expect(lines('.gitignore')).toContain('dist-exams/');
+    // 발행 폴더를 바꿔 넣을 때 옆에 잠깐 만드는 폴더(dist-exams.new-..., dist-exams.old-...)도 커밋하지 않는다.
+    expect(lines('.gitignore')).toContain('dist-exams.*/');
     expect(lines('.gitattributes')).toContain('exam-data/testdata/** -text');
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
-    for (const cmd of ['check', 'answers', 'cuts']) expect(pkg.scripts[`exams:${cmd}`]).toBe(`node scripts/exams.mjs ${cmd}`);
+    for (const cmd of ['check', 'answers', 'cuts', 'publish', 'verify', 'keygen', 'serve']) expect(pkg.scripts[`exams:${cmd}`]).toBe(`node scripts/exams.mjs ${cmd}`);
   });
 
   it('키를 정렬한 JSON 은 2칸 들여쓰기, LF, 끝 줄바꿈이고 키 차례가 달라도 같은 바이트다', () => {
@@ -197,17 +199,44 @@ describe('발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4)', () =>
     expect(none.code).toBe(2);
     expect(none.err[0]).toBe('사용법: node scripts/exams.mjs <명령> [인자] [--data <자료 폴더>] [--out <발행 폴더>]');
     expect((await run(['help'])).code).toBe(0);
-    for (const cmd of ['publish', 'verify', 'keygen', 'serve']) {
-      const r = await run([cmd]);
-      expect(r.code).toBe(2);
-      expect(r.err).toEqual([`${cmd} 는 아직 만들지 않은 명령이에요(작업 지시서 3의 6-4, 다음 단계에서 더해요).`]);
-    }
+    // 6-5 의 테스트 전용 발행물을 만드는 명령은 다음 단계에서 더한다.
+    const planned = await run(['testdata']);
+    expect(planned.code).toBe(2);
+    expect(planned.err).toEqual(['testdata 는 아직 만들지 않은 명령이에요(작업 지시서 3의 6-5, 다음 단계에서 더해요).']);
     expect((await run(['nope'])).err[0]).toBe('모르는 명령이에요: nope');
     expect((await run(['check', '--note', '테스트 전용 정정 안내예요.'])).err).toEqual(['check 에는 --note 를 쓰지 않아요.']);
     expect((await run(['check', '--bogus'])).err).toEqual(['모르는 선택지예요: --bogus']);
     expect((await run(['answers', 'a.txt'])).err).toEqual(['인자가 2개여야 해요: node scripts/exams.mjs answers <정답 파일 1> <정답 파일 2> [--note "<정정 안내>"]']);
     expect((await run(['check', '--data'])).err).toEqual(['--data 다음에 값을 적어 주세요.']);
     expect(parseArgs(['answers', '--data=d', 'a', '--', '--b'])).toEqual({ command: 'answers', args: ['a', '--b'], options: { data: 'd' }, errors: [] });
+    // publish, verify, keygen, serve 의 선택지와 인자(작업 지시서 3의 6-4). 값을 받지 않는 선택지(--dry-run, --allow-same)는 다음 인자를 먹지 않는다.
+    expect(parseArgs(['publish', '--dry-run', '--allow-same', '--issued-at', '2030-01-02T17:10'])).toEqual({
+      command: 'publish',
+      args: [],
+      options: { 'dry-run': '', 'allow-same': '', 'issued-at': '2030-01-02T17:10' },
+      errors: [],
+    });
+    expect((await run(['publish', '--dry-run=1'])).err).toEqual(['--dry-run 에는 값을 적지 않아요.']);
+    expect((await run(['publish', '--issued-at', '2030-01-02T24:00'])).err).toEqual([
+      '--issued-at 은 2030-01-02T17:10 같은, 실제로 있는 날짜와 시각(한국 시간)이어야 해요.',
+    ]);
+    expect((await run(['publish', 'x'])).err).toEqual(['인자가 0개여야 해요: node scripts/exams.mjs publish [--issued-at YYYY-MM-DDTHH:mm] [--dry-run] [--allow-same]']);
+    expect((await run(['publish', '--note', 'x'])).err).toEqual(['publish 에는 --note 를 쓰지 않아요.']);
+    expect((await run(['verify', 'a', 'b'])).err).toEqual([
+      '인자가 0개나 1개여야 해요: node scripts/exams.mjs verify [<발행 폴더 또는 http(s) 주소>] [--key <공개 키 파일>]',
+    ]);
+    expect((await run(['verify', '--out', 'x'])).err).toEqual(['verify 에는 --out 를 쓰지 않아요.']);
+    const ftp = await run(['verify', 'ftp://exams.invalid/']);
+    expect(ftp.code).toBe(2);
+    expect(ftp.err).toEqual(['주소는 http:// 나 https:// 로 시작해야 해요.']);
+    expect((await run(['keygen'])).err).toEqual(['인자가 1개여야 해요: node scripts/exams.mjs keygen <비밀 키를 쓸 경로(저장소 밖)>']);
+    expect((await run(['keygen', 'k.pem', '--out', 'x'])).err).toEqual(['keygen 에는 --out 를 쓰지 않아요.']);
+    for (const port of ['abc', '65536', '-1', '1.5']) {
+      const r = await run(['serve', '--port', port]);
+      expect(r.code, port).toBe(2);
+      expect(r.err, port).toContain('--port 는 0부터 65535 까지의 정수여야 해요.');
+    }
+    expect((await run(['serve', '--data', 'x'])).err).toEqual(['serve 에는 --data 를 쓰지 않아요.']);
     const dir = makeDataDir();
     dirs.push(dir);
     const ok = await run(['check', '--data', dir]);

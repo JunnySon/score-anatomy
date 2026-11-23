@@ -130,6 +130,9 @@ function rebind(d: AppData, session: Session): AppData {
  * 시작 화면의 "이어서 보기"가 열 기록(지시서 8장 (1): 지난 기록이 있으면 "이어서 보기").
  * 지금 보는 기록이 있으면 그 기록, 없으면 남은 기록 가운데 가장 최근에 만든 것이다.
  * 테스트가 진행 중이면 이번 참가자의 측정에 묶인 기록만 대상으로 한다(앞 참가자의 기록이 열리지 않게).
+ * 지금 보는 기록은 남아 있는데 그 시험을 지금 시험 목록에서 찾지 못하면(넘겨받은 시험 자료가 아직 없을 때, 작업 지시서 3의 5-2)
+ * 다른 시험의 기록으로 옮겨 가지 않고 아무 기록도 고르지 않는다. 버튼에는 시험 이름이 없어서, 학생이 고르지 않은 다른 시험의 기록이
+ * 열리고 그 기록에 답을 이어 넣을 수 있었다(별도 검토 A6). 시험 자료가 오면 그 기록이 다시 대상이 된다.
  */
 export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | null {
   // 테스트 기기에서 측정이 진행 중이 아니면(참가자를 마친 뒤, 다음 참가자를 시작하기 전) 어떤 기록도 열지 않는다.
@@ -138,7 +141,9 @@ export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | 
     const exam = s ? findExam(s.examId) : null;
     return s && exam ? { session: s, exam } : null;
   };
-  const current = pick(d.sessions.find((s) => s.id === d.currentId));
+  const currentSession = d.sessions.find((s) => s.id === d.currentId);
+  if (currentSession && !findExam(currentSession.examId)) return null;
+  const current = pick(currentSession);
   const run = __SA_TOOLS__ ? activeRun(d) : null;
   if (run) {
     // 테스트 중: 지금 보는 기록이 이번 참가자의 것이면 그 기록, 아니면 측정에 묶인 기록.

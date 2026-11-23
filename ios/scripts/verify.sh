@@ -281,11 +281,15 @@ for pair in "main:iphone17:light" "main-dark:iphone17:dark" "se:iphonese:light" 
 done
 rm -rf "$REPO/docs/screens-ios"
 "${REPORT[@]}" captures "$OUT/screens" "$REPO/docs/screens-ios" "$OUT/captures.json"
+# 목록(9화면 x 2테마 x 2기기) 밖의 캡처는 참고용으로 extra 에 기기와 테마를 붙여 모은다.
 mkdir -p "$REPO/docs/screens-ios/extra"
-[ -f "$OUT/runs/ipad/screens/ipad/light/시작.png" ] && cp "$OUT/runs/ipad/screens/ipad/light/시작.png" "$REPO/docs/screens-ios/extra/ipad-시작.png"
-[ -f "$OUT/runs/main/screens/iphone17/light/불러오기실패.png" ] && cp "$OUT/runs/main/screens/iphone17/light/불러오기실패.png" "$REPO/docs/screens-ios/extra/iphone17-불러오기실패.png"
-for f in "$OUT"/runs/main/screens/iphone17/light/글자-*.png "$OUT"/runs/main/screens/iphone17/light/진행자-자판.png "$OUT"/runs/release/screens/iphone17/light/release-기록.png; do
-  [ -f "$f" ] && cp "$f" "$REPO/docs/screens-ios/extra/iphone17-$(basename "$f")"
+for f in "$OUT"/runs/*/screens/*/*/*.png; do
+  [ -f "$f" ] || continue
+  name=$(basename "$f" .png); theme=$(basename "$(dirname "$f")"); device=$(basename "$(dirname "$(dirname "$f")")")
+  case "$name" in
+    01-시작|02-시험선택|03-답입력-키패드|04-잠금|05-입력확인|06-표시|07-점수해부|08-계단|09-기록) continue ;;
+  esac
+  cp "$f" "$REPO/docs/screens-ios/extra/$device-$theme-$name.png"
 done
 
 # ---------------------------------------------------------------- 문서

@@ -55,9 +55,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(handle.any("78점 가운데 7점은 찍었다고 표시한 문항에서 나왔어요.").exists || handle.element(labelContains: "7점은 찍었다고 표시한 문항에서").exists)
 
         // 2등급: "3~7점", "약 75점", "6~10점".
-        let grade2 = handle.any("2등급")
-        handle.reveal(grade2, label: "2등급")
-        grade2.tap()
+        handle.tapCentered(handle.any("2등급"), selector: "[data-testid=grade-2]")
         handle.waitForText("3~7점 남았어요")
         XCTAssertEqual(handle.domText("[data-testid=cut-actual]"), "실제 78점 기준 3~7점 남았어요")
         handle.waitForText("약 75점")
@@ -66,9 +64,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(luck2.contains("약 75점") && luck2.contains("6~10점"), "둘째 줄: \(luck2)")
 
         // 3등급: 첫 줄 "컷 범위보다 위예요", 둘째 줄 "컷 범위 안".
-        let grade3 = handle.any("3등급")
-        handle.reveal(grade3, label: "3등급")
-        grade3.tap()
+        handle.tapCentered(handle.any("3등급"), selector: "[data-testid=grade-3]")
         handle.waitForText("컷 범위보다 위예요")
         XCTAssertEqual(handle.domText("[data-testid=cut-actual]"), "컷 범위보다 위예요.")
         let luck3 = handle.domText("[data-testid=cut-luck]") ?? ""
@@ -76,9 +72,7 @@ final class FlowTests: XCTestCase {
         XCTAssertTrue(handle.element(labelContains: "컷 범위 안").exists)
 
         // 계단 3개와 카드 표기.
-        let grade2Again = handle.any("2등급")
-        handle.reveal(grade2Again, label: "2등급")
-        grade2Again.tap()
+        handle.tapCentered(handle.any("2등급"), selector: "[data-testid=grade-2]")
         let toSteps = handle.button("고칠 것 3가지 보기")
         handle.reveal(toSteps)
         XCTAssertTrue(toSteps.waitForExistence(timeout: 5), "주 버튼 '고칠 것 3가지 보기'")

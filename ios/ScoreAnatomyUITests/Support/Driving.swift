@@ -109,6 +109,16 @@ extension AppHandle {
         return String(array.dropFirst().dropLast())
     }
 
+    /// 웹 요소를 화면 가운데로 옮긴 뒤 누른다. 아래에 고정된 버튼이 요소를 가릴 수 있는 작은 화면에서 쓴다
+    /// (XCUITest 는 웹 안의 겹침을 몰라서, 가려진 요소도 누를 수 있다고 본다).
+    func tapCentered(_ element: XCUIElement, selector: String, file: StaticString = #filePath, line: UInt = #line) {
+        let found = evaluate("const e = document.querySelector(\(jsString(selector))); if (e) e.scrollIntoView({ block: 'center' }); return !!e;") as? Bool
+        XCTAssertEqual(found, true, "\(selector) 가 있어야 한다", file: file, line: line)
+        Thread.sleep(forTimeInterval: 0.4)
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "\(selector) 를 누를 수 있어야 한다", file: file, line: line)
+        element.tap()
+    }
+
     /// 표시 화면에서 찍음(두 번 누름)을 붙인다.
     func setGuess(_ no: Int, file: StaticString = #filePath, line: UInt = #line) {
         let cell = markCell(no)

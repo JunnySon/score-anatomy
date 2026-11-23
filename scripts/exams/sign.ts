@@ -45,10 +45,41 @@ function pathKey(path: string): string {
   return process.platform === 'win32' ? path.toLowerCase() : path;
 }
 
-/** child 가 parent 와 같거나 그 안에 있는지. 둘 다 실제 경로로 풀어서 견준다. */
+/** 파일이나 폴더의 정체: 장치 번호와 파일 번호. 읽지 못하거나 파일 번호를 알 수 없으면(0) null. */
+export function identityOf(path: string): string | null {
+  try {
+    const st = statSync(path, { bigint: true });
+    return st.ino === 0n ? null : `${st.dev}:${st.ino}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * child 의 실제 경로부터 상위 폴더를 하나씩 올라가며 parent 폴더와 정체(장치 번호와 파일 번호)가 같은 곳이 있는지(별도 검토 C1).
+ * 경로 글자로는 밖으로 보여도(윈도우의 \\localhost\D$\... 같은 되돌이 공유 경로) 같은 폴더를 가리키면 안으로 본다.
+ * idOf 는 테스트가 바꿔 끼운다.
+ */
+export function insideByIdentity(child: string, parent: string, idOf: (path: string) => string | null = identityOf): boolean {
+  const target = idOf(parent);
+  if (target === null) return false;
+  let current = realPath(child);
+  for (;;) {
+    if (idOf(current) === target) return true;
+    const up = dirname(current);
+    if (up === current) return false;
+    current = up;
+  }
+}
+
+/**
+ * child 가 parent 와 같거나 그 안에 있는지. 둘 다 실제 경로로 풀어 글자로 견주고, 글자로 밖이면 상위 폴더의 정체로도 견준다.
+ * 같은 폴더를 다른 글자(되돌이 공유 경로 등)로 가리켜 검사를 건너뛰지 못하게 한다(별도 검토 C1).
+ */
 export function isInside(child: string, parent: string): boolean {
   const rel = relative(pathKey(realPath(parent)), pathKey(realPath(child)));
-  return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`));
+  if (rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))) return true;
+  return insideByIdentity(child, parent);
 }
 
 /** 비밀 키를 두면 안 되는 곳(저장소 폴더, 자료 폴더, 발행 폴더). name 은 출력에 쓰는 이름이다. */

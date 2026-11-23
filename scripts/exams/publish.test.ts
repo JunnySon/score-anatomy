@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { checkExam } from '../../src/exams/validate.ts';
 import type { Exam } from '../../src/types.ts';
 import { canonicalJson, sha256Hex } from './canonical.ts';
-import { keyFingerprint, publicKeyText } from './sign.ts';
+import { identityOf, insideByIdentity, isInside, keyFingerprint, publicKeyText } from './sign.ts';
 import { examFileText, locksSha256, parseState, stateEntryOf } from './state.ts';
 import {
   FORBIDDEN_CHANGES,
@@ -485,6 +485,42 @@ describe('발행 도구 비밀 키(작업 지시서 3의 6-4)', () => {
     expect(existsSync(o.out)).toBe(false);
     // 같은 키를 저장소 밖에 두면 발행한다(거부가 키 내용 때문이 아님).
     expect(publishTo(dir, o.out, key.keyFile).code).toBe(0);
+  }, 60000);
+
+  it('비밀 키 파일을 경로 글자가 다른 길(되돌이 공유 경로)로 가리켜도 저장소 안이면 상위 폴더의 정체로 알아보고 거부한다(별도 검토 C1)', () => {
+    // 견주는 방법: 키 파일의 실제 경로부터 상위 폴더를 따라 올라가며 저장소 폴더와 장치 번호, 파일 번호가 같은 곳을 찾는다.
+    // 글자로는 밖인 경로(가짜 경로)라도, 정체를 돌려주는 함수가 그 상위 폴더를 저장소와 같다고 하면 안으로 본다.
+    const fakeChild = join(tmpdir(), 'sa-no-such-dir', 'share', 'key.pem');
+    const fakeShare = join(tmpdir(), 'sa-no-such-dir', 'share');
+    const idOf = (p: string) => (p === ROOT ? 'repo' : p === fakeShare ? 'repo' : null);
+    expect(insideByIdentity(fakeChild, ROOT, idOf)).toBe(true);
+    expect(insideByIdentity(fakeChild, ROOT, (p) => (p === ROOT ? 'repo' : null))).toBe(false);
+    expect(identityOf(ROOT)).toMatch(/^\d+:\d+$/);
+    expect(identityOf(join(tmpdir(), 'sa-no-such-dir'))).toBeNull();
+    // 윈도우: 저장소 안의 키를 되돌이 공유 경로(\\localhost\<드라이브>$\...)로 가리킨다. 그 공유를 열 수 있는 컴퓨터에서만 돌린다.
+    const key = tempKey();
+    const inRepo = repoTempDir();
+    const inside = join(inRepo, 'test-only-private-key.pem');
+    copyFileSync(key.keyFile, inside);
+    const unc = process.platform === 'win32' ? `\\\\localhost\\${inside[0]}$${inside.slice(2)}` : null;
+    if (unc !== null && existsSync(unc)) {
+      expect(isInside(unc, ROOT)).toBe(true);
+      const dir = dataDir();
+      const o = outDir();
+      writeExam(dir, testExam());
+      const before = picture(dir, o);
+      const r = publishTo(dir, o.out, unc);
+      expect(r.code).toBe(1);
+      expect(r.err[0]).toContain('비밀 키 파일이 저장소 폴더 안에 있어요');
+      expect(picture(dir, o)).toEqual(before);
+      expect(leakCount([...r.out, ...r.err].join('\n'), keySecrets(key.pem))).toBe(0);
+    }
+    // 저장소 밖의 키는 지금처럼 받는다.
+    expect(isInside(key.keyFile, ROOT)).toBe(false);
+    // 덧대기: 저장소에 든 PEM 파일은 git 이 무시한다(커밋한 테스트 전용 키만 예외).
+    const ignore = readFileSync(join(ROOT, '.gitignore'), 'utf8').split(/\r?\n/);
+    expect(ignore).toContain('*.pem');
+    expect(ignore).toContain('!exam-data/testdata/test-only-private-key.pem');
   }, 60000);
 
   it('비밀 키 파일이 자료 폴더나 발행 폴더 안이어도 거부한다', () => {

@@ -203,8 +203,14 @@ export const S = {
     options: { slip: '풀 줄 아는데 틀렸어요', blank: '풀이가 안 떠올랐어요', unknown: '잘 모르겠어요' } as Record<Cause, string>,
     showAnswer: '정답 보기',
     showAnswerOf: (no: number) => `${no}번 정답 보기`,
-    answer: (a: number) => `정답 ${a}`,
+    /** 정답. 복수 정답이면 인정하는 답을 모두 쉼표로 적는다(작업 지시서 3의 4-2). */
+    answer: (answers: readonly number[]) => `정답 ${answers.join(', ')}`,
+    /** 복수 정답일 때 정답 아래에 붙인다. 둘이면 "둘 다", 셋 이상이면 "모두". */
+    acceptedAll: (count: number) => `${allOf(count)}정답으로 인정해요.`,
     viewed: '정답 확인함',
+    // 모두 정답 처리 문항(작업 지시서 3의 4-2). 틀린 문항이 아니라서 틀린 문항 목록 아래에 따로 적는다.
+    allCorrectLabel: '모두 정답으로 처리된 문항',
+    allCorrect: '이 문항은 모두 정답으로 처리됐어요.',
     skip: '건너뛰기',
     go: '점수 해부 보기',
     empty: '틀린 문항이 없어요.',

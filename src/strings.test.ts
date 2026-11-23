@@ -256,6 +256,18 @@ describe('화면 문구', () => {
     expect(S.exams.held(2030, 1, 2)).toBe('2030년 1월 2일 시행');
     expect(S.anatomy.barLabel(100, 71, 7, 8, 14)).toBe('100점 막대. 찍음 표시 없이 맞힌 점수 71점, 추측했다고 표시한 정답 7점, 실수라고 표시한 오답 8점, 그 외 오답 14점.');
   });
+
+  it('작업 지시서 3(시험 당일 경로)에 적힌 문구를 그대로 쓴다', () => {
+    const texts = new Set(all.map((s) => s.text));
+    // 4-2: 모두 정답 처리.
+    for (const text of ['이 문항은 모두 정답으로 처리됐어요.']) expect(texts.has(text), text).toBe(true);
+    // 4-2: 복수 정답이면 인정하는 답을 모두 보여 주고 함께 인정한다고 알린다. 정답이 하나면 지금 글자 그대로다.
+    expect(S.causes.answer([164])).toBe('정답 164');
+    expect(S.causes.answer([3, 5])).toBe('정답 3, 5');
+    expect(S.causes.acceptedAll(2)).toBe('둘 다 정답으로 인정해요.');
+    expect(S.causes.acceptedAll(3)).toBe('모두 정답으로 인정해요.');
+    expect(S.anatomy.emptyGuessAllCorrect(60)).toBe('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. 60점 그대로예요.');
+  });
 });
 
 describe('문구 도우미', () => {

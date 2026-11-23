@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { findExam } from '../exams';
+import { validateExam } from '../exams/validate';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import { gradeExam } from '../logic/scoring';
 import type { SessionHandle } from '../state/hooks';
@@ -170,6 +171,52 @@ describe('그 밖의 화면', () => {
     const html2 = renderToStaticMarkup(<Causes h={after} grade={gradeExam(after.exam, after.session)} />);
     expect(text(html2)).toContain('정답 164 정답 확인함');
     expect(html2).not.toContain('257');
+  });
+
+  it('오답 원인 화면: 복수 정답이면 정답 보기를 누른 뒤 인정하는 답을 모두 보여 주고 함께 인정한다고 알린다(작업 지시서 3의 4-2)', () => {
+    // 27번(단답형, 정답 164, 넣은 답 146)에 복수 정답 461을 더한 사본. 넣은 답은 그대로 오답이다.
+    const exam = withItem(examA, 27, { altAnswers: [461] });
+    expect(validateExam(exam)).toEqual([]);
+    const before = handleFor(exam, exampleMarks(), {});
+    const html = renderToStaticMarkup(<Causes h={before} grade={gradeExam(exam, before.session)} />);
+    // 정답 보기를 누르기 전에는 어느 정답도, 인정한다는 안내도 없다.
+    for (const hidden of ['164', '461', '인정해요']) expect(html).not.toContain(hidden);
+    expect(text(html)).not.toMatch(/정답 \d/);
+    const after = handleFor(exam, exampleMarks(), {}, { answerViewed: { 27: true } });
+    const html2 = renderToStaticMarkup(<Causes h={after} grade={gradeExam(exam, after.session)} />);
+    expect(text(html2)).toContain('정답 164, 461 정답 확인함 둘 다 정답으로 인정해요.');
+    expect(html2.match(/data-testid="answer-/g)).toHaveLength(1);
+    expect(html2).not.toContain('257');
+    // 인정하는 답이 셋이면 "모두"로 적는다. 15번(5지선다, 정답 3, 넣은 답 1)에 복수 정답 4, 5를 더한 사본.
+    const three = withItem(examA, 15, { altAnswers: [4, 5] });
+    expect(validateExam(three)).toEqual([]);
+    const h3 = handleFor(three, exampleMarks(), {}, { answerViewed: { 15: true } });
+    expect(text(renderToStaticMarkup(<Causes h={h3} grade={gradeExam(three, h3.session)} />))).toContain('정답 3, 4, 5 정답 확인함 모두 정답으로 인정해요.');
+  });
+
+  it('오답 원인 화면: 모두 정답 처리 문항은 틀린 문항 목록에 넣지 않고 "이 문항은 모두 정답으로 처리됐어요."를 보여 준다(작업 지시서 3의 4-2)', () => {
+    // 20번(5지선다, 4점, 넣은 답 3)을 모두 정답 처리로 바꾼 사본. 정답을 드러내는 말이 아니라서 정답 보기를 누르지 않아도 보인다.
+    const exam = withItem(examA, 20, { allCorrect: true });
+    expect(validateExam(exam)).toEqual([]);
+    const h = handleFor(exam, exampleMarks(), exampleCauses());
+    const html = renderToStaticMarkup(<Causes h={h} grade={gradeExam(exam, h.session)} />);
+    const t = text(html);
+    expect(html).not.toContain('data-testid="wrong-20"');
+    expect(html.match(/data-testid="wrong-/g)).toHaveLength(5);
+    expect(html).toContain('aria-label="모두 정답으로 처리된 문항"');
+    expect(html).toContain('data-testid="all-correct-20"');
+    expect(t).toContain('20번 4점 이 문항은 모두 정답으로 처리됐어요.');
+    expect(t).not.toMatch(/정답 \d/);
+    expect(html).not.toContain('data-testid="answer-');
+    // 틀린 문항이 없어도 따로 알린다(20번에는 정답이 아닌 1을 넣었다).
+    const answers = { ...Object.fromEntries(examA.items.map((it) => [it.no, it.answer as number])), 20: 1 };
+    const none = handleFor(exam, {}, {}, { answers });
+    const t2 = text(renderToStaticMarkup(<Causes h={none} grade={gradeExam(exam, none.session)} />));
+    expect(t2).toContain('틀린 문항이 없어요.');
+    expect(t2).toContain('20번 4점 이 문항은 모두 정답으로 처리됐어요.');
+    // 모두 정답 처리 문항이 없으면 이 목록이 없다.
+    const plain = handleFor(examA, exampleMarks(), exampleCauses());
+    expect(renderToStaticMarkup(<Causes h={plain} grade={gradeExam(examA, plain.session)} />)).not.toContain('모두 정답으로 처리');
   });
 
   it('계단 화면: 배점 문장, 예시 좌표 배지와 할 일, 재풀이 기록 라벨', () => {

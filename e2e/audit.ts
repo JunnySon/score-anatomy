@@ -451,7 +451,9 @@ export async function checkScreen(page: Page, name: string, run: string, opts: A
 export interface LeakTarget {
   no: number;
   answer: number;
-  /** 다른 곳에 나오지 않는 값이라 화면 전체에서 찾아도 되는지(단답형 정답). */
+  /** answer 말고도 정답으로 인정하는 답(복수 정답, 작업 지시서 3의 4-2). answer 와 똑같이 찾는다. */
+  altAnswers?: number[];
+  /** 다른 곳에 나오지 않는 값이라 화면 전체에서 찾아도 되는지(단답형 정답). 복수 정답이 있으면 인정하는 답 모두가 그럴 때만 true 로 둔다. */
   distinctive: boolean;
 }
 
@@ -488,12 +490,18 @@ export async function findAnswerLeaks(page: Page, targets: LeakTarget[], reveale
       });
       for (const t of targets) {
         if (revealed.includes(t.no)) continue;
-        if (t.distinctive && whole.includes(String(t.answer))) leaks.push(`${t.no}번 정답 ${t.answer}이 화면에 있음`);
+        // 인정하는 답(answer 와 복수 정답 altAnswers)을 모두 찾는다.
+        const accepted = [t.answer, ...(t.altAnswers ?? [])];
+        for (const a of accepted) {
+          if (t.distinctive && whole.includes(String(a))) leaks.push(`${t.no}번 정답 ${a}이 화면에 있음`);
+        }
         const card = document.querySelector(`[data-testid="wrong-${t.no}"]`);
         if (card) {
           // 카드의 숫자 토큰은 문항 번호, 배점, 내 답뿐이어야 한다.
           const tokens: string[] = collect(card).match(/\d+/g) ?? [];
-          if (tokens.includes(String(t.answer))) leaks.push(`${t.no}번 카드에 정답 ${t.answer}과 같은 숫자가 있음`);
+          for (const a of accepted) {
+            if (tokens.includes(String(a))) leaks.push(`${t.no}번 카드에 정답 ${a}과 같은 숫자가 있음`);
+          }
         }
       }
       if (/정답\s*(은|는|:)?\s*\d/.test(whole.replace(/추측했다고 표시한 정답\s*\d+점/g, '').replace(/찍었다고 표시한 정답\s*\d+점/g, ''))) {

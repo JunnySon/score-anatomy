@@ -15,6 +15,8 @@ test('진행자용 화면: 참가자 시작, 자동 기록, 정답지 대조, �
   await page.getByTestId('tester-link').click();
   await expectHash(page, '/test');
   await expect(page.getByTestId('no-runs')).toBeVisible();
+  // 소개 문장 아래의 풀이 잠금 한 줄(작업 지시서 3의 4-5). 묶음 안 달력으로 지금을 판정한다(달력에 따라 열림이나 잠김).
+  await expect(page.getByTestId('lock-status')).toHaveText(/^풀이 잠금: 지금 (열림|잠김\(오[전후] \d+시( \d+분)?까지\))$/);
 
   // 참가자 코드는 P01 형식만 받는다. 이름은 넣을 수 없다.
   await expect(page.getByText('P01처럼 적어 주세요. 이름은 넣지 마세요.')).toBeVisible();

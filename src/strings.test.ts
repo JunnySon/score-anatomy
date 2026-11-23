@@ -282,6 +282,10 @@ describe('화면 문구', () => {
     expect(S.anatomy.asOfTime(2030, 1, 2, 20, 0)).toBe('기준: 2030년 1월 2일 오후 8시');
     expect(S.anatomy.asOf('2026-11-22')).toBe('기준일: 2026-11-22');
     expect(S.anatomy.cutTitle('2', 82, 82)).toBe('2등급 컷 82점');
+    // 4-5: 풀이 잠금 안내(학생 화면에는 아직 붙이지 않음)와 진행자용 화면의 한 줄. 시각 자리에는 그 항목의 end 가 들어간다.
+    expect(S.solutionLock.notice(17, 45)).toBe('지금은 시험 시간이라 풀이는 잠시 쉬어요. 오후 5시 45분부터 다시 볼 수 있어요. 답 입력은 지금도 할 수 있어요.');
+    expect(S_TEST.lockOpen).toBe('풀이 잠금: 지금 열림');
+    expect(S_TEST.lockClosed(17, 45)).toBe('풀이 잠금: 지금 잠김(오후 5시 45분까지)');
   });
 });
 

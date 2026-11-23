@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { LOCKS } from '../exams';
 import rawLocks from '../exams/locks.json';
@@ -92,8 +92,8 @@ describe('풀이 잠금(4-5)', () => {
       else process.env.TZ = before;
     }
     expect(localTimes.size).toBeGreaterThan(1);
-    // 판정 코드: 판정(lock.ts)과, 지금 시각을 한국 시간 글자로 바꾸는 곳(dates.ts).
-    for (const file of ['src/logic/lock.ts', 'src/logic/dates.ts']) {
+    // 판정 코드: 판정(lock.ts), 지금 시각을 한국 시간 글자로 바꾸는 곳(dates.ts), 화면에서 판정하는 훅(LockNotice.tsx 의 useLockState).
+    for (const file of ['src/logic/lock.ts', 'src/logic/dates.ts', 'src/components/LockNotice.tsx']) {
       expect(readFileSync(resolve(process.cwd(), file), 'utf8'), file).not.toMatch(LOCAL_TIME);
     }
     // 판정은 Date 로 시각을 만들지 않고 한국 시간 글자끼리 견준다.
@@ -260,6 +260,25 @@ describe('풀이 잠금 달력과 판정의 세부(4-5)', () => {
     expect(validateLocks([{ ...good, start: '2030-01-03T08:40' }])).toEqual(['1번째 항목: start와 end는 같은 날이어야 해요.', '1번째 항목: start가 end보다 앞서야 해요.']);
     expect(validateLocks([{ ...good, start: '2030-01-02T17:45' }])).toEqual(['1번째 항목: start가 end보다 앞서야 해요.']);
     expect(validateLocks([good, { ...good, start: '2030-01-02T17:10' }])).toEqual(['2번째 항목: 앞의 항목과 id가 겹쳐요(test-lock-a).']);
+  });
+
+  it('풀이 잠금 안내 조각과 판정 훅은 지금 진행자용 화면만 쓰고, 학생이 보는 화면에는 붙이지 않는다', () => {
+    // 지금 앱에는 풀이 계열 기능이 없다. 그런 기능을 더할 때 이 검사를 함께 고친다(docs/결정기록.md 6장의 풀이 잠금 규칙).
+    const root = process.cwd();
+    const sources = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const full = join(dir, name);
+        if (statSync(full).isDirectory()) return sources(full);
+        return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [relative(root, full).split(sep).join('/')] : [];
+      });
+    const files = sources(resolve(root, 'src'));
+    const read = (f: string) => readFileSync(resolve(root, f), 'utf8');
+    expect(files.length).toBeGreaterThan(30);
+    // 조각과 판정 훅(src/components/LockNotice.tsx)을 가져다 쓰는 곳은 진행자용 화면뿐이다(앱 배포용 묶음에는 실리지 않는다).
+    expect(files.filter((f) => /from '[^']*\/LockNotice'/.test(read(f)))).toEqual(['src/screens/TestAdmin.tsx']);
+    expect(read('src/screens/TestAdmin.tsx')).not.toContain('<LockNotice');
+    // 학생에게 보일 안내 문구는 조각 안에서만 쓴다.
+    expect(files.filter((f) => /S\.solutionLock\b/.test(read(f)))).toEqual(['src/components/LockNotice.tsx']);
   });
 
   it('묶음 안 달력(src/exams/locks.json)은 형식에 맞고, 합친 달력(LOCKS)은 그 항목 그대로다', () => {

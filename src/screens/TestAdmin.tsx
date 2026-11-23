@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { platform } from '#platform';
+import { useLockState } from '../components/LockNotice';
 import { Chip, ConfirmDialog, Message, Screen, TopBar } from '../components/ui';
-import { EXAMS, findExam } from '../exams';
+import { EXAMS, findExam, LOCKS } from '../exams';
+import type { LockState } from '../logic/lock';
 import { navigate } from '../router';
 import { finishTestRun, resetTestRuns, setRunAnswerKey, startTestRun, useAppData } from '../state/hooks';
 import { exportCsv, exportJson, finalAnswersOf, parseAnswerKey, PARTICIPANT_PATTERN, type RunExportRow, runMetrics, startOf } from '../state/testlog';
@@ -40,6 +42,14 @@ async function copyText(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * 풀이 잠금 상태 한 줄(작업 지시서 3의 4-5): "풀이 잠금: 지금 열림" 또는 "풀이 잠금: 지금 잠김(오후 5시 45분까지)".
+ * 진행자용 화면에만 둔다. 이 화면은 앱 배포용 묶음에 실리지 않는다(src/tools).
+ */
+export function lockStatusLine(state: LockState): string {
+  return state.locked ? S_TEST.lockClosed(state.until.h, state.until.mi) : S_TEST.lockOpen;
 }
 
 function fmtTime(ms: number): string {
@@ -152,6 +162,8 @@ export function TestAdmin() {
   const [formMsg, setFormMsg] = useState<string | null>(null);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  // 합친 풀이 잠금 달력(묶음 안 달력, 2부부터는 넘겨받은 달력도)으로 지금 잠겼는지 본다.
+  const lock = useLockState(LOCKS);
 
   const active = data.testRuns.find((r) => r.id === data.activeRunId) ?? null;
   const rows: RunExportRow[] = data.testRuns.map((run: TestRun) => {
@@ -228,6 +240,9 @@ export function TestAdmin() {
       }
     >
       <p className="sub">{S_TEST.intro}</p>
+      <p className="sub mt2" data-testid="lock-status">
+        {lockStatusLine(lock)}
+      </p>
 
       {active ? (
         <section className="box mt4" aria-labelledby="active-title" data-testid="active-run">

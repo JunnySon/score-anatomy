@@ -380,6 +380,14 @@ export const S = {
     empty: '아직 넣은 시험이 없어요. 시험을 하나 넣으면 여기에 쌓여요.',
     storageFailed: '이 브라우저에서는 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
   },
+
+  // 풀이 잠금 안내(작업 지시서 3의 4-5). 풀이 계열 기능이 생기면 잠긴 동안 그 기능 대신 보여 준다(src/components/LockNotice.tsx).
+  // 지금은 풀이 계열 기능이 없어서 학생이 보는 화면에 붙이지 않는다.
+  solutionLock: {
+    /** h, mi 는 풀리는 시각(그 항목의 end, 한국 시간)이다. */
+    notice: (h: number, mi: number) =>
+      `지금은 시험 시간이라 풀이는 잠시 쉬어요. ${clockText(h, mi)}부터 다시 볼 수 있어요. 답 입력은 지금도 할 수 있어요.`,
+  },
 } as const;
 
 /** 5행 방식 답 입력 화면에서만 쓰는 문구. */
@@ -418,6 +426,9 @@ export const S_TOOLS = {
 export const S_TEST = {
   title: '테스트 진행자용',
   intro: '사용성 테스트를 진행하는 사람이 쓰는 화면이에요. 측정 기록은 이 기기 안에만 남아요.',
+  // 합친 풀이 잠금 달력으로 판정한 지금의 상태(작업 지시서 3의 4-5). h, mi 는 풀리는 시각(한국 시간)이다.
+  lockOpen: '풀이 잠금: 지금 열림',
+  lockClosed: (h: number, mi: number) => `풀이 잠금: 지금 잠김(${clockText(h, mi)}까지)`,
   newTitle: '새 참가자',
   participant: '참가자 코드',
   participantHint: 'P01처럼 적어 주세요. 이름은 넣지 마세요.',

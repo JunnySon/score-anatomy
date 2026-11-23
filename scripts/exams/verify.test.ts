@@ -12,6 +12,7 @@ import { examFileText } from './state.ts';
 import { parseTarget } from './verify.ts';
 import {
   ISSUED_AT,
+  ROOT,
   TEST_LOCK,
   makeDataDir,
   makeOutDir,
@@ -23,6 +24,7 @@ import {
   testExam,
   verifyWith,
   writeExam,
+  writeLocks,
   writeSignedRelease,
 } from './testkit.ts';
 import type { TempKey } from './testkit.ts';
@@ -389,8 +391,70 @@ describe('발행 도구 exams:verify(작업 지시서 3의 6-2, 6-4)', () => {
       expect(same.code).toBe(0);
       expect(same.out).toContain('자료 폴더의 마지막 발행(seq 2, issuedAt 2030-01-02T20:10)과 같아요.');
       expect((await verifyWith(older, key.publicFile, dir)).code).toBe(0);
-      // 발행한 적이 없는 자료 폴더(seq 0)로는 견주지 않는다(테스트 전용 발행물 확인과 같음).
-      expect((await verifyWith(oldUrl, key.publicFile, dataDir())).code).toBe(0);
+      // 발행한 적이 없는 자료 폴더(seq 0)로 주소를 확인하면 주소의 발행물이 더 새로워서 실패한다(git pull 을 빠뜨린 클론, 2차 검토 T1).
+      const never = await verifyWith(oldUrl, key.publicFile, dataDir());
+      expect(never.code).toBe(1);
+      expect(never.err[1]).toBe(
+        '  - 주소의 발행물(seq 1, issuedAt 2030-01-02T17:10)이 자료 폴더의 마지막 발행(아직 발행한 적이 없어요, seq 0)보다 새로워요. 자료 폴더가 최신이 아닐 수 있어요. git pull 로 자료 폴더를 받은 뒤 다시 확인하고, 그 전에는 발행하지 않아요.',
+      );
+    } finally {
+      for (const s of servers) await s.close();
+    }
+  }, 60000);
+
+  it('주소를 확인할 때 자료 폴더의 state.json 이 없거나 읽지 못하거나 모양이 틀리면 견주지 못했다고 실패로 보고, 잠금 달력만 다른 같은 seq 의 발행물도 실패로 보며, 테스트 전용 공개 키면 견주지 않는다(2차 검토 T1, T2, T4)', async () => {
+    const key = tempKey();
+    const { dir, out } = published(key, testExam());
+    const servers: ServeHandle[] = [];
+    try {
+      const at = async (folder: string) => {
+        const s = await startServer({ dir: folder, port: 0 });
+        servers.push(s);
+        return { kind: 'url' as const, url: new URL(s.url) };
+      };
+      const url = await at(out);
+      expect((await verifyWith(url, key.publicFile, dir)).code).toBe(0);
+      const head = '결과: 주소의 발행물이 자료 폴더의 마지막 발행과 달라요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:';
+      // state.json 에 git 충돌 표시가 남음, 파일이 없음, format 이 틀림: 견주지 못해서 주소 확인은 실패다. 폴더 확인은 알리기만 한다.
+      const broken: [string, (d: string) => void, string][] = [
+        ['충돌 표시', (d) => writeFileSync(join(d, 'state.json'), ['<<<<<<< HEAD', '{}', '=======', '{}', '>>>>>>> other', ''].join(String.fromCharCode(10))), 'state.json: JSON 으로 읽지 못했어요'],
+        ['파일 없음', (d) => rmSync(join(d, 'state.json')), 'state.json: 파일이 없어요.'],
+        ['format 틀림', (d) => writeFileSync(join(d, 'state.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')), format: 2 })), 'format 은 1이어야 해요.'],
+      ];
+      for (const [name, breakIt, why] of broken) {
+        const copy = dataDir();
+        cpSync(dir, copy, { recursive: true });
+        breakIt(copy);
+        const r = await verifyWith(url, key.publicFile, copy);
+        expect(r.code, name).toBe(1);
+        expect(r.err[0], name).toBe(head);
+        expect(r.err[1], name).toContain('  - 자료 폴더의 state.json 를 읽지 못해 마지막 발행과 견주지 못했어요(');
+        expect(r.err[1], name).toContain(why);
+        const folder = await verifyWith(out, key.publicFile, copy);
+        expect(folder.code, name).toBe(0);
+        expect(folder.out.join(' '), name).toContain('자료 폴더의 state.json 를 읽지 못해 마지막 발행과 견주지 못했어요(');
+      }
+      // 같은 시험, 같은 issuedAt 으로 잠금 달력만 다르게 발행한 두 자료 폴더(둘 다 seq 1): 한쪽 발행물을 다른 쪽 자료 폴더로 확인하면 실패다.
+      const one = dataDir();
+      const two = dataDir();
+      for (const [d, end] of [[one, '2030-01-02T17:45'], [two, '2030-01-02T17:50']] as const) {
+        writeExam(d, testExam());
+        writeLocks(d, [{ ...TEST_LOCK, end }]);
+      }
+      const outOne = outDir();
+      expect(publishTo(one, outOne, key.keyFile).code).toBe(0);
+      expect(publishTo(two, outDir(), key.keyFile).code).toBe(0);
+      const lockDiff = await verifyWith(await at(outOne), key.publicFile, two);
+      expect(lockDiff.code).toBe(1);
+      expect(lockDiff.err[1]).toBe(
+        '  - 주소의 발행물(seq 1, issuedAt 2030-01-02T17:10)은 seq, issuedAt, 시험이 자료 폴더의 마지막 발행(seq 1, issuedAt 2030-01-02T17:10)과 같은데 잠금 달력이 state.json 과 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.',
+      );
+      expect((await verifyWith(await at(outOne), key.publicFile, one)).code).toBe(0);
+      // 테스트 전용 발행물(커밋된 exam-data/testdata 의 정상 발행물)을 테스트 전용 공개 키로 주소 확인: 진짜 발행이 있는 자료 폴더와 견주지 않는다.
+      const testdata = join(ROOT, 'exam-data', 'testdata');
+      const valid = await verifyWith(await at(join(testdata, 'test-only-valid')), join(testdata, 'test-only-public-key.txt'), dir);
+      expect(valid.code).toBe(0);
+      expect(valid.out).toContain('공개 키가 테스트 전용 키라서 자료 폴더의 마지막 발행과 견주지 않았어요.');
     } finally {
       for (const s of servers) await s.close();
     }

@@ -10,7 +10,7 @@ import type { Io } from './io.ts';
 import { INDEX_FILE, RELEASE_FORMAT, SIG_FILE } from './release.ts';
 import type { ReleaseEntry } from './release.ts';
 import { checkSignature, isTestOnlyKey, keyFingerprint, parsePublicKeyText } from './sign.ts';
-import { parseState } from './state.ts';
+import { locksSha256, parseState } from './state.ts';
 
 // exams:verify(작업 지시서 3의 6-2, 6-4): 발행 폴더나 http(s) 주소의 발행물을 공개 키로 확인한다. 발행 직후와 올린 뒤에 쓴다.
 // 받은 바이트 그대로 본다(다시 직렬화하지 않음): index.json.sig 로 서명 확인, format 이 1, seq 가 1 이상의 정수, issuedAt 모양,
@@ -66,13 +66,15 @@ export interface IndexCheck {
   issuedAt: string | null;
   examCount: number | null;
   lockCount: number | null;
+  /** 잠금 달력의 SHA-256(state.json 의 locksSha256 과 같은 셈, 별도 검토 2차 T4). 달력이 틀렸으면 null. */
+  locksSha256: string | null;
   entries: ReleaseEntry[];
   errors: string[];
 }
 
 /** index.json 과 index.json.sig 를 받은 바이트 그대로 확인한다. */
 export function checkIndex(index: Fetched, sig: Fetched, publicKey: KeyObject): IndexCheck {
-  const out: IndexCheck = { signed: false, seq: null, issuedAt: null, examCount: null, lockCount: null, entries: [], errors: [] };
+  const out: IndexCheck = { signed: false, seq: null, issuedAt: null, examCount: null, lockCount: null, locksSha256: null, entries: [], errors: [] };
   if (index.bytes === null) out.errors.push(`${INDEX_FILE}: ${index.error ?? '읽지 못했어요.'}`);
   if (sig.bytes === null) out.errors.push(`${SIG_FILE}: ${sig.error ?? '읽지 못했어요.'}`);
   if (index.bytes === null || sig.bytes === null) return out;
@@ -105,7 +107,10 @@ export function checkIndex(index: Fetched, sig: Fetched, publicKey: KeyObject): 
   else out.errors.push(`${INDEX_FILE}: issuedAt 은 2030-01-02T17:10 같은, 실제로 있는 날짜와 시각(한국 시간)이어야 해요.`);
   const lockErrors = validateLocks(raw.locks);
   if (lockErrors.length > 0) out.errors.push(...lockErrors.map((e) => `${INDEX_FILE} 의 잠금 달력(locks): ${e}`));
-  else out.lockCount = (raw.locks as unknown[]).length;
+  else {
+    out.lockCount = (raw.locks as unknown[]).length;
+    out.locksSha256 = locksSha256(raw.locks);
+  }
 
   if (!Array.isArray(raw.exams)) {
     out.errors.push(`${INDEX_FILE}: exams 는 시험 목록의 배열이어야 해요.`);
@@ -169,6 +174,8 @@ export interface VerifyResult {
   lines: string[];
   seq: number | null;
   issuedAt: string | null;
+  /** 잠금 달력의 SHA-256. 읽지 못했으면 null. */
+  locksSha256: string | null;
   entries: ReleaseEntry[];
 }
 
@@ -191,7 +198,7 @@ export function finishVerify(head: IndexCheck, files: ReadonlyMap<string, Fetche
     errors.push(...found);
     lines.push(`  ${entry.id}: rev ${entry.rev}, sha256 ${entry.sha256.slice(0, 12)}, ${entry.file}, ${found.length === 0 ? '맞아요' : '맞지 않아요'}.`);
   }
-  return { ok: errors.length === 0, errors, warnings: [], lines, seq: head.seq, issuedAt: head.issuedAt, entries: head.entries };
+  return { ok: errors.length === 0, errors, warnings: [], lines, seq: head.seq, issuedAt: head.issuedAt, locksSha256: head.locksSha256, entries: head.entries };
 }
 
 /** 폴더 안 파일 하나를 읽는다. path 는 / 로 나눈 상대 경로다. */
@@ -341,8 +348,8 @@ export interface VerifyOptions {
 }
 
 /**
- * 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준 결과. 견주지 않았으면(state.json 이 없음, 발행한 적이 없음, seq 를 읽지 못함)
- * lines, warnings 가 비고 differs 가 null 이다. 다르면 warnings 에 폴더 확인의 알림을, differs 에 주소 확인(올린 뒤)의 실패 이유를 둔다.
+ * 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준 결과. 다르거나 견주지 못했으면 warnings 에 폴더 확인의 알림을,
+ * differs 에 주소 확인의 실패 이유를 둔다. 견주지 않아도 되는 경우(테스트 전용 키, 발행물의 seq 를 읽지 못함)는 differs 가 null 이다.
  */
 interface StateCompare {
   lines: string[];
@@ -350,15 +357,38 @@ interface StateCompare {
   differs: string | null;
 }
 
-/** 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준다. */
-function compareWithState(dataDir: string, result: VerifyResult): StateCompare {
-  const none: StateCompare = { lines: [], warnings: [], differs: null };
-  const file = readJsonFile(join(dataDir, STATE_FILE), STATE_FILE);
-  if (file.error) return none;
-  const state = parseState(file.value).state;
-  if (state === null || state.seq === 0 || result.seq === null) return none;
-  const last = `자료 폴더의 마지막 발행(seq ${state.seq}, issuedAt ${state.issuedAt ?? '없음'})`;
+/**
+ * 발행물이 자료 폴더의 마지막 발행(state.json)과 같은지 견준다. seq, issuedAt, 시험 목록과 시험 파일의 SHA-256, 잠금 달력(locksSha256)이
+ * 모두 같아야 같은 발행이다(잠금 달력은 별도 검토 2차 T4).
+ * - 공개 키가 테스트 전용이면 견주지 않는다. 테스트 전용 발행물(exam-data/testdata)은 진짜 자료 폴더와 상관이 없다(별도 검토 2차 T2).
+ * - state.json 이 없거나 읽지 못하거나 모양이 틀리면 견주지 못했다고 적고, 주소 확인은 실패로 본다(별도 검토 2차 T1).
+ * - 자료 폴더가 아직 발행한 적이 없으면(seq 0) 주소의 발행물이 더 새로운 것이라 주소 확인은 실패로 본다(git pull 을 빠뜨린 클론, T1).
+ *   폴더 확인은 지금처럼 알리지 않는다(리허설과 테스트의 임시 자료 폴더).
+ */
+function compareWithState(dataDir: string, result: VerifyResult, testOnlyKey: boolean): StateCompare {
+  if (result.seq === null) return { lines: [], warnings: [], differs: null };
+  if (testOnlyKey) return { lines: ['공개 키가 테스트 전용 키라서 자료 폴더의 마지막 발행과 견주지 않았어요.'], warnings: [], differs: null };
   const here = `주소의 발행물(seq ${result.seq}, issuedAt ${result.issuedAt ?? '틀림'})`;
+  const file = readJsonFile(join(dataDir, STATE_FILE), STATE_FILE);
+  const parsed = file.error === null ? parseState(file.value) : null;
+  if (parsed === null || parsed.state === null) {
+    const why = file.error ?? (parsed !== null && parsed.errors.length > 0 ? parsed.errors.join(' ') : '모양이 틀려요.');
+    const text = `자료 폴더의 ${STATE_FILE} 를 읽지 못해 마지막 발행과 견주지 못했어요(${why}).`;
+    return {
+      lines: [],
+      warnings: [text],
+      differs: `${text} git pull 로 자료 폴더를 받고(충돌이 있으면 풀고) --data 가 맞는지 본 뒤 다시 확인하고, 그 전에는 발행하지 않아요.`,
+    };
+  }
+  const state = parsed.state;
+  if (state.seq === 0) {
+    return {
+      lines: [],
+      warnings: [],
+      differs: `${here}이 자료 폴더의 마지막 발행(아직 발행한 적이 없어요, seq 0)보다 새로워요. 자료 폴더가 최신이 아닐 수 있어요. git pull 로 자료 폴더를 받은 뒤 다시 확인하고, 그 전에는 발행하지 않아요.`,
+    };
+  }
+  const last = `자료 폴더의 마지막 발행(seq ${state.seq}, issuedAt ${state.issuedAt ?? '없음'})`;
   if (result.seq !== state.seq || result.issuedAt !== state.issuedAt) {
     let differs: string;
     if (result.seq > state.seq) {
@@ -383,6 +413,13 @@ function compareWithState(dataDir: string, result: VerifyResult): StateCompare {
       lines: [],
       warnings: [`seq 는 ${last}과 같은데 시험 목록이나 시험 파일의 SHA-256 이 state.json 과 달라요.`],
       differs: `${here}은 seq 와 issuedAt 이 ${last}과 같은데 시험 목록이나 시험 파일의 SHA-256 이 state.json 과 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.`,
+    };
+  }
+  if (state.locksSha256 !== null && result.locksSha256 !== null && state.locksSha256 !== result.locksSha256) {
+    return {
+      lines: [],
+      warnings: [`seq 와 시험은 ${last}과 같은데 잠금 달력이 state.json 과 달라요.`],
+      differs: `${here}은 seq, issuedAt, 시험이 ${last}과 같은데 잠금 달력이 state.json 과 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.`,
     };
   }
   return { lines: [`${last}과 같아요.`], warnings: [], differs: null };
@@ -421,7 +458,7 @@ export async function runVerify(opts: VerifyOptions, io: Io): Promise<number> {
   } else {
     result = await verifyUrl(opts.target.url, parsed.key, opts.timeoutMs ?? VERIFY_TIMEOUT_MS);
   }
-  const state = compareWithState(opts.dataDir, result);
+  const state = compareWithState(opts.dataDir, result, isTestOnlyKey(parsed.key));
   for (const line of [...result.lines, ...state.lines]) io.out(line);
   // 주소를 확인할 때(올린 뒤) 자료 폴더의 마지막 발행과 다르면 알림이 아니라 실패로 본다(별도 검토 C2). 결과 줄이나 종료 코드만 보고
   // 올리기를 마친 것으로 아는 일을 막고, 최신이 아닌 자료 폴더로 다음 발행을 하기 전에 알아채게 한다. 폴더 확인은 지금처럼 알리기만 한다.

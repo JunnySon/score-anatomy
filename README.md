@@ -44,6 +44,12 @@ dist 폴더는 상대 경로와 해시 라우팅을 쓰기 때문에 어떤 정�
 | `npm run build:artifact` | 단일 HTML을 아티팩트 뷰어용 파일(release/score-anatomy-artifact.html)로 바꿔요 |
 | `npm run package` | 전달용 파일을 release 폴더에 모아요(단일 HTML 사본, 아티팩트용 파일, 프로젝트 압축 파일) |
 
+화면 테스트(`npm run e2e`, `npm run verify`)는 4173, 4174 포트에 미리 보기 서버를 새로 띄워요. 그 포트를 이미 쓰고 있으면(예: `npm run preview` 가 떠 있을 때) 옛 빌드를 재지 않으려고 실패로 끝나요. 떠 있는 서버를 내리거나 다른 포트를 주세요.
+
+```bash
+SA_PORT=4300 npm run verify
+```
+
 화면 테스트는 Playwright의 Chromium을 써요. 처음이면 브라우저를 한 번 내려받아요.
 
 ```bash

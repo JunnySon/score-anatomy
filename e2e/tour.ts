@@ -223,7 +223,8 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await page.getByTestId('step-1').getByTestId('copy-coords').click();
   // 복사 권한을 준 상태다. 실제로 복사됐는지 내용까지 확인한다.
   await expect(page.getByTestId('step-1').getByText('좌표를 복사했어요.')).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('예시 좌표 12번\n예시 좌표 20번');
+  // 윈도우의 클립보드는 줄바꿈을 \r\n 으로 바꿔 돌려주므로 줄바꿈을 맞춘 뒤 견준다.
+  expect((await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n')).toBe('예시 좌표 12번\n예시 좌표 20번');
   await page.getByTestId('step-1').getByTestId('copy-coords').scrollIntoViewIfNeeded();
   await stop('계단-펼침');
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CorrectionNotice } from '../components/CorrectionNotice';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, BottomSheet, Chip, IconInfo, Message, Screen, TopBar } from '../components/ui';
+import { examShiftKey } from '../exams/merge';
 import { typesReadyOf } from '../exams/validate';
 import { cutView, gradeKeys, type CutView } from '../logic/cuts';
 import { analyze, type Grade } from '../logic/scoring';
@@ -54,6 +55,8 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
       tabs="current"
       // 알림이 닫히면 아래 내용이 위로 올라오므로, 같은 자리를 연달아 누른 것이 올라온 요소에 닿지 않게 한다.
       guardKey={notice ? 'correction' : 'plain'}
+      // 넘겨받은 새 판으로 정정 알림, 등급컷, 계단 버튼이 생기면 내용의 자리가 옮겨 간다. 그때는 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={examShiftKey(exam)}
       layer={
         sourceOpen && cv ? (
           <BottomSheet title={S.anatomy.sourceTitle} onClose={() => setSourceOpen(false)}>

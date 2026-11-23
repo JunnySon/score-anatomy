@@ -6,8 +6,10 @@
 // 다른 자리를 누르면 바로 푼다.
 //
 // - 화면을 요소로 가리지 않고 그 자리에 온 click 만 버린다. 그래서 그 자리에서 시작한 끌기(스크롤)는 그대로 된다.
-// - 화면 전체를 막는 것은 한 군데뿐이다. 마지막 문항의 답을 넣어 저절로 입력 확인 화면으로 넘어갈 때다.
+// - 화면 전체를 막는 것은 두 경우다. 하나는 마지막 문항의 답을 넣어 저절로 입력 확인 화면으로 넘어갈 때다.
 //   답을 넣던 박자로 더 누른 것이 새 화면의 버튼(다른 자리)에 닿아 확인과 표시를 건너뛰고 채점되는 일을 막는다.
+//   다른 하나는 학생의 누름 없이 껍데기가 넘겨준 새 시험 자료로 화면 안 내용의 자리가 옮겨 갈 때다(markContentShifted).
+//   옮겨 가기 전의 자리를 보고 누른 것이 그 자리에 온 다른 시험이나 다른 문항에 닿지 않게 한다(작업 지시서 3의 별도 검토 A3).
 //   그 밖에는 다른 자리의 키를 화면이 바뀐 직후에 눌러도 들어간다.
 // - 단답형 숫자 키(data-tap-safe)는 버리지 않는다. 숫자는 "다음"이나 "넣기"로 확정하기 전에는 저장되지 않고
 //   큰 칸에 보여서, 잘못 들어가도 보고 지울 수 있다. 반대로 숫자를 버리면 누른 것과 다른 답(150 대신 50)이 저장될 수 있다.
@@ -151,4 +153,16 @@ export function markUiChanged(area: GuardArea = 'spot'): void {
   const keepScreen = guard !== null && guard.area === 'screen' && now < guard.until;
   guardId += 1;
   holdGuard(lastClick, area === 'screen' || keepScreen ? 'screen' : 'spot', TAP_GUARD_MS);
+}
+
+/**
+ * 학생의 누름 없이(껍데기가 넘겨준 새 시험 자료로) 화면 안 내용의 자리가 옮겨 갔다고 알린다(작업 지시서 3의 별도 검토 A3).
+ * markUiChanged 와 달리 마지막 누름과 상관없이 화면 전체를 이때부터 0.5초 막는다. 누른 적이 없으면 어느 자리를 막을지 알 수 없고,
+ * 목록이 한 칸씩 밀리면 어느 자리에든 다른 선택지가 올 수 있어서다. 받지 않은 누름이 있으면 지금처럼 그때부터 다시 센다.
+ * 키보드로 누른 것과 단답형 숫자 키(data-tap-safe)는 지금처럼 건드리지 않는다.
+ */
+export function markContentShifted(): void {
+  if (typeof document === 'undefined') return;
+  guardId += 1;
+  holdGuard(lastClick ?? { x: 0, y: 0 }, 'screen', TAP_GUARD_MS);
 }

@@ -44,7 +44,7 @@ function summaryOf(session: Session): { score: string; corrected: 'correction' |
 export function History() {
   const data = useAppData();
   // 시험 목록이 바뀌면(넘겨받은 새 자료, 작업 지시서 3의 5-3) 다시 그린다. 시험은 findExam 으로 지금 목록에서 찾는다.
-  useCatalog();
+  const { remote } = useCatalog();
   const Extras = tools.HistoryExtras;
   const status = useSyncExternalStore(store.subscribeStatus, store.getStatus, store.getStatus);
   // 앱: 앞서 저장된 기록을 읽지 못해 보관했다는 안내. 기록에 남은 표시로 보여 주고(앱을 끄고 다시 켜도 한 번은 보이게),
@@ -76,6 +76,8 @@ export function History() {
   return (
     <Screen
       tabs="history"
+      // 넘겨받은 새 자료로 기록의 점수, 표시, 자리가 바뀌면 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={String(remote?.seq ?? '')}
       layer={
         confirm ? (
           <ConfirmDialog

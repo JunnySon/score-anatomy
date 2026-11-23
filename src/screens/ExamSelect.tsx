@@ -3,6 +3,7 @@ import { platform } from '#platform';
 import { RemoteNotice, RemoteRefresh } from '../components/RemoteNotice';
 import { Badge, Message, Option, Screen, TopBar } from '../components/ui';
 import { catalog, useCatalog, useExams } from '../exams';
+import { examListShiftKey } from '../exams/merge';
 import { parseYmd } from '../logic/dates';
 import { navigate } from '../router';
 import { startSession } from '../state/hooks';
@@ -65,6 +66,8 @@ export function ExamSelect() {
       // 고를 때마다 아래 질문이 나타나고 화면이 저절로 스크롤된다. 연달아 누른 것이 그 자리에 온 다른 선택지에 닿지 않게 한다.
       // 넘겨받은 새 자료로 시험 목록이 바뀌면(seq) 선택지의 자리가 옮겨 갈 수 있어서 그때도 막는다.
       guardKey={`${examId ?? ''}/${graded ?? ''}/${seen ?? ''}/${remote?.seq ?? ''}`}
+      // 학생이 누르지 않았어도 넘겨받은 새 자료로 목록이 바뀌면 선택지의 자리가 옮겨 가서, 그때는 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={examListShiftKey(exams)}
       actions={
         <>
           {msg ? <Message>{msg}</Message> : null}

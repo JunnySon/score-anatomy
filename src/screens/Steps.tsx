@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { platform } from '#platform';
 import { Badge, Message, Screen, TopBar } from '../components/ui';
+import { examShiftKey } from '../exams/merge';
 import { typesReadyOf } from '../exams/validate';
 import type { Grade } from '../logic/scoring';
 import { selectSteps, type Step } from '../logic/steps';
@@ -108,7 +109,12 @@ export function Steps({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const typesReady = typesReadyOf(h.exam);
   const steps = typesReady ? selectSteps(h.exam, grade) : [];
   return (
-    <Screen top={<TopBar back={h.path('/anatomy')} title={S.steps.top} />} tabs="current">
+    <Screen
+      top={<TopBar back={h.path('/anatomy')} title={S.steps.top} />}
+      tabs="current"
+      // 넘겨받은 새 판으로 계단 카드가 바뀌면 카드의 자리가 옮겨 간다. 그때는 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={examShiftKey(h.exam)}
+    >
       <div className="inline">
         <h2 className="title">{steps.length > 0 ? S.steps.title(steps.length) : S.steps.emptyTitle}</h2>
         {h.exam.isSample ? <Badge>{S.common.sample}</Badge> : null}

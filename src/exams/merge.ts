@@ -86,6 +86,19 @@ function nameOf(raw: unknown, index: number): string {
 }
 
 /**
+ * 화면의 연달아 누르기 보호에 쓰는 시험 판의 이름(id 와 판 번호). 넘겨받은 새 판으로 바뀌면 값이 바뀐다
+ * (화면 틀 Screen 의 shiftKey, src/tapGuard.ts 의 markContentShifted, 작업 지시서 3의 별도 검토 A3).
+ */
+export function examShiftKey(exam: Exam): string {
+  return `${exam.id}@${revOf(exam)}`;
+}
+
+/** 시험 목록 화면에 쓰는 같은 값. 목록의 차례와, 선택지의 높이를 바꾸는 글자(제목, 안내, 시행일, 배지)까지 넣는다. */
+export function examListShiftKey(exams: readonly Exam[]): string {
+  return JSON.stringify(exams.map((e) => [e.id, revOf(e), e.title, e.note, e.examDate ?? null, e.isSample, e.answerReleased]));
+}
+
+/**
  * 두 판의 문항 구성(문항 수와, 차례대로 문항의 no, kind, 5지선다의 보기 수)이 같은지.
  * 기록의 답과 표시는 문항 번호로 붙고 답 입력 화면의 커서는 문항의 차례라서, 구성이 다른 판으로 바꾸면 답이 다른 문항에 붙는다.
  */

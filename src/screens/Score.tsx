@@ -1,5 +1,6 @@
 import { CorrectionNotice } from '../components/CorrectionNotice';
 import { Badge, Screen, TopBar } from '../components/ui';
+import { examShiftKey } from '../exams/merge';
 import type { Grade } from '../logic/scoring';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
@@ -18,6 +19,8 @@ export function Score({ h, grade }: { h: SessionHandle; grade: Grade }) {
       tabs="current"
       // 알림이 닫히면 아래 내용이 위로 올라오므로, 같은 자리를 연달아 누른 것이 올라온 요소에 닿지 않게 한다.
       guardKey={notice ? 'correction' : 'plain'}
+      // 넘겨받은 새 판으로 정정 알림이 생기면 아래 내용이 내려간다. 그때는 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={examShiftKey(exam)}
       actions={
         <>
           <div className="actions__row">

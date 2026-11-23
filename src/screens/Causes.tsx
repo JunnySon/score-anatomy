@@ -1,4 +1,5 @@
 import { Badge, IconCross, Option, Screen, TopBar } from '../components/ui';
+import { examShiftKey } from '../exams/merge';
 import { acceptedAnswers } from '../exams/validate';
 import type { Grade } from '../logic/scoring';
 import { navigate } from '../router';
@@ -48,6 +49,8 @@ export function Causes({ h, grade }: { h: SessionHandle; grade: Grade }) {
     <Screen
       top={<TopBar back={h.path('/score')} title={S.causes.top} />}
       tabs="current"
+      // 정정된 판이 오면 틀린 문항 카드가 빠지거나 더해져 아래 카드의 자리가 옮겨 간다. 그때 누른 것이 다른 문항의 원인으로 들어가지 않게 한다(별도 검토 A3).
+      shiftKey={examShiftKey(exam)}
       actions={
         <div className="actions__row">
           {wrong.length > 0 && !allChosen ? (

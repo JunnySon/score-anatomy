@@ -434,10 +434,15 @@ describe('발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4)', () => {
       '자료 폴더(저장소의 exam-data)에 public-key.txt 가 없어요. 진짜 발행은 비밀 키와 짝인 공개 키가 자료 폴더에 있어야 해요(앱은 그 공개 키로 서명을 확인해요). 키를 맡은 사람이 npm run exams:keygen 으로 만든 공개 키를 먼저 커밋해요.',
     );
     expect(picture(real, o)).toEqual(before);
-    // 쓰지 않고 보여 주기(--dry-run)는 지금처럼 짝을 보지 않았다고만 적는다.
+    // 쓰지 않고 보여 주기(--dry-run)는 거부하지 않지만, 같은 입력의 실제 발행은 거부된다고 결과 줄에 적는다(2차 검토 T3).
     const dry = publishTo(real, o.out, key.keyFile, { root, dryRun: true });
     expect(dry.code).toBe(0);
     expect(dry.out.join('\n')).toContain('자료 폴더에 public-key.txt 가 없어서 짝인지는 보지 않았어요.');
+    expect(dry.out[dry.out.length - 1]).toBe(
+      '결과: 발행 폴더와 state.json 을 쓰지 않았어요. 다만 자료 폴더(저장소의 exam-data)에 public-key.txt 가 없어서 실제 발행은 거부돼요. 키를 맡은 사람이 npm run exams:keygen 으로 만든 공개 키를 먼저 커밋해요.',
+    );
+    expect(dry.out.join('\n')).not.toContain('결과: 발행하면 위와 같아요');
+    expect(picture(real, o)).toEqual(before);
     // 짝인 공개 키를 두면 발행한다.
     writeFileSync(join(real, 'public-key.txt'), publicKeyText(key.key));
     expect(publishTo(real, o.out, key.keyFile, { root }).code).toBe(0);
@@ -447,6 +452,12 @@ describe('발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4)', () => {
     const t = publishTo(temp, outDir().out, key.keyFile);
     expect(t.code).toBe(0);
     expect(t.out.join('\n')).toContain('자료 폴더에 public-key.txt 가 없어서 짝인지는 보지 않았어요.');
+    // 임시 자료 폴더의 쓰지 않는 발행은 지금처럼 "발행하면 위와 같아요"로 끝난다(발행한 적이 없는 새 임시 자료 폴더).
+    const fresh = dataDir();
+    writeExam(fresh, testExam());
+    const tempDry = publishTo(fresh, outDir().out, key.keyFile, { dryRun: true });
+    expect(tempDry.code).toBe(0);
+    expect(tempDry.out[tempDry.out.length - 1]).toBe('결과: 발행하면 위와 같아요. 발행 폴더와 state.json 을 쓰지 않았어요.');
   });
 });
 

@@ -180,6 +180,8 @@ export function runPublish(opts: PublishOptions, io: Io): number {
   ];
   let key: KeyObject | null = null;
   let keyNote: string;
+  /** 쓰지 않는 발행에서, 같은 입력의 실제 발행이 거부될 까닭(별도 검토 2차 T3). 없으면 null. */
+  let refusedLater: string | null = null;
   if (opts.dryRun && (opts.env[KEY_ENV] ?? '').trim() === '') {
     keyNote = `서명: 비밀 키를 확인하지 않았어요(${KEY_ENV} 이 없어요). 실제 발행에는 필요해요.`;
   } else {
@@ -212,6 +214,8 @@ export function runPublish(opts: PublishOptions, io: Io): number {
       ]);
     } else {
       keyNote += ` 자료 폴더에 ${PUBLIC_KEY_FILE} 가 없어서 짝인지는 보지 않았어요.`;
+      // 쓰지 않는 발행이라 지금은 거부하지 않지만, 같은 입력의 실제 발행은 거부된다는 것을 결과 줄에 적는다(별도 검토 2차 T3).
+      if (isRepoDataDir(opts.dataDir, opts.root)) refusedLater = `자료 폴더(저장소의 exam-data)에 ${PUBLIC_KEY_FILE} 가 없어서 실제 발행은 거부돼요. 키를 맡은 사람이 npm run exams:keygen 으로 만든 공개 키를 먼저 커밋해요.`;
     }
   }
 
@@ -243,6 +247,10 @@ export function runPublish(opts: PublishOptions, io: Io): number {
       const problems = verifyInMemory(release.indexBytes, sig, release.files, key);
       if (problems.length > 0) return fail(['만든 발행물이 확인을 통과하지 못했어요(도구의 결함이에요).', ...problems.map((p) => `  - ${p}`)]);
       io.out('메모리에서 서명하고 확인했어요(exams:verify 와 같은 확인).');
+    }
+    if (refusedLater !== null) {
+      io.out(`결과: 발행 폴더와 state.json 을 쓰지 않았어요. 다만 ${refusedLater}`);
+      return 0;
     }
     io.out('결과: 발행하면 위와 같아요. 발행 폴더와 state.json 을 쓰지 않았어요.');
     return 0;

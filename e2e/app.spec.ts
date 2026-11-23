@@ -345,6 +345,8 @@ test('app-test: 껍데기가 글자 크기 바뀜을 알리면 바로 바꾸고,
 test('app-test: 진행자용 화면은 있고 "파일 저장"은 빼고 복사만 둔다. 복사가 실패하거나 답이 없으면 다시 누르라고 알린다', async ({ page }) => {
   await openBundle(page, 'app-test', {}, '/test');
   await expect(page.getByText(S_TEST.title).first()).toBeVisible();
+  // 시험용 묶음의 진행자용 화면에는 소개 문장 아래에 풀이 잠금 한 줄이 있다(작업 지시서 3의 4-5). 묶음 안 달력으로 지금을 판정한다(달력에 따라 열림이나 잠김).
+  await expect(page.getByTestId('lock-status')).toHaveText(/^풀이 잠금: 지금 (열림|잠김\(오[전후] \d+시( \d+분)?까지\))$/);
   await expect(page.getByTestId('save-json')).toHaveCount(0);
   await expect(page.getByTestId('save-csv')).toHaveCount(0);
   await expect(page.getByText(S_TEST.noNetworkApp)).toBeVisible();

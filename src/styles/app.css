@@ -403,7 +403,11 @@ a {
   white-space: nowrap;
   vertical-align: middle;
 }
+/* 바로 아래 줄의 큰 숫자 글자(.num)는 글꼴에 따라 글자 상자가 줄 높이보다 커서 이 버튼의 아래 끝에 걸칠 수 있다(앱 묶음의 시스템 글꼴).
+   버튼을 그 글자보다 위에 그려서 버튼 자리 어디를 눌러도 버튼이 눌리게 한다. 자리와 크기는 바뀌지 않는다. */
 .badge-btn {
+  position: relative;
+  z-index: 1;
   min-width: var(--touch);
   min-height: var(--touch);
   display: inline-flex;

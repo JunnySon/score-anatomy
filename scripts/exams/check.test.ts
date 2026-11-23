@@ -191,6 +191,7 @@ describe('발행 도구 exams:check(작업 지시서 3의 6-4)', () => {
       '  rev 가 1에서 2로 바뀌어요. 내용이 발행한 판과 달라요.',
       '  정답을 처음 공개해요(answerReleased 가 false 에서 true 로).',
       '  유형 분류를 마쳐요(typesReady 가 false 에서 true 로). 계단이 나와요.',
+      '  유형마다 문항 수: 테스트 유형 가 3개, 테스트 유형 나 3개.',
       '  등급컷을 처음 넣어요(추정, 기준 2030-01-02T20:10, 등급 2개).',
       'src/test-tool-b.json(테스트 전용 시험(둘째))',
       '  새 시험이에요. rev 1, 문항 6개(5지선다 4개, 단답형 2개), 만점 20점, 정답 공개 전, 유형 분류 끝남, 등급컷 없음.',
@@ -202,6 +203,33 @@ describe('발행 도구 exams:check(작업 지시서 3의 6-4)', () => {
       '거부 0개',
       '결과: 검사를 통과했어요. 이 검사는 파일을 쓰지 않아요.',
     ]);
+  });
+
+  it('변경 요약에 유형이 바뀐 문항과 유형 이름이 바뀐 것을 적고, 유형 분류를 마칠 때 유형마다 문항 수와 자리만 채우던 유형을 아직 가리키는 문항을 알린다(별도 검토 B2)', () => {
+    // 유형 분류를 마친 판끼리: 1번과 2번의 유형을 바꾸고 t02 의 이름을 바꾼다(rev 를 올린 수정).
+    const ready = published(releasedExam());
+    writeExam(
+      ready,
+      withItem(withItem(releasedExam({ rev: 2, types: { t01: { name: '테스트 유형 가' }, t02: { name: '테스트 유형 다' } } }), 1, { typeId: 't02' }), 2, { typeId: 't02' }),
+    );
+    const a = checkData(ready);
+    expect(a.errors).toEqual([]);
+    expect(a.lines).toContain('  유형이 바뀌는 문항: 1번(발행한 판 테스트 유형 가, 지금 테스트 유형 다), 2번(발행한 판 테스트 유형 가, 지금 테스트 유형 다).');
+    expect(a.lines).toContain('  유형 이름이 바뀌어요: t02(발행한 판 테스트 유형 나, 지금 테스트 유형 다).');
+    // 유형 분류 전 판(모든 문항이 자리만 채우는 유형 t00)을 발행한 뒤, 분류를 마치는 판에서 5번과 6번이 아직 t00 을 가리킨다.
+    const pendingItems = (releasedExam().items as Record<string, unknown>[]).map((it) => ({ ...it, typeId: 't00' }));
+    const pending = published(releasedExam({ typesReady: false, types: { t00: { name: '분류 중' } }, items: pendingItems }));
+    const finishing = releasedExam({ rev: 2, typesReady: true, types: { t00: { name: '분류 중' }, t01: { name: '테스트 유형 가' }, t02: { name: '테스트 유형 나' } } });
+    writeExam(pending, withItem(withItem(finishing, 5, { typeId: 't00' }), 6, { typeId: 't00' }));
+    const b = checkData(pending);
+    expect(b.errors).toEqual([]);
+    expect(b.lines).toContain('  유형마다 문항 수: 테스트 유형 가 2개, 테스트 유형 나 2개, 분류 중 2개.');
+    expect(b.warnings).toContain(
+      'src/test-tool-a.json: 유형 분류를 마치는 판인데, 유형 분류 전에 모든 문항이 가리키던 유형(분류 중)을 아직 가리키는 문항이 있어요(5번, 6번). 계단에 그 유형 이름이 나와요. 분류를 마쳤는지 확인해 주세요.',
+    );
+    // 모든 문항을 분류했으면 알리지 않는다.
+    writeExam(pending, finishing);
+    expect(checkData(pending).warnings.filter((w) => w.includes('유형 분류를 마치는 판인데'))).toEqual([]);
   });
 
   it('시험 파일의 검사는 src/exams/validate.ts 의 규칙을 그대로 쓴다', () => {

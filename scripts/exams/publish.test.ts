@@ -205,7 +205,9 @@ describe('발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4)', () => {
       exams: { 'test-tool-a': stateEntryOf(checked(releasedExam({ rev: 2 })), 'files/test-tool-a.2.json') },
     });
     expect(state?.exams['test-tool-a']).toMatchObject({ rev: 2, answersRev: 1, answerReleased: true, file: 'files/test-tool-a.2.json', sha256: sha256Hex(file) });
-    expect(state?.exams['test-tool-a'].items[2]).toEqual({ no: 3, kind: 'mc', choices: 4, points: 3, answer: 2, altAnswers: [4] });
+    // 문항 요약에는 유형(typeId)도 적는다(변경 요약에 유형이 바뀐 문항을 적으려고, 별도 검토 B2).
+    expect(state?.exams['test-tool-a'].items[2]).toEqual({ no: 3, kind: 'mc', choices: 4, points: 3, answer: 2, altAnswers: [4], typeId: 't02' });
+    expect(state?.exams['test-tool-a'].types).toEqual({ t01: '테스트 유형 가', t02: '테스트 유형 나' });
     expect((await verifyWith(o.out, key.publicFile, dir)).code).toBe(0);
 
     // 세 번째: 공개한 정답을 정정한다(answersRev 와 정정 안내). seq 3.

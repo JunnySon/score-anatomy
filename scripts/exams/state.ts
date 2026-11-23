@@ -10,7 +10,10 @@ import { EXAM_ID_RE, isRecord } from './data.ts';
 
 export const STATE_FORMAT = 1;
 
-/** 문항 구성(no, kind, choices)과 채점에 영향을 주는 값(points, answer, altAnswers, allCorrect)의 요약. 없는 값은 뺀다. */
+/**
+ * 문항 구성(no, kind, choices)과 채점에 영향을 주는 값(points, answer, altAnswers, allCorrect), 유형(typeId)의 요약. 없는 값은 뺀다.
+ * typeId 는 변경 요약에 유형이 바뀐 문항을 적으려고 더한 칸이다(별도 검토 B2). 이 칸이 없는 예전 기록은 유형을 견주지 않는다.
+ */
 export interface ItemSummary {
   no: number;
   kind: 'mc' | 'short';
@@ -20,6 +23,7 @@ export interface ItemSummary {
   answer?: number;
   altAnswers?: number[];
   allCorrect?: true;
+  typeId?: string;
 }
 
 /** 발행한 시험 하나의 기록. */
@@ -35,6 +39,8 @@ export interface StateEntry {
   sha256: string;
   cuts?: ExamCuts;
   items: ItemSummary[];
+  /** 유형 id 와 이름(시험의 types 에서 이름만). 변경 요약에 유형 이름이 바뀐 것을 적으려고 더한 칸이다(별도 검토 B2). */
+  types?: Record<string, string>;
 }
 
 /** state.json 의 내용. 아직 발행한 적이 없으면 seq 0, issuedAt null, locksSha256 null, exams {} 이다. */
@@ -78,7 +84,13 @@ export function itemSummary(item: ExamItem): ItemSummary {
   if (item.answer !== undefined && item.answer !== null) s.answer = item.answer;
   if (item.altAnswers !== undefined) s.altAnswers = [...item.altAnswers];
   if (item.allCorrect === true) s.allCorrect = true;
+  s.typeId = item.typeId;
   return s;
+}
+
+/** 시험의 유형 id 와 이름. */
+export function typeNames(exam: Exam): Record<string, string> {
+  return Object.fromEntries(Object.entries(exam.types).map(([id, t]) => [id, t.name]));
 }
 
 /** 검사를 통과한 시험으로 발행 기록 하나를 만든다. file 은 발행 파일의 경로다. */
@@ -91,6 +103,7 @@ export function stateEntryOf(exam: Exam, file: string): StateEntry {
     file,
     sha256: examSha256(exam),
     items: exam.items.map(itemSummary),
+    types: typeNames(exam),
   };
   if (exam.answersNote !== undefined) entry.answersNote = exam.answersNote;
   if (exam.cuts !== undefined) entry.cuts = exam.cuts;
@@ -128,6 +141,7 @@ function summaryErrors(raw: unknown, where: string, prevNo: number): string[] {
     errors.push(`${where}: altAnswers 는 정수 배열이어야 해요.`);
   }
   if (raw.allCorrect !== undefined && raw.allCorrect !== true) errors.push(`${where}: allCorrect 는 true 만 적어요.`);
+  if (raw.typeId !== undefined && (typeof raw.typeId !== 'string' || raw.typeId === '')) errors.push(`${where}: typeId 는 빈칸이 아닌 글자여야 해요.`);
   return errors;
 }
 
@@ -148,6 +162,9 @@ function entryErrors(id: string, raw: unknown): string[] {
   if (typeof raw.file !== 'string' || raw.file === '') errors.push(`${where}: file 이 비어 있어요.`);
   if (!isSha(raw.sha256)) errors.push(`${where}: sha256 은 SHA-256(16진수 소문자 64자)이어야 해요.`);
   if (raw.cuts !== undefined && !isRecord(raw.cuts)) errors.push(`${where}: cuts 는 객체여야 해요.`);
+  if (raw.types !== undefined && !(isRecord(raw.types) && Object.values(raw.types).every((v) => typeof v === 'string'))) {
+    errors.push(`${where}: types 는 유형 id 마다 이름(글자)을 적은 객체여야 해요.`);
+  }
   if (!Array.isArray(raw.items) || raw.items.length === 0) {
     errors.push(`${where}: items 가 비어 있어요.`);
   } else {
@@ -334,10 +351,39 @@ export function compareWithPublished(prev: StateEntry, exam: Exam): ExamComparis
 
   // 유형 분류
   const typesReady = typesReadyOf(exam);
-  if (!prev.typesReady && typesReady) changes.push('유형 분류를 마쳐요(typesReady 가 false 에서 true 로). 계단이 나와요.');
+  const nowTypes = typeNames(exam);
+  const typeLabel = (names: Record<string, string> | undefined, id: string) => names?.[id] ?? id;
+  if (!prev.typesReady && typesReady) {
+    changes.push('유형 분류를 마쳐요(typesReady 가 false 에서 true 로). 계단이 나와요.');
+    // 유형마다 문항 수를 적고, 유형 분류 전에 모든 문항이 가리키던 자리만 채우는 유형을 아직 가리키는 문항이 있으면 알린다(별도 검토 B2).
+    const counts = new Map<string, number>();
+    for (const it of exam.items) counts.set(it.typeId, (counts.get(it.typeId) ?? 0) + 1);
+    changes.push(`유형마다 문항 수: ${[...counts].map(([id, n]) => `${typeLabel(nowTypes, id)} ${n}개`).join(', ')}.`);
+    const before = new Set(prev.items.map((p) => p.typeId));
+    const placeholder = before.size === 1 ? [...before][0] : undefined;
+    if (placeholder !== undefined) {
+      const stay = exam.items.filter((it) => it.typeId === placeholder).map((it) => it.no);
+      if (stay.length > 0) {
+        warn(
+          `유형 분류를 마치는 판인데, 유형 분류 전에 모든 문항이 가리키던 유형(${typeLabel(prev.types, placeholder)})을 아직 가리키는 문항이 있어요(${nosText(stay)}). 계단에 그 유형 이름이 나와요. 분류를 마쳤는지 확인해 주세요.`,
+        );
+      }
+    }
+  }
   if (prev.typesReady && !typesReady) {
     warn('유형 분류를 마친 판을 발행했는데 typesReady 가 false 로 돌아갔어요. 학생 화면에서 계단이 사라져요.');
     changes.push('유형 분류 전으로 돌아가요(typesReady 가 true 에서 false 로).');
+  }
+  // 유형 분류를 마친 판끼리: 문항의 유형(typeId)과 유형 이름이 바뀐 것(별도 검토 B2). 학생 화면의 계단(유형별 점수, 유형 이름, 다시 풀 문항)이 바뀐다.
+  // 발행 기록에 유형이 적혀 있지 않으면(이 칸을 더하기 전의 기록) 견주지 않는다.
+  if (prev.typesReady && typesReady && structure.length === 0) {
+    const retyped = prev.items.flatMap((p, i) =>
+      p.typeId !== undefined && now[i].typeId !== p.typeId ? [`${p.no}번(발행한 판 ${typeLabel(prev.types, p.typeId)}, 지금 ${typeLabel(nowTypes, now[i].typeId as string)})`] : [],
+    );
+    if (retyped.length > 0) changes.push(`유형이 바뀌는 문항: ${retyped.join(', ')}.`);
+    const oldNames = prev.types ?? {};
+    const renamed = Object.keys(oldNames).filter((id) => Object.prototype.hasOwnProperty.call(nowTypes, id) && nowTypes[id] !== oldNames[id]);
+    if (renamed.length > 0) changes.push(`유형 이름이 바뀌어요: ${renamed.map((id) => `${id}(발행한 판 ${oldNames[id]}, 지금 ${nowTypes[id]})`).join(', ')}.`);
   }
 
   // 등급컷

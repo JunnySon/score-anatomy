@@ -267,6 +267,13 @@ test('측정 카드: 망가진 시작 시각은 비워 보여 주고, 카드 안
   const col = lines[0]!.split(',').indexOf('started_at');
   const byParticipant = Object.fromEntries(lines.slice(1).map((l) => [l.split(',')[0], l.split(',')[col]]));
   expect(byParticipant).toEqual({ P01: '', P02: '2026-11-22T10:00:07.000Z' });
+  await page.getByRole('button', { name: 'JSON 복사' }).click();
+  await expect.poll(async () => (await page.evaluate(() => navigator.clipboard.readText())).startsWith('{')).toBe(true);
+  const runs = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())).runs as { participant: string; startedAt: number | null; startedAtIso: string }[];
+  expect(runs.map((r) => [r.participant, r.startedAt, r.startedAtIso])).toEqual([
+    ['P01', null, ''],
+    ['P02', Date.UTC(2026, 10, 22, 10, 0, 7), '2026-11-22T10:00:07.000Z'],
+  ]);
 
   // 카드 안의 입력 칸(정답지 대조)은 카드와 같은 표면색이고, 1px 테두리로 구분된다.
   const colors = await fine.evaluate((card) => {

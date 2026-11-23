@@ -19,6 +19,10 @@ function browserOptions(): { channel?: string; launchOptions?: { executablePath:
 }
 
 export const PORT = Number(process.env.SA_PORT ?? 4173);
+// 테스트는 늘 지금 폴더의 빌드로 새 서버를 띄운다. 포트에 이미 떠 있는 서버(옛 빌드나 다른 폴더의 것일 수 있다)를
+// 말없이 다시 쓰지 않으려고, 포트가 쓰이고 있으면 실패하게 둔다. 다른 포트를 쓰려면 SA_PORT 를 준다.
+// 개발 중에 떠 있는 서버를 일부러 다시 쓰려면 SA_REUSE_SERVER=1 을 준다(이때는 그 서버가 지금 빌드인지 직접 확인해야 한다).
+const REUSE_SERVER = process.env.SA_REUSE_SERVER === '1';
 export const VARIANT_URL = `http://localhost:${PORT + 1}`;
 
 export default defineConfig({
@@ -46,13 +50,13 @@ export default defineConfig({
     {
       command: `npx vite preview --port ${PORT} --strictPort`,
       url: `http://localhost:${PORT}`,
-      reuseExistingServer: true,
+      reuseExistingServer: REUSE_SERVER,
       timeout: 60_000,
     },
     {
       command: `npx vite preview --mode variant --port ${PORT + 1} --strictPort`,
       url: `http://localhost:${PORT + 1}`,
-      reuseExistingServer: true,
+      reuseExistingServer: REUSE_SERVER,
       timeout: 60_000,
     },
   ],

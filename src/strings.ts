@@ -111,6 +111,10 @@ export const S = {
     entered: (n: number) => `${n}문항 입력`,
     progressLabel: '입력한 문항 수',
     nowLabel: '지금 넣을 문항',
+    // 잠긴 동안에는 넣을 문항이 아니므로 큰 번호 위의 이름을 바꾼다(src/logic/keypad.ts 의 nowLabelOf).
+    nowLabelFixing: '고치는 문항',
+    nowLabelPut: '방금 넣은 문항',
+    nowLabelNoBlank: '마지막 문항',
     entryLabel: '넣은 답',
     hint: '다섯 문항마다 시험지와 맞춰 보세요. 칸을 누르면 그 문항으로 가요.',
     erased: (no: number) => `${no}번 답을 지웠어요.`,

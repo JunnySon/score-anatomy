@@ -116,6 +116,21 @@ export function entryOf(state: KeypadState, items: ExamItem[], answers: Answers)
   return initEntry(it ? answers[it.no] : undefined);
 }
 
+/** 큰 번호 위의 이름. 잠긴 동안 "지금 넣을 문항"이라고 하면 키를 받지 않는다는 안내와 어긋나서 상태마다 다르게 적는다. */
+export type NowLabel = 'now' | 'fixing' | 'put' | 'noBlank';
+
+export function nowLabelOf(state: KeypadState): NowLabel {
+  if (state.lock === 'full') return 'noBlank';
+  if (state.lock === 'put') return 'put';
+  if (state.via === 'fix') return 'fixing';
+  return 'now';
+}
+
+/** 키가 잠겼는지. 답 키, 안 풂, 숫자 키, "다음"은 잠금마다, "지우기"는 빈칸 없이 연 잠금에서만 잠긴다. */
+export function keysLocked(state: KeypadState): { answer: boolean; erase: boolean } {
+  return { answer: state.lock !== null, erase: state.lock === 'full' };
+}
+
 /** 누르고 있는 숫자가 들어 있는 답과 다른지. 다르면 "다음"을 누르지 않고 떠날 때 알린다. */
 export function isDirty(state: KeypadState, items: ExamItem[], answers: Answers): boolean {
   const it = items[state.cursor];
@@ -222,6 +237,9 @@ export function reduceKeypad(state: KeypadState, items: ExamItem[], answers: Ans
     }
 
     case 'erase': {
+      // 빈칸 없이 연 화면의 잠금에서는 "지우기"도 받지 않는다. 학생이 고른 칸이 없는데 지우면
+      // 고르지 않은 마지막 문항부터 지워지고, 이어 누르면 앞 번호가 차례로 지워진다. 칸을 눌러야 풀린다.
+      if (state.lock === 'full') return ignore(state);
       if (locked) {
         // 잠금에서 "지우기"는 그 칸의 답을 지우고 푼다(단답형도 한 번에 지운다).
         if (!filled(items, answers, state.cursor)) return keep({ ...state, lock: null, notice: { kind: 'nothingToErase' } });

@@ -1,7 +1,7 @@
 import type { Anatomy } from '../logic/scoring';
 import { S } from '../strings';
 
-// 100점 막대. 왼쪽부터 표시 없이 맞힌 점수(채움), 추측했다고 표시한 정답(빗금),
+// 100점 막대. 왼쪽부터 찍음 표시 없이 맞힌 점수(채움), 추측했다고 표시한 정답(빗금),
 // 실수라고 표시한 오답(윤곽만), 그 외 오답(점선 윤곽). 색이 아니라 무늬로 가른다.
 
 export function ScoreBar({ an, mini }: { an: Anatomy; mini?: boolean }) {

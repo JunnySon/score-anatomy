@@ -141,7 +141,7 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await expect(page.getByTestId('now-no')).toHaveText('12번');
   // 빈칸에서 "지우기"는 이어서 들어왔으면 앞 번호로 가서 지우고, 무엇을 지웠는지 알린다.
   await tapKey(page, 'erase');
-  await expect(page.getByText('11번 답을 지웠어요.')).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText('11번 답을 지웠어요.')).toBeVisible();
   await expect(page.getByTestId('now-no')).toHaveText('11번');
   await stop('답입력-키패드-지우기안내', { mustFit: true });
   await enterKeypad(page, examA, answersA, 11, 21);
@@ -152,13 +152,13 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await stop('답입력-키패드-단답형', { mustFit: true });
   await tapKey(page, 3);
   await tapKey(page, 4);
-  await expect(page.getByText('답은 0부터 999까지예요.')).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText('답은 0부터 999까지예요.')).toBeVisible();
   await stop('답입력-키패드-단답형-안내', { mustFit: true });
   await tapKey(page, 'erase');
   await tapKey(page, 'erase');
   await tapKey(page, 'erase');
   await tapKey(page, 'go');
-  await expect(page.getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
   await stop('답입력-키패드-단답형-빈칸안내', { mustFit: true });
   await enterKeypad(page, examA, answersA, 22, 24);
   // 단답형 칸을 고친 뒤의 잠금(키패드가 가장 높은 단답형에서도 한 화면에 들어와야 한다).

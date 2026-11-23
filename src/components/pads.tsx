@@ -32,6 +32,7 @@ export function McPad({
   fn,
   inSheet,
   locked = false,
+  onLocked,
 }: {
   choices: number;
   selected?: number | null;
@@ -42,6 +43,8 @@ export function McPad({
   inSheet?: boolean;
   /** 키패드 잠금. "지우기"(live)만 받는다. */
   locked?: boolean;
+  /** 잠긴 키를 눌렀을 때(아무것도 들어가지 않는다). 화면 낭독기에 잠금 안내를 다시 전하는 데 쓴다. */
+  onLocked?: () => void;
 }) {
   const nums = Array.from({ length: choices }, (_, i) => i + 1);
   return (
@@ -56,7 +59,11 @@ export function McPad({
             aria-pressed={selected === undefined ? undefined : selected === n}
             {...lockProps(locked)}
             onClick={() => {
-              if (!locked) onPick(n);
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              onPick(n);
             }}
           >
             <span>{n}</span>
@@ -75,7 +82,11 @@ export function McPad({
               data-key={f.key}
               {...lockProps(off)}
               onClick={() => {
-                if (!off) f.onPress();
+                if (off) {
+                  onLocked?.();
+                  return;
+                }
+                f.onPress();
               }}
             >
               {f.label}
@@ -101,6 +112,8 @@ export function DigitPad({
   goLabel,
   inSheet,
   locked = false,
+  eraseLocked = false,
+  onLocked,
 }: {
   onDigit: (d: number) => void;
   onErase: () => void;
@@ -110,6 +123,10 @@ export function DigitPad({
   inSheet?: boolean;
   /** 키패드 잠금. "지우기"만 받는다. */
   locked?: boolean;
+  /** "지우기"도 잠근다(빈칸 없이 연 화면의 잠금). */
+  eraseLocked?: boolean;
+  /** 잠긴 키를 눌렀을 때(아무것도 들어가지 않는다). */
+  onLocked?: () => void;
 }) {
   return (
     <div className={`pad${inSheet ? ' pad--sheet' : ''}`} role="group" aria-label={S.input.keypadLabel}>
@@ -124,7 +141,11 @@ export function DigitPad({
             data-tap-safe=""
             {...lockProps(locked)}
             onClick={() => {
-              if (!locked) onDigit(d);
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              onDigit(d);
             }}
           >
             {d}
@@ -139,13 +160,29 @@ export function DigitPad({
             data-key="skip"
             {...lockProps(locked)}
             onClick={() => {
-              if (!locked) onSkip();
+              if (locked) {
+                onLocked?.();
+                return;
+              }
+              onSkip();
             }}
           >
             {S.common.skip}
           </button>
         ) : null}
-        <button type="button" className="key key--fn" data-key="erase" onClick={onErase}>
+        <button
+          type="button"
+          className="key key--fn"
+          data-key="erase"
+          {...lockProps(eraseLocked)}
+          onClick={() => {
+            if (eraseLocked) {
+              onLocked?.();
+              return;
+            }
+            onErase();
+          }}
+        >
           {S.common.erase}
         </button>
         <button
@@ -154,7 +191,11 @@ export function DigitPad({
           data-key="go"
           {...lockProps(locked)}
           onClick={() => {
-            if (!locked) onGo();
+            if (locked) {
+              onLocked?.();
+              return;
+            }
+            onGo();
           }}
         >
           {goLabel}

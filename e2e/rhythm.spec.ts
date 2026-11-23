@@ -108,6 +108,38 @@ test('마지막 문항 뒤에 이어 누른 키가 입력 확인의 버튼을 �
   await expect(page.locator('.tap-notice')).toHaveCount(1);
 });
 
+test('다 찬 상태에서 9번을 고친 뒤 이어 누른 키는 9번을 다시 바꾸지 않고 입력 확인의 버튼도 누르지 않는다', async ({ page }) => {
+  const exam = loadExam('a');
+  const answers = exampleAnswers(exam);
+  await startExamA(page);
+  await enterKeypad(page, exam, answers);
+  await expectHash(page, '/review');
+  // 다 찬 채로 답 입력 화면을 다시 열면 잠겨 있다.
+  await page.getByRole('button', { name: '뒤로' }).click();
+  await expectHash(page, '/input');
+  await expect(page.getByTestId('now-label')).toHaveText('마지막 문항');
+  // 빈칸 없이 열면 30번 둘레(21~30번)만 보인다. 칸을 눌러 묶음을 옮겨 9번 칸까지 간다(답은 바뀌지 않는다).
+  for (const no of [21, 16, 11, 9]) await page.locator(`[data-cell="${no}"]`).click();
+  await expect(page.getByTestId('now-no')).toHaveText('9번');
+  await expect(page.getByTestId('now-label')).toHaveText('고치는 문항');
+  await page.waitForTimeout(600);
+  // 9번에 답 키 2, 이어서 0.2초 간격으로 다른 답 키와 아래쪽 키를 누른다.
+  const key = async (n: number | string) => centerOf(page.locator(`.pad [data-key="${n}"]`));
+  const k2 = await key(2);
+  const k4 = await key(4);
+  const k5 = await key(5);
+  const skip = await key('skip');
+  const erase = await key('erase');
+  await tapAtRhythm(page, [k2, k4, k5, skip, erase, k4], 200);
+  await page.waitForTimeout(300);
+  // 빈칸이 없어져 입력 확인으로 넘어갔고, 넘어간 화면의 버튼이나 칸은 눌리지 않았다.
+  await expectHash(page, '/review');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const s = (await stored(page)).sessions[0];
+  expect(s.answers[9]).toBe(2);
+  for (const it of exam.items) if (it.no !== 9) expect(s.answers[it.no]).toBe(answers[it.no]);
+});
+
 test.describe('버린 누름 알림', () => {
   test('누를 수 있는 요소 위의 누름만 알리고, 한 번만 전하며, 2초 뒤 사라지고, 받아들인 누름이 오면 바로 닫는다', async ({ page }) => {
     const exam = loadExam('a');
@@ -131,13 +163,15 @@ test.describe('버린 누름 알림', () => {
     // 누를 수 있는 요소(칸)를 누른 것은 알린다(빈 바탕을 버리면서 보호를 다시 셌으므로 아직 막고 있다).
     await page.touchscreen.tap(cell.x, cell.y);
     await expect(page.getByTestId('tap-notice')).toHaveText('화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.');
-    // 화면 낭독기에는 알림 영역(role=status)으로 한 번 전한다. 보이는 알림은 낭독에서 숨긴다.
+    // 화면 낭독기에는 미리 붙여 둔 알림 영역(aria-live)으로 한 번 전한다. 보이는 알림은 낭독에서 숨긴다.
     await expect(page.getByTestId('tap-notice')).toHaveAttribute('aria-hidden', 'true');
-    await expect(page.getByTestId('tap-notice-live')).toHaveText('화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.');
+    const spoken = page.locator('[data-tap-live]').filter({ hasText: '화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.' });
+    await expect(spoken).toHaveCount(1);
+    await expect(page.locator('[data-tap-live="body"]')).toHaveText('화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.');
     // 같은 보호 구간에서 또 버려도 다시 띄우지 않는다(하나뿐이다).
     await page.touchscreen.tap(cell.x, cell.y);
     await expect(page.locator('.tap-notice')).toHaveCount(1);
-    await expect(page.locator('[data-testid="tap-notice-live"]')).toHaveCount(1);
+    await expect(spoken).toHaveCount(1);
     // 누를 수 있는 요소를 가리지 않는 자리에 있고, 화면 구성을 밀지 않는다(고정 위치).
     const overlap = await page.evaluate(() => {
       const n = document.querySelector('.tap-notice')!.getBoundingClientRect();
@@ -153,7 +187,7 @@ test.describe('버린 누름 알림', () => {
     expect(overlap.position).toBe('fixed');
     // 2초 뒤 사라진다.
     await expect(page.getByTestId('tap-notice')).toHaveCount(0, { timeout: 3000 });
-    await expect(page.getByTestId('tap-notice-live')).toHaveCount(0);
+    await expect(page.locator('[data-tap-live="body"]')).toHaveText('');
   });
 
   test('대화상자가 열려 있으면 그 안에서 화면 낭독기에 전하고, 받아들인 누름이 오면 바로 닫는다', async ({ page }) => {
@@ -192,14 +226,16 @@ test.describe('버린 누름 알림', () => {
     await tapAtRhythm(page, [at, at], 120);
     await expect(page.getByRole('alertdialog')).toBeVisible();
     await expect(page.getByTestId('tap-notice')).toBeVisible();
-    // 화면 낭독기 알림 영역은 열린 대화상자 안에 둔다(대화상자 밖을 읽지 않는 화면 낭독기에도 전해지게).
-    await expect(page.getByRole('alertdialog').getByTestId('tap-notice-live')).toHaveCount(1);
-    await expect(page.getByRole('alertdialog').getByTestId('tap-notice-live')).toHaveText('화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.');
+    // 화면 낭독기에는 열린 대화상자 안에 미리 둔 알림 영역으로 전한다(대화상자 밖을 읽지 않는 화면 낭독기에도 전해지게).
+    const dialogLive = page.getByRole('alertdialog').locator('[data-tap-live]');
+    await expect(dialogLive).toHaveCount(1);
+    await expect(dialogLive).toHaveText('화면이 막 바뀌어서 방금 누른 것은 받지 않았어요.');
+    await expect(page.locator('[data-tap-live="body"]')).toHaveText('');
     // 둘째 누름은 버렸으므로 대화상자는 그대로 열려 있고 기록도 그대로다.
     // 대화상자의 다른 자리를 누르면 받아들이고, 알림은 바로 닫힌다.
     await page.getByRole('alertdialog').getByRole('heading').click();
     await expect(page.getByTestId('tap-notice')).toHaveCount(0);
-    await expect(page.getByTestId('tap-notice-live')).toHaveCount(0);
+    await expect(dialogLive).toHaveText('');
     await page.getByRole('alertdialog').getByRole('button', { name: '그만두기' }).click();
     await expect(page.getByTestId('history-item')).toHaveCount(14);
   });

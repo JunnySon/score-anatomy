@@ -644,6 +644,22 @@ describe('테스트 기기(3-11)', () => {
     expect(current()!.answers).toEqual({});
   });
 
+  it('대기 중에 같은 시험을 골라도 앞 참가자의 채점 전 기록을 이어 쓰지 않는다', () => {
+    startTestRun('P01', 'keypad', 'sample-a');
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    enter(answersA, ALL);
+    const a = current()!.id;
+    expect(current()!.firstGradedAt).toBeNull();
+    finishTestRun();
+    tick(1000);
+    startSession('sample-a', 'not_yet', null);
+    expect(current()!.id).not.toBe(a);
+    expect(current()!.answers).toEqual({});
+    // 앞 참가자의 기록은 지우지 않는다(진행자용 화면의 최종 답과 대조에 쓴다).
+    expect(store.get().sessions.find((s) => s.id === a)!.answers).toEqual(answersA);
+  });
+
   it('진행자가 측정 기록을 모두 지우면 평소대로 돌아간다', () => {
     startTestRun('P01', 'keypad', 'sample-a');
     tick(1000);

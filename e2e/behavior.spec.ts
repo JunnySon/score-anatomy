@@ -109,7 +109,7 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   // 빈 채로는 넘어가지 않는다.
   await tapKey(page, 'go');
   await expect(page.getByTestId('now-no')).toHaveText('22번');
-  await expect(page.getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("22번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.")).toBeVisible();
 
   // 한 자리만 눌렀다고 넘어가지 않는다. 누른 숫자는 크게 보이고, "다음" 전에는 칸에 들어가지 않는다.
   await tapKey(page, 0);
@@ -126,7 +126,7 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   // 네 자리는 받지 않는다.
   await tapKey(page, 1);
   await expect(page.getByTestId('entry')).toContainText('753');
-  await expect(page.getByText('답은 0부터 999까지예요.')).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText('답은 0부터 999까지예요.')).toBeVisible();
   // 지우기는 한 자리씩 지운다.
   await tapKey(page, 'erase');
   await expect(page.getByTestId('entry')).toContainText('75');
@@ -151,11 +151,11 @@ test('키패드 방식: 단답형은 "다음"을 눌러야 넘어가고 0~999만
   await page.locator('[data-cell="24"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('24번');
   await expect(page.locator('[data-cell="23"] .cell__val')).toHaveText('');
-  await expect(page.getByText("23번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("23번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
   // "전체 보기"를 눌러도 확정하지 않은 숫자는 들어가지 않는다. 먼저 그 사실을 알리고, 다시 누르면 넘어간다.
   await tapKey(page, 7);
   await page.getByRole('button', { name: '전체 보기' }).click();
-  await expect(page.getByText("24번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
+  await expect(page.getByTestId('pad-panel').getByText("24번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.")).toBeVisible();
   await expectHash(page, '/input');
   await page.getByRole('button', { name: '전체 보기' }).click();
   await expectHash(page, '/review');

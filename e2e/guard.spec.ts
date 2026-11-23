@@ -224,7 +224,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   expect(await answerOf(26)).toBe(24);
   // 다 지운 채 다른 칸으로 가면 지운 것이 들어가지 않았다고 알리고, 답은 그대로 남는다.
   await page.locator('[data-cell="27"]').click();
-  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("26번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('pad-live')).toHaveText("26번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
   expect(await answerOf(26)).toBe(24);
 
   // 다 지우고 "다음"을 누르면 그때 저장된 답이 지워지고, "비어 있어요"라는 안내문이 사실과 맞다.
@@ -232,7 +232,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   await tapKey(page, 'erase');
   await tapKey(page, 'erase');
   await tapKey(page, 'go');
-  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("26번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
+  await expect(page.getByTestId('pad-live')).toHaveText("26번이 비어 있어요. 안 푼 문항이면 '안 풂'을 눌러 주세요.");
   await expect(page.getByTestId('now-no')).toHaveText('26번');
   await expect(page.locator('[data-cell="26"] .cell__val')).toHaveText('');
   await expect(page.getByTestId('entered-count')).toHaveText('29문항 입력');
@@ -240,7 +240,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   // 이제 다른 칸을 눌러도 "들어가지 않았어요"라는 말은 나오지 않는다(확정하지 않은 숫자가 없다).
   await page.locator('[data-cell="27"]').click();
   await expect(page.getByTestId('now-no')).toHaveText('27번');
-  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText('27번을 고치는 중이에요.');
+  await expect(page.getByTestId('pad-live')).toHaveText('27번을 고치는 중이에요.');
   // 빈칸이 된 26번을 직접 눌러 채우면 빈칸이 없어져 입력 확인으로 넘어간다.
   await page.locator('[data-cell="26"]').click();
   await tapKey(page, 2);
@@ -257,7 +257,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   await tapKey(page, 9);
   await page.getByRole('button', { name: '전체 보기' }).click();
   await expectHash(page, '/input');
-  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('pad-live')).toHaveText("27번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
   await expect(page.getByTestId('entry')).toContainText('146');
   expect(await answerOf(27)).toBe(146);
   await page.getByRole('button', { name: '전체 보기' }).click();
@@ -271,7 +271,7 @@ test('단답형: 저장된 답은 확정할 때만 바뀌고, 안내문이 사�
   await tapKey(page, 1);
   await page.getByRole('button', { name: '뒤로' }).click();
   await expectHash(page, '/input');
-  await expect(page.getByTestId('pad-panel').getByRole('status')).toHaveText("29번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
+  await expect(page.getByTestId('pad-live')).toHaveText("29번에 누른 숫자는 '다음'을 누르지 않아서 들어가지 않았어요.");
   expect(await answerOf(29)).toBe(275);
   await page.getByRole('button', { name: '뒤로' }).click();
   await expectHash(page, '/exams');

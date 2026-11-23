@@ -81,12 +81,16 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
  * 시험을 골라 기록을 시작한다. 같은 시험의 채점 전 기록이 있으면 그 기록을 이어 쓴다.
  * "채점은 아직인가요?"의 답은 방금 고른 것으로 바꾼다(잘못 눌렀다가 다시 고른 것을 받아 준다).
  * 테스트가 진행 중이면 이번 참가자가 만든 기록(측정을 시작한 뒤에 만든 기록)만 이어 쓰고, 측정 기록을 그 기록에 묶는다.
+ * 테스트 기기의 대기 중(참가자를 마친 뒤, 다음 참가자를 시작하기 전)에는 어떤 기록도 이어 쓰지 않고 새 기록을 만든다.
+ * 앞 참가자의 채점 전 기록이 열리면 그 답과 점수가 다음 사람에게 보이기 때문이다.
  */
 export function startSession(examId: string, gradedBefore: GradedBefore, seenBefore: SeenBefore | null): void {
   const nowIso = new Date().toISOString();
   store.update((d) => {
     const run = activeRun(d);
-    const reusable = d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && (!run || isMine(run, s)));
+    const reusable = isTestDevice(d)
+      ? undefined
+      : d.sessions.find((s) => s.examId === examId && s.firstGradedAt === null && (!run || isMine(run, s)));
     let sessions = d.sessions;
     let session: Session;
     if (reusable) {

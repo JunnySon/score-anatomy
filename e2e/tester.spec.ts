@@ -319,6 +319,11 @@ test('테스트 기기: 참가자 A를 마친 뒤 대기, 참가자 B를 시작�
   await go.click();
   await page.getByRole('button', { name: '없어요, 채점하기' }).click();
   await expect(page.getByTestId('score')).toHaveText('97점');
+  // A는 예시 시험 B도 넣다가 채점하지 않고 멈춘다(채점 전 기록이 기기에 남는다).
+  await openApp(page, '/exams');
+  await chooseExam(page, 'sample-b', 'not_yet', 'first');
+  for (const k of [2, 4, 1, 5, 3]) await tapKey(page, k);
+  await expect(page.getByTestId('entered-count')).toHaveText('5문항 입력');
 
   // 진행자가 A를 마친다. 진행자용 화면에서 버린 누름은 세지 않는다.
   await openApp(page, '/test');
@@ -344,6 +349,11 @@ test('테스트 기기: 참가자 A를 마친 뒤 대기, 참가자 B를 시작�
     expect(await studentText(), hash).not.toContain('97점');
     await expect(page.getByRole('button', { name: '이어서 보기' })).toHaveCount(0);
   }
+  // 대기 중에 A가 넣다 만 시험(예시 시험 B)을 골라도 A의 답이 열리지 않고 새로 시작한다.
+  await openApp(page, '/exams');
+  await chooseExam(page, 'sample-b', 'not_yet', 'first');
+  await expect(page.getByTestId('entered-count')).toHaveText('0문항 입력');
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
 
   // 참가자 B를 시작한다.
   await openApp(page, '/test');

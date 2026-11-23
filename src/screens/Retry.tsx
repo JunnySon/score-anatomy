@@ -182,10 +182,11 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
             <Option testId="self-stuck" checked={self?.result === 'stuck'} onSelect={() => chooseSelf('stuck')}>
               {S.retry.selfOptions.stuck}
             </Option>
-            <Option testId="self-not-yet" checked={false} onSelect={() => chooseSelf('notYet')}>
-              {S.retry.selfOptions.notYet}
-            </Option>
           </div>
+          {/* 셋째 선택지는 기록을 남기지 않고 다음으로 넘어가서, 고른 상태로 남는 라디오가 아니라 버튼으로 둔다. */}
+          <button type="button" className="btn btn--secondary btn--block mt2" data-testid="self-not-yet" onClick={() => chooseSelf('notYet')}>
+            {S.retry.selfOptions.notYet}
+          </button>
           {self ? (
             <div className="card mt4" role="status" data-testid="retry-result" data-self={self.result}>
               <p>{selfCheckSentence(self.result)}</p>

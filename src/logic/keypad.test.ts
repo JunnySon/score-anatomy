@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { findExam } from '../exams';
 import type { Answers, AnswerValue, Exam } from '../types';
 import { exampleAnswers } from './example';
-import { initKeypad, panelOf, reduceKeypad, type KeyEvent, type KeypadState, type Outcome } from './keypad';
+import { initKeypad, keysLocked, nowLabelOf, panelOf, reduceKeypad, type KeyEvent, type KeypadState, type Outcome } from './keypad';
 
 // 키패드 방식 답 입력의 규칙(작업 지시서 1의 3-2, 3-3). 화면 없이 규칙 함수만 돌린다.
 
@@ -292,6 +292,41 @@ describe('키패드 답 입력의 흐름(3-2)', () => {
     pad.tap(13);
     expect(pad.state.via).toBe('blank');
     expect(pad.no).toBe(13);
+  });
+
+  it('빈칸 없이 연 화면의 잠금에서는 "지우기"도 받지 않고, 칸을 눌러야 풀린다(별도 검토 3번)', () => {
+    const pad = new Pad(ANSWERS);
+    expect(pad.state.lock).toBe('full');
+    expect(keysLocked(pad.state)).toEqual({ answer: true, erase: true });
+    for (let i = 0; i < 3; i += 1) {
+      const out = pad.erase()!;
+      expect(out.accepted).toBe(false);
+      expect(out.store).toBeNull();
+    }
+    expect(pad.answers).toEqual(ANSWERS);
+    pad.tap(9);
+    expect(keysLocked(pad.state)).toEqual({ answer: false, erase: false });
+    // 답을 넣고 잠긴 뒤에는 "지우기"를 받는다(그 칸의 답을 지우고 푼다).
+    const before = filledUpTo(11);
+    const p2 = new Pad(before, at(12));
+    p2.tap(9);
+    p2.key(otherChoice(before, 9));
+    expect(keysLocked(p2.state)).toEqual({ answer: true, erase: false });
+  });
+
+  it('큰 번호 위의 이름은 상태마다 다르다: 지금 넣을, 고치는, 방금 넣은, 마지막 문항', () => {
+    const before = filledUpTo(11);
+    const pad = new Pad(before, at(12));
+    expect(nowLabelOf(pad.state)).toBe('now');
+    pad.tap(9);
+    expect(nowLabelOf(pad.state)).toBe('fixing');
+    pad.key(otherChoice(before, 9));
+    expect(nowLabelOf(pad.state)).toBe('put');
+    pad.press({ type: 'continue' });
+    expect(nowLabelOf(pad.state)).toBe('now');
+    pad.tap(14);
+    expect(nowLabelOf(pad.state)).toBe('now');
+    expect(nowLabelOf(new Pad(ANSWERS).state)).toBe('noBlank');
   });
 
   it('마지막 문항은 고치기로 들어와도 넣으면 입력 확인으로 간다', () => {

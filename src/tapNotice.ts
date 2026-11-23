@@ -8,14 +8,19 @@ import { addAcceptListener, addDiscardListener, INTERACTIVE_SELECTOR, type Disca
 // - 같은 보호 구간에서는 한 번만 띄우고 화면 낭독기에도 한 번만 전한다. 겹쳐 뜨지 않는다(늘 하나만 둔다).
 // - 화면 구성을 밀지 않게 고정 위치에 띄우고, 누를 수 있는 요소를 가리지 않는 자리를 찾아 놓는다.
 //   알림 자체는 누름을 받지 않는다(pointer-events: none).
-// - 보이는 알림은 화면 낭독기에서 숨기고, 낭독은 따로 둔 알림 영역(role=status)으로 한다. 바텀시트나 대화상자가
-//   열려 있으면 그 안에 알림 영역을 두어, 대화상자 밖을 읽지 않는 화면 낭독기에도 전해지게 한다.
+// - 보이는 알림은 화면 낭독기에서 숨기고, 낭독은 미리 붙여 둔 알림 영역(aria-live=polite)에 글자를 넣어 한다.
+//   앱이 시작할 때 문서 끝에 하나를 만들어 두고, 바텀시트와 대화상자는 열릴 때부터 자기 안에 하나씩 둔다(data-tap-live).
+//   대화상자가 열려 있으면 그 안의 영역을 써서, 대화상자 밖을 읽지 않는 화면 낭독기에도 전해지게 한다.
+//   글자를 담은 채 새로 붙은 알림 영역은 화면 낭독기가 읽지 않는 경우가 많아서 영역을 미리 붙여 둔다.
 // - 뜨고 사라지는 것은 "화면이 바뀜"으로 세지 않는다(보호를 다시 걸지 않는다).
 
 export const TAP_NOTICE_MS = 2000;
 
 let box: HTMLDivElement | null = null;
-let live: HTMLDivElement | null = null;
+/** 앱이 시작할 때 문서 끝에 붙여 두는 알림 영역. */
+let bodyLive: HTMLDivElement | null = null;
+/** 지금 알림 글자를 넣어 둔 영역. */
+let live: Element | null = null;
 let timer = 0;
 let frame = 0;
 /** 알림을 띄운 보호 구간의 번호. 같은 구간에서는 다시 띄우지 않는다. */
@@ -70,10 +75,11 @@ function place(el: HTMLDivElement): void {
   el.style.top = `${top0}px`;
 }
 
-/** 화면 낭독기 알림 영역을 둘 곳. 열린 대화상자가 있으면 그 안, 없으면 문서 끝. */
-function liveHost(): Element {
+/** 알림을 전할 영역. 열린 대화상자 안에 미리 둔 영역이 있으면 그것, 없으면 문서 끝의 영역. */
+function liveRegion(): Element | null {
   const modals = document.querySelectorAll('[aria-modal="true"]');
-  return modals.length > 0 ? modals[modals.length - 1]! : document.body;
+  const modal = modals.length > 0 ? modals[modals.length - 1]! : null;
+  return modal?.querySelector('[data-tap-live]') ?? bodyLive;
 }
 
 export function hideTapNotice(): void {
@@ -82,7 +88,7 @@ export function hideTapNotice(): void {
   timer = 0;
   frame = 0;
   box?.remove();
-  live?.remove();
+  if (live) live.textContent = '';
   box = null;
   live = null;
 }
@@ -98,17 +104,15 @@ export function showTapNotice(info: DiscardInfo): void {
   box.textContent = S.common.tapDiscarded;
   document.body.appendChild(box);
   place(box);
-  // 알림 영역을 먼저 비워 둔 채로 붙이고, 다음 그림 차례에 글자를 넣어야 화면 낭독기가 바뀐 것으로 읽는다.
-  live = document.createElement('div');
-  live.className = 'sr-only';
-  live.setAttribute('role', 'status');
-  live.setAttribute('aria-live', 'polite');
-  live.dataset.testid = 'tap-notice-live';
-  liveHost().appendChild(live);
-  const target = live;
-  frame = window.requestAnimationFrame(() => {
-    target.textContent = S.common.tapDiscarded;
-  });
+  // 미리 붙여 둔 알림 영역을 비운 뒤, 다음 그림 차례에 글자를 넣어야 화면 낭독기가 바뀐 것으로 읽는다.
+  const target = liveRegion();
+  live = target;
+  if (target) {
+    target.textContent = '';
+    frame = window.requestAnimationFrame(() => {
+      target.textContent = S.common.tapDiscarded;
+    });
+  }
   timer = window.setTimeout(hideTapNotice, TAP_NOTICE_MS);
 }
 
@@ -116,6 +120,12 @@ export function showTapNotice(info: DiscardInfo): void {
 export function installTapNotice(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
+  bodyLive = document.createElement('div');
+  bodyLive.className = 'sr-only';
+  bodyLive.setAttribute('aria-live', 'polite');
+  bodyLive.setAttribute('aria-atomic', 'true');
+  bodyLive.dataset.tapLive = 'body';
+  document.body.appendChild(bodyLive);
   addDiscardListener(showTapNotice);
   addAcceptListener(hideTapNotice);
 }

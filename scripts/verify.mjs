@@ -522,12 +522,16 @@ function buildReport(textOk, textResult) {
   say();
   if (conditions.length > 0) {
     say('지시서 범위 밖의 조건에서도 답 입력 화면을 끝까지 쓸 수 있는지 봤어요(키패드의 모든 키와 안내문이 화면 안에 있고, 지금 칸으로 스크롤되는지).');
+    say('1.1의 고치는 중과 잠금 상태는 가로 화면(지원 범위 밖)에서 키패드가 화면 아래로 나간 높이를 재서 적기만 했어요(결정기록 98번).');
     say();
-    say('| 조건 | 확인한 상태 | 내용이 넘쳐 스크롤이 생긴 높이(최대) |');
-    say('| --- | --- | --- |');
+    say('| 조건 | 확인한 상태 | 내용이 넘쳐 스크롤이 생긴 높이(최대) | 키패드가 화면 아래로 나간 높이(최대, 결과만 적은 상태) |');
+    say('| --- | --- | --- | --- |');
     for (const name of [...new Set(conditions.map((c) => c.name))]) {
       const list = conditions.filter((c) => c.name === name);
-      say(`| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px |`);
+      const loose = list.filter((c) => c.strict === false);
+      say(
+        `| ${name} | ${list.length}개 | ${max(list, (c) => c.overflowPx)}px | ${loose.length > 0 ? `${max(loose, (c) => c.keysCutPx ?? 0)}px(${loose.map((c) => c.label).join(', ')})` : '0px(모든 상태에서 키패드가 화면 안)'} |`,
+      );
     }
     say();
   }

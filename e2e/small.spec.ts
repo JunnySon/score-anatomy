@@ -27,9 +27,9 @@ test('작은 화면, 키패드 방식: 30문항 모두에서 조작 요소가 �
       await tapKey(page, 9);
       await tapKey(page, 9);
       await tapKey(page, 9);
-      await expect(page.getByText('답은 0부터 999까지예요.')).toBeVisible();
+      await expect(page.getByTestId('pad-panel').getByText('답은 0부터 999까지예요.')).toBeVisible();
       await checkScreen(page, `키패드 ${item.no}번, 안내문`, 'small-keypad', { mustFit: true });
-      await expect(page.getByText('답은 0부터 999까지예요.')).toBeInViewport({ ratio: 1 });
+      await expect(page.getByTestId('pad-panel').getByText('답은 0부터 999까지예요.')).toBeInViewport({ ratio: 1 });
       checked += 1;
       await tapKey(page, 'erase');
       await tapKey(page, 'erase');

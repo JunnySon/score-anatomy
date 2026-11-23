@@ -1,8 +1,20 @@
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { DigitPad, EntryBox, McPad } from '../components/pads';
-import { Badge, Message, Progress, Screen } from '../components/ui';
+import { Badge, LiveRegion, Message, Progress, Screen } from '../components/ui';
 import { choicesOf } from '../exams/validate';
-import { entryOf, initKeypad, isDirty, panelOf, reduceKeypad, type KeyEvent, type KeypadState, type Panel } from '../logic/keypad';
+import {
+  entryOf,
+  initKeypad,
+  isDirty,
+  keysLocked,
+  nowLabelOf,
+  panelOf,
+  reduceKeypad,
+  type KeyEvent,
+  type KeypadState,
+  type NowLabel,
+  type Panel,
+} from '../logic/keypad';
 import { countEntered } from '../logic/scoring';
 import { GROUP_SIZE, groupIndexOf, sectionOf } from '../logic/sections';
 import { navigate } from '../router';
@@ -62,6 +74,18 @@ function GhostCells({ count }: { count: number }) {
   );
 }
 
+const NOW_LABEL: Record<NowLabel, string> = {
+  now: S.input.nowLabel,
+  fixing: S.input.nowLabelFixing,
+  put: S.input.nowLabelPut,
+  noBlank: S.input.nowLabelNoBlank,
+};
+
+/** 정보 안내(잠금, 고치기, 빈칸 없음, 지웠음)인지. 아니면 경고 안내(범위 밖 숫자, 빈칸, 확정하지 않은 숫자, 지울 답 없음)다. */
+function isInfo(text: Panel['text']): boolean {
+  return text !== null && (text.kind === 'locked' || text.kind === 'noBlank' || text.kind === 'fixing' || text.kind === 'erased');
+}
+
 /** 키패드 위 안내문 자리의 글자. */
 function panelText(text: Panel['text']): string | null {
   if (!text) return null;
@@ -92,6 +116,8 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   const items = exam.items;
   const [state, setState] = useState<KeypadState>(() => initKeypad(items, session.answers));
   const currentRef = useRef<HTMLButtonElement | null>(null);
+  // 잠긴 키를 누르면 화면 낭독기에 잠금 안내를 다시 전한다(알림 영역을 잠깐 비웠다가 다시 채운다).
+  const [srBlank, setSrBlank] = useState(false);
 
   const cursor = Math.min(state.cursor, items.length - 1);
   const item = items[cursor]!;
@@ -103,7 +129,11 @@ function InputKeypad({ h }: { h: SessionHandle }) {
   const prevGroup = g > 0 ? items.slice((g - 1) * GROUP_SIZE, g * GROUP_SIZE) : [];
   const panel = panelOf(state, items, session.answers);
   const message = panelText(panel.text);
-  const locked = state.lock !== null;
+  const keys = keysLocked(state);
+  const onLocked = () => {
+    setSrBlank(true);
+    window.requestAnimationFrame(() => setSrBlank(false));
+  };
 
   // 글자를 키웠거나 화면이 낮아서 내용이 넘치면 지금 칸이 보이게 스크롤한다.
   useEffect(() => {
@@ -148,16 +178,19 @@ function InputKeypad({ h }: { h: SessionHandle }) {
     item.kind === 'mc' ? (
       <McPad
         choices={choicesOf(item)}
-        locked={locked}
+        locked={keys.answer}
+        onLocked={onLocked}
         onPick={(n) => dispatch({ type: 'choice', value: n })}
         fn={[
           { key: 'skip', label: S.common.skip, onPress: () => dispatch({ type: 'skip' }) },
-          { key: 'erase', label: S.common.erase, onPress: () => dispatch({ type: 'erase' }), live: true },
+          { key: 'erase', label: S.common.erase, onPress: () => dispatch({ type: 'erase' }), live: !keys.erase },
         ]}
       />
     ) : (
       <DigitPad
-        locked={locked}
+        locked={keys.answer}
+        eraseLocked={keys.erase}
+        onLocked={onLocked}
         onDigit={(d) => dispatch({ type: 'digit', digit: d })}
         onErase={() => dispatch({ type: 'erase' })}
         onSkip={() => dispatch({ type: 'skip' })}
@@ -179,9 +212,13 @@ function InputKeypad({ h }: { h: SessionHandle }) {
       guardKey={item.kind}
       footer={
         <>
+          {/* 화면 낭독기에는 늘 붙어 있는 이 알림 영역으로 안내문을 전한다. 보이는 안내문은 낭독에서 뺀다. */}
+          <LiveRegion text={srBlank ? '' : (message ?? '')} testId="pad-live" />
           {message ? (
             <div className="pad-msg" data-testid="pad-panel" data-lock={state.lock ?? 'none'}>
-              <Message>{message}</Message>
+              <Message live={false} plain={isInfo(panel.text)}>
+                {message}
+              </Message>
               {hasButtons ? (
                 <div className="pad-actions" role="group" aria-label={S.input.nextActionsLabel}>
                   {panel.fixNext !== null ? (
@@ -219,7 +256,9 @@ function InputKeypad({ h }: { h: SessionHandle }) {
 
       <div className="now">
         <div className="now__main" aria-live="polite">
-          <span className="cap">{S.input.nowLabel}</span>
+          <span className="cap" data-testid="now-label">
+            {NOW_LABEL[nowLabelOf(state)]}
+          </span>
           <span className="hero" data-testid="now-no">
             {S.common.itemNo(item.no)}
           </span>

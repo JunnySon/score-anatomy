@@ -473,7 +473,7 @@ describe('추가 경우', () => {
     expect(an.luckAverage).toBe(84.8);
     expect(an.luckAverageRounded).toBe(85);
     expect(an.showLuckAverage).toBe(false);
-    // 7번, 9번, 10번(3점씩)도 찍어서 맞혔다고 표시하면 85 - 13 + 0.2 x 28 = 77.6, 화면에는 약 78점.
+    // 7번, 9번, 10번(3점씩)도 찍었다고 표시했고 맞았으면 85 - 13 + 0.2 x 28 = 77.6, 화면에는 약 78점.
     const marks2: Marks = { ...marks, 7: 'guess', 9: 'guess', 10: 'guess' };
     const an2 = analyze(examA, gradeExam(examA, { answers, marks: marks2, causes: {} }));
     expect(an2.guessCorrectPoints).toBe(13);

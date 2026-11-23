@@ -118,4 +118,22 @@ describe('앱 다리 규격 번호', () => {
     // 문서의 __SA_APP__ 표에 적은 bridge 값도 같다.
     expect(doc).toContain(`| bridge | ${inCode![1]} |`);
   });
+
+  it('규격 문서의 "규격 N" 장 가운데 가장 큰 번호와 manifest 칸 표의 bridgeMax 가 웹 코드의 BRIDGE_MAX 와 같다', () => {
+    const doc = readFileSync(resolve(process.cwd(), 'docs/앱_다리_규격.md'), 'utf8');
+    const app = readFileSync(resolve(process.cwd(), 'src/platform/app.ts'), 'utf8');
+    // scripts/app-bundles.mjs 가 manifest.json 의 bridgeMax 를 읽는 줄과 같은 모양이다.
+    const max = app.match(/^export const BRIDGE_MAX = (\d+);$/m);
+    const low = app.match(/^export const BRIDGE_VERSION = (\d+);$/m);
+    expect(max).not.toBeNull();
+    expect(low).not.toBeNull();
+    expect(Number(max![1])).toBeGreaterThanOrEqual(Number(low![1]));
+    // "## 7. 규격 2" 같은 장 제목. 규격 1은 1~6장이라 "규격 N" 장 제목이 없다.
+    const chapters = [...doc.matchAll(/^## \d+\. 규격 (\d+)/gm)].map((m) => Number(m[1]));
+    expect(chapters.length).toBeGreaterThan(0);
+    expect(Math.max(...chapters)).toBe(Number(max![1]));
+    // manifest.json 의 칸 표에 bridgeMax 행이 있고 값이 같다.
+    expect(doc).toMatch(/^\| bridgeMax \| /m);
+    expect(doc).toContain(`| bridgeMax | ${max![1]} |`);
+  });
 });

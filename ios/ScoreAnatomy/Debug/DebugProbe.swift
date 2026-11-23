@@ -125,14 +125,17 @@ final class DebugProbe {
     private func run(_ body: String, writeTo fileName: String) async {
         guard let directory, let webView else { return }
         let wrapped = "const __v = await (async () => {\n\(body)\n})();\nreturn JSON.stringify(__v === undefined ? null : __v);"
-        let output: String
-        do {
-            let value = try await webView.callAsyncJavaScript(wrapped, arguments: [:], in: nil, contentWorld: .page)
-            output = "{\"ok\":true,\"value\":\((value as? String) ?? "null")}"
-        } catch {
-            let payload: [String: Any] = ["ok": false, "error": String(describing: error)]
-            let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{\"ok\":false}".utf8)
-            output = String(decoding: data, as: UTF8.self)
+        // Swift 전용 함수(libswiftWebKit)를 쓰지 않으려고 Objective-C 기본 API 를 그대로 부른다(iOS 17, 18 에서도 켜지게).
+        let output: String = await withCheckedContinuation { continuation in
+            webView.__callAsyncJavaScript(wrapped, arguments: nil, inFrame: nil, in: .page) { value, error in
+                if let error {
+                    let payload: [String: Any] = ["ok": false, "error": String(describing: error)]
+                    let data = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data("{\"ok\":false}".utf8)
+                    continuation.resume(returning: String(decoding: data, as: UTF8.self))
+                } else {
+                    continuation.resume(returning: "{\"ok\":true,\"value\":\((value as? String) ?? "null")}")
+                }
+            }
         }
         try? Data(output.utf8).write(to: directory.appendingPathComponent(fileName), options: .atomic)
     }

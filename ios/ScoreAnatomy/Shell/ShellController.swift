@@ -221,7 +221,7 @@ final class ShellController {
     /// 묶음의 화면이 실제로 그려졌는지 본다. 스크립트가 시작하지 못해 빈 화면이면 실패 안내를 띄운다.
     private func confirmRendered() async {
         for _ in 0..<20 {
-            let count = (try? await webView.callAsyncJavaScript("const r = document.getElementById('root'); return r ? r.childElementCount : 0;", arguments: [:], in: nil, contentWorld: .page)) as? Int ?? 0
+            let count = await renderedRootChildren()
             if count > 0 {
                 loadWatchdog?.cancel()
                 if state.phase == .loading {
@@ -235,6 +235,15 @@ final class ShellController {
             try? await Task.sleep(for: .milliseconds(250))
         }
         fail(.blankPage)
+    }
+
+    /// 웹 화면의 뿌리(#root)에 그려진 요소 수.
+    private func renderedRootChildren() async -> Int {
+        await withCheckedContinuation { continuation in
+            webView.evaluateJavaScript("(function () { var r = document.getElementById('root'); return r ? r.childElementCount : 0; })()") { value, _ in
+                continuation.resume(returning: (value as? NSNumber)?.intValue ?? 0)
+            }
+        }
     }
 
     func pageDidFail(_ error: Error) {
@@ -324,7 +333,7 @@ final class ShellController {
         #if DEBUG
         debug?.noteSent(message)
         #endif
-        webView.callAsyncJavaScript(ToWeb.deliverScript, arguments: ["s": message.json], in: nil, in: .page, completionHandler: nil)
+        webView.evaluateJavaScript(message.deliverScript, completionHandler: nil)
     }
 
     // MARK: 시스템

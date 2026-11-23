@@ -61,8 +61,13 @@ enum ToWeb: Equatable, Sendable {
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// 웹에 알리는 스크립트. 인자 s 는 json 글자다. 함수가 아직 없으면 아무것도 하지 않는다.
-    static let deliverScript = "const f = window.__saFromApp; if (typeof f === 'function') { f(JSON.parse(s)); }"
+    /// 웹에 알리는 스크립트. JSON 은 그대로 자바스크립트 객체 글자로 쓸 수 있다(여기서 만드는 JSON 은 영문, 숫자, 참거짓뿐이다).
+    /// 함수가 아직 없으면 아무것도 하지 않는다.
+    /// WebKit 의 기본(Objective-C) API 인 evaluateJavaScript 로 돌린다. iOS 26 SDK 의 Swift 전용 함수(callAsyncJavaScript)는
+    /// iOS 17, 18 에 없는 라이브러리(libswiftWebKit)를 불러서 앱이 켜지지 않는다(docs/ios_결정기록.md).
+    var deliverScript: String {
+        "(function () { var f = window.__saFromApp; if (typeof f === 'function') { f(\(json)); } })();"
+    }
 }
 
 /// 페이지 읽기가 끝나기(didFinish) 전에 생긴 알림을 받은 차례대로 모아 둔다.

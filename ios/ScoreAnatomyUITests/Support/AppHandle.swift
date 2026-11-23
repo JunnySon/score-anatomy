@@ -24,6 +24,9 @@ final class AppHandle {
     var storeDirectory: URL { runDirectory.appendingPathComponent("store", isDirectory: true) }
     var probeDirectory: URL { runDirectory.appendingPathComponent("probe", isDirectory: true) }
     private var commandNumber = 0
+    /// 마지막으로 누른 키와 시각(연달아 같은 키를 누를 때 보호 시간을 넘기려고).
+    var lastKeyLabel: String?
+    var lastKeyTime = Date.distantPast
 
     init(name: String) {
         let safe = name.replacingOccurrences(of: "[^A-Za-z0-9가-힣_-]", with: "-", options: .regularExpression)

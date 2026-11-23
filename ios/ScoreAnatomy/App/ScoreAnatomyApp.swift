@@ -4,32 +4,48 @@ import WebKit
 /// 앱의 시작점. 화면 전체를 웹뷰 하나가 차지한다.
 @main
 struct ScoreAnatomyApp: App {
-    @State private var shell = ShellController()
-
     var body: some Scene {
         WindowGroup {
-            RootView(shell: shell, state: shell.state)
+            RootView()
         }
     }
 }
 
 /// 맨 아래에 토큰 배경색을 깔고 그 위에 웹뷰(또는 실패 안내)를 둔다.
 struct RootView: View {
-    let shell: ShellController
-    let state: ShellState
+    /// 껍데기는 창이 뜬 뒤에 만든다. 앱이 다 켜지기 전(App 을 만들 때)에 웹뷰를 만들면
+    /// 웹뷰의 누름 인식기가 어긋나 첫 누름에서 앱이 꺼졌다(docs/ios_결정기록.md).
+    @State private var shell: ShellController?
 
     var body: some View {
         ZStack {
             Color(uiColor: Palette.background)
                 .ignoresSafeArea()
-            if state.phase == .failed {
-                LoadFailureView()
-            } else {
-                // 위아래 여백은 웹이 안전 영역 값(env(safe-area-inset-*))으로 처리한다.
-                // 키보드 자리도 웹뷰가 스스로 맞추므로 SwiftUI 가 웹뷰 크기를 줄이지 않게 한다.
-                WebViewHost(webView: shell.webView)
-                    .ignoresSafeArea()
+            if let shell {
+                ShellContent(shell: shell, state: shell.state)
             }
+        }
+        .onAppear {
+            if shell == nil {
+                shell = ShellController()
+            }
+        }
+    }
+}
+
+/// 웹뷰나 실패 안내.
+struct ShellContent: View {
+    let shell: ShellController
+    let state: ShellState
+
+    var body: some View {
+        if state.phase == .failed {
+            LoadFailureView()
+        } else {
+            // 위아래 여백은 웹이 안전 영역 값(env(safe-area-inset-*))으로 처리한다.
+            // 키보드 자리도 웹뷰가 스스로 맞추므로 SwiftUI 가 웹뷰 크기를 줄이지 않게 한다.
+            WebViewHost(webView: shell.webView)
+                .ignoresSafeArea()
         }
     }
 }

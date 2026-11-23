@@ -195,13 +195,16 @@ final class BridgeTests: XCTestCase {
     func testDeliverScriptCallsWebFunctionOnlyWhenReady() throws {
         let context = try XCTUnwrap(JSContext())
         context.evaluateScript("var window = {}; var got = [];")
-        context.setObject(ToWeb.copied(true).json, forKeyedSubscript: "s" as NSString)
         // 함수가 아직 없으면 아무것도 하지 않는다(오류 없음).
-        context.evaluateScript("(function(){ \(ToWeb.deliverScript) })()")
+        context.evaluateScript(ToWeb.copied(true).deliverScript)
         XCTAssertNil(context.exception)
         context.evaluateScript("window.__saFromApp = function (m) { got.push(m); };")
-        context.evaluateScript("(function(){ \(ToWeb.deliverScript) })()")
-        XCTAssertTrue(context.evaluateScript("got.length === 1 && got[0].type === 'copied' && got[0].ok === true").toBool())
+        context.evaluateScript(ToWeb.copied(true).deliverScript)
+        context.evaluateScript(ToWeb.storeFailed.deliverScript)
+        context.evaluateScript(ToWeb.fontScale(1.25).deliverScript)
+        XCTAssertNil(context.exception)
+        XCTAssertTrue(context.evaluateScript("got.length === 3 && got[0].type === 'copied' && got[0].ok === true").toBool(), "ok 는 숫자가 아니라 참이어야 한다")
+        XCTAssertTrue(context.evaluateScript("got[1].type === 'storeFailed' && got[2].type === 'fontScale' && got[2].value === 1.25").toBool())
     }
 
     func testOutboxKeepsOrder() {

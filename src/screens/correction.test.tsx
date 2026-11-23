@@ -507,7 +507,7 @@ describe('정답 정정 알림의 세부(4-6)', () => {
     expect(answerSeenNow(s, item(fixed, 11))).toBe(false);
     expect(answerSeenNow(s, item(fixed, 15))).toBe(true);
     const html = renderToStaticMarkup(<Causes h={handleOf(s, fixed).h} grade={gradeExam(fixed, s)} />);
-    expect(html).toContain('<p class="sub mt3" data-testid="answer-changed-11">정답을 확인한 뒤 이 문항의 정답이 정정됐어요.</p>');
+    expect(html).toContain('<p class="sub mt3" data-testid="answer-changed-11">정답을 확인한 뒤 이 문항의 정답이 바뀌었어요.</p>');
     expect(html).toContain('data-testid="show-answer-11"');
     expect(html).not.toContain('data-testid="answer-11"');
     expect(html).toContain('data-testid="answer-15"');

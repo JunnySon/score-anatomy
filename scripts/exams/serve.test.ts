@@ -191,7 +191,11 @@ describe('발행 도구 exams:serve(작업 지시서 3의 6-4)', () => {
       '리허설과 작업 지시서 4의 시뮬레이터 시험용 서버예요. 이 컴퓨터(127.0.0.1)에서만 열리고, GET 과 HEAD 만 받고, 캐시를 쓰지 않게(Cache-Control: no-store) 내줘요.',
     );
     expect(lines).toContain('요청마다 방법, 경로, 상태만 적어요(접속한 곳은 적지 않아요).');
-    expect(lines).toContain(`확인: npm run exams:verify -- ${url}`);
+    // 기본이 아닌 발행 폴더(리허설의 임시 폴더)라서 발행할 때 쓴 자료 폴더를 붙이라고 적는다(그대로 치면 저장소의 진짜 자료 폴더를 본다, 2차 검토 T5).
+    expect(lines).toContain(`확인: npm run exams:verify -- ${url} --data <발행할 때 쓴 자료 폴더>`);
+    expect(lines).toContain(
+      '  기본이 아닌 발행 폴더라서 발행할 때 쓴 자료 폴더를 --data 로 붙여요. 테스트 전용 발행물이면 --data 대신 --key <테스트 전용 공개 키 파일> 을 붙여요.',
+    );
     expect(lines.filter((line) => line.startsWith('GET '))).toEqual([
       'GET /index.json 200',
       'GET /index.json.sig 200',
@@ -204,6 +208,23 @@ describe('발행 도구 exams:serve(작업 지시서 3의 6-4)', () => {
     const none = await runToolAsync(['serve', '--dir', join(dir, 'no-such-folder'), '--port', '0']);
     expect(none.status).toBe(1);
     expect(none.stderr).toContain('발행 폴더가 없어요');
+  }, 60000);
+
+  it('커밋된 테스트 전용 발행물을 내주면 확인 안내에 테스트 전용 공개 키를 붙이고, 그 안내 그대로 확인하면 통과한다(2차 검토 T2, T5)', async () => {
+    const server = startTool(['serve', '--dir', join('exam-data', 'testdata', 'test-only-valid'), '--port', '0']);
+    closers.push(async () => {
+      server.child.kill();
+      await server.done;
+    });
+    const url = (await server.waitFor(/http:\/\/127\.0\.0\.1:\d+\//))[0];
+    await server.waitFor(/확인: [^\r\n]+/);
+    const lines = server.output().stdout.split(/\r?\n/);
+    expect(lines).toContain(`확인: npm run exams:verify -- ${url} --key exam-data/testdata/test-only-public-key.txt`);
+    // 안내 그대로(자료 폴더는 기본인 저장소의 exam-data): 테스트 전용 키라서 자료 폴더의 마지막 발행과 견주지 않고 통과한다.
+    const verified = await runToolAsync(['verify', url, '--key', join('exam-data', 'testdata', 'test-only-public-key.txt')]);
+    expect(verified.stderr).toBe('');
+    expect(verified.status).toBe(0);
+    expect(verified.stdout).toContain('공개 키가 테스트 전용 키라서 자료 폴더의 마지막 발행과 견주지 않았어요.');
   }, 60000);
 
   it('verify 는 주소에서 캐시를 쓰지 않고, 기기나 사용자를 가리키는 값을 붙이지 않고 받는다', async () => {

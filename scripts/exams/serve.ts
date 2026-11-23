@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join } from 'node:path';
+import { commandHint } from './data.ts';
 import type { Io } from './io.ts';
 import { INDEX_FILE } from './release.ts';
 import { isInside } from './sign.ts';
@@ -105,6 +106,11 @@ export interface ServeOptions {
   dir: string;
   dirName: string;
   port: number;
+  /**
+   * 확인 안내에 붙일 것(별도 검토 2차 T5). default: 기본 발행 폴더(dist-exams)라 붙이지 않음.
+   * testdata: 테스트 전용 발행물이라 테스트 전용 공개 키(keyArg)를 붙임. other: 기본이 아닌 발행 폴더라 발행할 때 쓴 자료 폴더를 붙이라고 적음.
+   */
+  verifyWith?: { kind: 'default' } | { kind: 'testdata'; keyArg: string } | { kind: 'other' };
 }
 
 /** exams:serve 를 돌린다. Ctrl+C(SIGINT)나 SIGTERM 을 받으면 서버를 끄고 0을 돌려준다. 띄우지 못하면 1이다. */
@@ -132,7 +138,14 @@ export async function runServe(opts: ServeOptions, io: Io): Promise<number> {
   io.out(`발행 폴더 ${opts.dirName} 를 내줘요: ${server.url}`);
   io.out('리허설과 작업 지시서 4의 시뮬레이터 시험용 서버예요. 이 컴퓨터(127.0.0.1)에서만 열리고, GET 과 HEAD 만 받고, 캐시를 쓰지 않게(Cache-Control: no-store) 내줘요.');
   io.out('요청마다 방법, 경로, 상태만 적어요(접속한 곳은 적지 않아요).');
-  io.out(`확인: npm run exams:verify -- ${server.url}`);
+  // 확인 안내는 그대로 쳤을 때 같은 자료 폴더와 공개 키를 보게 적는다. 리허설의 임시 발행 폴더는 자료 폴더를 알 수 없어서
+  // 붙이라고 적는다(그대로 치면 저장소의 진짜 자료 폴더로 확인하게 된다, 별도 검토 2차 T5).
+  const verifyWith = opts.verifyWith ?? { kind: 'default' };
+  if (verifyWith.kind === 'testdata') io.out(`확인: ${commandHint('verify', [server.url], [['--key', verifyWith.keyArg]])}`);
+  else if (verifyWith.kind === 'other') {
+    io.out(`확인: npm run exams:verify -- ${server.url} --data <발행할 때 쓴 자료 폴더>`);
+    io.out('  기본이 아닌 발행 폴더라서 발행할 때 쓴 자료 폴더를 --data 로 붙여요. 테스트 전용 발행물이면 --data 대신 --key <테스트 전용 공개 키 파일> 을 붙여요.');
+  } else io.out(`확인: npm run exams:verify -- ${server.url}`);
   io.out('끄기: Ctrl+C');
   return new Promise<number>((resolvePromise) => {
     const stop = () => {

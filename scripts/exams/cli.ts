@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isValidYmdHm } from '../../src/logic/dates.ts';
@@ -11,7 +12,7 @@ import { runKeygen } from './keygen.ts';
 import { runPublish } from './publish.ts';
 import { SERVE_PORT, runServe } from './serve.ts';
 import { PUBLIC_KEY_FILE, isInside } from './sign.ts';
-import { TESTDATA_DIR, runTestdata } from './testdata.ts';
+import { TESTDATA_DIR, TEST_ONLY_PUBLIC_KEY_FILE, runTestdata } from './testdata.ts';
 import { parseTarget, runVerify } from './verify.ts';
 
 // 발행 도구의 명령과 인자(작업 지시서 3의 6-4). 진입점은 scripts/exams.mjs 이고 npm run exams:<명령> 으로 부른다.
@@ -211,7 +212,15 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
       return runKeygen({ keyPath: files[0], keyName: names[0], dataDir, dataName, root: ROOT }, io);
     case 'serve': {
       const dir = parsed.options.dir === undefined ? join(ROOT, 'dist-exams') : resolve(base, parsed.options.dir);
-      return runServe({ dir, dirName: displayPath(dir, base), port }, io);
+      // 확인 안내에 붙일 것(별도 검토 2차 T5): 기본 발행 폴더면 없음, 저장소의 테스트 전용 발행물이면 테스트 전용 공개 키, 그 밖이면 자료 폴더.
+      const testdata = join(ROOT, 'exam-data', TESTDATA_DIR);
+      const isDefault = isInside(dir, join(ROOT, 'dist-exams')) && isInside(join(ROOT, 'dist-exams'), dir);
+      const verifyWith = isDefault
+        ? ({ kind: 'default' } as const)
+        : existsSync(dir) && isInside(dir, testdata)
+          ? ({ kind: 'testdata', keyArg: displayPath(join(testdata, TEST_ONLY_PUBLIC_KEY_FILE), base) } as const)
+          : ({ kind: 'other' } as const);
+      return runServe({ dir, dirName: displayPath(dir, base), port, verifyWith }, io);
     }
     case 'testdata':
       return runTestdata({ dataDir, dataName }, io);

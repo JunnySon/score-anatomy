@@ -10,6 +10,7 @@ import {
   otherRequestsOf,
   remoteRequests,
   sendRemote,
+  sendRemoteFailed,
   setRemoteMode,
   setRemoteNext,
   storeMessages,
@@ -612,6 +613,12 @@ test('app-test: "새로 확인"을 누르면 saRemote 로 { op: "refresh" } 를 
   await expect(notice).toBeVisible();
   await expect(result).toHaveCount(0);
   await expect(live).toHaveText('');
+  // 기다리는 새로 확인이 없을 때 온 remoteFailed 는 가진 자료를 그대로 쓰고, 결과 문구도 없다.
+  await sendRemoteFailed(page);
+  await page.waitForTimeout(200);
+  await expect(result).toHaveCount(0);
+  await expect(page.getByTestId('remote-issued')).toHaveText(issuedText(20, 10));
+  expect(await examIds(page)).toEqual(['test-remote-a', 'sample-a', 'sample-b', 'sample-c']);
   expectNoOtherRequests(page);
 });
 

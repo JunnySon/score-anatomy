@@ -7,7 +7,7 @@
 // - S_ROWS: 5행 방식 답 입력 화면에서만 쓰는 문구.
 // - S_TEST: 테스트 진행자용 화면에서만 쓰는 문구.
 // - S_TOOLS: 진행자용 화면으로 가는 링크, 기록 화면의 "준비 중인 기능" 목록, 테스트 기기 안내.
-// - S_APP: 아이폰 앱 안에서만 바꿔 쓰는 문구.
+// - S_APP: 아이폰 앱 안에서만 쓰거나 바꿔 쓰는 문구. 화면은 platform.appText 로 읽는다.
 // 앱 배포용 묶음은 S_ROWS, S_TEST, S_TOOLS 를 쓰는 화면을 싣지 않으므로 그 글자가 묶음에서 빠진다(src/tools).
 
 import type { Cause, GradedBefore, InputMode, ItemKind, SeenBefore, TimeFeel } from './types';
@@ -507,10 +507,25 @@ export const S_TEST = {
   examReselected: (n: number) => `참가자가 측정 중에 다른 시험 기록으로 ${n}번 옮겨 갔어요. 아래 값은 마지막에 넣던 기록에서 잰 것이에요.`,
 } as const;
 
-/** 아이폰 앱 안에서만 바꿔 쓰는 문구(src/platform/app.ts 만 쓴다). */
+/**
+ * 아이폰 앱 안에서만 쓰거나 바꿔 쓰는 문구. src/platform/app.ts 만 가져오고, 화면은 platform.appText 로 읽는다
+ * (브라우저와 일반 웹 빌드에서는 null 이라 그리지 않는다).
+ */
 export const S_APP = {
   privacy: '가입 없이 써요. 기록은 이 기기에 저장하고 서버로 보내지 않아요.',
   historyNote: '앱을 지우면 기록도 함께 지워져요.',
   storageFailed: '이 기기에 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
   archived: '앞서 저장된 기록을 읽지 못해 따로 보관해 뒀어요.',
+  // 시험 선택 화면의 받은 시험 자료 안내(작업 지시서 3의 5-4, src/components/RemoteNotice.tsx).
+  // 다리 규격 2 이상의 껍데기가 시험 자료를 넘겨줬을 때만 보인다.
+  remoteSource: '시험 자료는 정해진 주소 한 곳에서 받아요. 넣은 답과 기록은 보내지 않아요.',
+  /** 받은 자료 기준(넘겨받은 자료의 issuedAt, 한국 시간). 연, 월, 일, 시, 분은 시각 문자열을 잘라 얻은 값이다(src/logic/dates.ts). */
+  remoteIssued: (y: number, m: number, d: number, h: number, mi: number) => `받은 자료 기준: ${dateText(y, m, d)} ${clockText(h, mi)}`,
+  remoteRefresh: '새로 확인',
+  /** "새로 확인"의 결과(src/exams/index.ts 의 RefreshResult). 10초 동안 아무 응답이 없을 때도 failed 다. */
+  remoteResult: {
+    new: '시험 자료를 새로 받았어요.',
+    same: '이미 가장 새 자료예요.',
+    failed: '새 시험 자료를 받지 못했어요. 지금 있는 자료로 쓸 수 있어요.',
+  },
 } as const;

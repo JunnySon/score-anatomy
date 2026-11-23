@@ -291,6 +291,25 @@ describe('화면 문구', () => {
     expect(S.correction.same(76)).toBe('정답이 정정됐지만 점수는 76점 그대로예요.');
     for (const text of ['정답이 정정돼서 지금 정답으로 채점했어요.', '확인했어요', '정답 정정으로 다시 채점됨']) expect(texts.has(text), text).toBe(true);
     expect(S.history.openCorrected('예시 시험 A', '2026년 11월 22일, 79점')).toBe('예시 시험 A 기록 열기, 2026년 11월 22일, 79점, 정답 정정으로 다시 채점됨');
+    // 5-4: 시험 선택 화면의 받은 시험 자료 안내, "새로 확인"과 그 결과 셋(10초 동안 응답이 없을 때도 받지 못했다는 문구).
+    // 앱에서 다리 규격 2 이상일 때만 보여서 S_APP 에 둔다. 받은 자료 기준의 시각은 지시서의 형식 예시 그대로다.
+    for (const text of [
+      '시험 자료는 정해진 주소 한 곳에서 받아요. 넣은 답과 기록은 보내지 않아요.',
+      '새로 확인',
+      '시험 자료를 새로 받았어요.',
+      '이미 가장 새 자료예요.',
+      '새 시험 자료를 받지 못했어요. 지금 있는 자료로 쓸 수 있어요.',
+    ]) {
+      expect(texts.has(text), text).toBe(true);
+    }
+    expect(S_APP.remoteSource).toBe('시험 자료는 정해진 주소 한 곳에서 받아요. 넣은 답과 기록은 보내지 않아요.');
+    expect(S_APP.remoteIssued(2030, 1, 2, 17, 10)).toBe('받은 자료 기준: 2030년 1월 2일 오후 5시 10분');
+    expect(S_APP.remoteRefresh).toBe('새로 확인');
+    expect(S_APP.remoteResult).toEqual({
+      new: '시험 자료를 새로 받았어요.',
+      same: '이미 가장 새 자료예요.',
+      failed: '새 시험 자료를 받지 못했어요. 지금 있는 자료로 쓸 수 있어요.',
+    });
   });
 });
 

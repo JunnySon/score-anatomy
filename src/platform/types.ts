@@ -35,7 +35,7 @@ export interface Platform {
   copy(text: string): Promise<boolean>;
   /** 받아들인 키패드 누름 한 번에 한 번 부른다(앱에서는 가벼운 햅틱). */
   haptic(): void;
-  /** 앱 안에서만 바꿔 쓰는 문구. 브라우저면 null. */
+  /** 앱 안에서만 쓰거나 바꿔 쓰는 문구(S_APP). 브라우저면 null. */
   appText: typeof S_APP | null;
   /** 파일로 저장할 수 있는지(진행자용 화면의 "파일 저장"). 앱에서는 복사만 둔다. */
   canSaveFile: boolean;

@@ -3,7 +3,7 @@ import { platform } from '#platform';
 import { Badge, Message, Screen, TopBar } from '../components/ui';
 import { examShiftKey } from '../exams/merge';
 import { typesReadyOf } from '../exams/validate';
-import type { Grade } from '../logic/scoring';
+import { analyze, type Grade } from '../logic/scoring';
 import { selectSteps, type Step } from '../logic/steps';
 import { retryLabel, selfCheckLabel, stepReasons, typesPendingText } from '../logic/text';
 import { navigate } from '../router';
@@ -108,6 +108,8 @@ export function Steps({ h, grade }: { h: SessionHandle; grade: Grade }) {
   // 유형 분류 전(typesReady false)에는 계단을 셈하지 않고 계단 대신 안내를 보여 준다. 유형 이름도 보여 주지 않는다(작업 지시서 3의 4-3).
   const typesReady = typesReadyOf(h.exam);
   const steps = typesReady ? selectSteps(h.exam, grade) : [];
+  // 찍음 표시가 붙은 모두 정답 처리 문항은 계단에 넣지 않는다. 그 사실을 계단 위에 적는다(작업 지시서 3의 4-2, 별도 검토 D1).
+  const allCorrectGuess = typesReady && analyze(h.exam, grade).allCorrectGuessCount > 0;
   return (
     <Screen
       top={<TopBar back={h.path('/anatomy')} title={S.steps.top} />}
@@ -119,6 +121,11 @@ export function Steps({ h, grade }: { h: SessionHandle; grade: Grade }) {
         <h2 className="title">{steps.length > 0 ? S.steps.title(steps.length) : S.steps.emptyTitle}</h2>
         {h.exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
       </div>
+      {allCorrectGuess ? (
+        <p className="sub mt2" data-testid="steps-all-correct">
+          {S.steps.allCorrectGuess}
+        </p>
+      ) : null}
       {!typesReady ? (
         <p className="mt4" data-testid="steps-pending">
           {typesPendingText(h.exam)}

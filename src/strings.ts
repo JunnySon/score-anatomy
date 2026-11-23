@@ -231,22 +231,28 @@ export const S = {
 
   anatomy: {
     top: '점수 해부',
-    barLabel: (total: number, plain: number, guess: number, slip: number, other: number) => {
+    barLabel: (total: number, plain: number, guess: number, slip: number, other: number, allCorrectGuess = false) => {
       // 값이 없는 구간은 말하지 않는다(0점이라고 쓰지 않는다).
       const parts: string[] = [];
       if (plain > 0) parts.push(`찍음 표시 없이 맞힌 점수 ${plain}점`);
       if (guess > 0) parts.push(`추측했다고 표시한 정답 ${guess}점`);
       if (slip > 0) parts.push(`실수라고 표시한 오답 ${slip}점`);
       if (other > 0) parts.push(slip > 0 ? `그 외 오답 ${other}점` : `오답 ${other}점`);
-      return `${total}점 막대. ${parts.join(', ')}.`;
+      // 찍음 표시가 붙은 모두 정답 처리 문항이 있으면, 그 점수가 어느 구간에 들어갔는지 덧붙인다(작업 지시서 3의 4-2, 별도 검토 D1).
+      const note = allCorrectGuess ? ' 모두 정답으로 처리된 문항은 찍음 표시가 있어도 찍음 표시 없이 맞힌 점수에 넣었어요.' : '';
+      return `${total}점 막대. ${parts.join(', ')}.${note}`;
     },
     rowGuess: '추측했다고 표시한 정답',
     rowGuessSub: (actual: number) => `${actual}점 안에 들어 있어요`,
     rowGuessNone: '찍었다고 표시한 문항에서 나온 점수는 없어요.',
+    // 찍음 표시가 붙은 모두 정답 처리 문항이 있을 때. 그 문항의 점수는 따로 나누지 않는다(작업 지시서 3의 4-2, 별도 검토 D1).
+    rowGuessNoneAllCorrect: '모두 정답으로 처리된 문항 말고는 찍었다고 표시한 문항에서 나온 점수가 없어요.',
     rowSlip: '실수라고 표시한 오답',
     rowSlipSub: (actual: number) => `${actual}점에는 들어 있지 않아요`,
     rowSlipNone: '실수라고 표시한 오답이 없어요',
     sentenceGuess: (actual: number, guess: number) => `${actual}점 가운데 ${guess}점은 찍었다고 표시한 문항에서 나왔어요.`,
+    // sentenceGuess 뒤에 붙인다. 찍음 표시가 붙은 모두 정답 처리 문항이 있을 때(별도 검토 D1).
+    sentenceGuessAllCorrect: '모두 정답으로 처리된 문항은 찍음 표시가 있어도 이 점수에 넣지 않았어요.',
     sentenceSlip: (wrong: number, slip: number) => `틀린 ${wrong}점 가운데 ${slip}점은 실수라고 표시했어요.`,
     emptyMarks: (actual: number) => `표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
     emptyGuess: (actual: number) => `찍었다고 표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
@@ -291,8 +297,8 @@ export const S = {
     luckEqualSingle: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷과 같은 점수예요`,
     luckAboveSingle: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷보다 위예요`,
     luckSummary: (rounded: number) => `약 ${rounded}점 설명 보기`,
-    luckDetail: (actual: number) =>
-      `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요. 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,
+    luckDetail: (actual: number, allCorrectGuess = false) =>
+      `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요.${allCorrectGuess ? ' 모두 정답으로 처리된 문항은 찍음 표시가 있어도 넣지 않았어요.' : ''} 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,
     noCuts: '등급컷 자료를 기다리고 있어요. 점수와 고칠 것은 지금 볼 수 있어요.',
     // 유형 분류 전(typesReady false)에는 고칠 것(계단)을 볼 수 없어서 뒷문장을 뺀다(작업 지시서 3의 4-3).
     noCutsTypesPending: '등급컷 자료를 기다리고 있어요.',
@@ -339,6 +345,8 @@ export const S = {
     // 등급컷 자료가 아직 없으면 "등급컷은 지금 볼 수 있어요"가 사실과 달라서 점수만 적는다.
     typesPending: '유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.',
     typesPendingNoCuts: '유형 분류를 준비하고 있어요. 점수는 지금 볼 수 있어요.',
+    // 찍음 표시가 붙은 모두 정답 처리 문항이 있을 때 계단 화면에 적는다. 그 문항은 계단에 넣지 않는다(작업 지시서 3의 4-2, 별도 검토 D1).
+    allCorrectGuess: '모두 정답으로 처리된 문항은 찍음 표시가 있어도 계단에 넣지 않았어요.',
     retryStatusTitle: '다시 푼 기록',
     retryStatus: (no: number, label: string) => `${no}번: ${label}`,
   },

@@ -100,7 +100,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
           </div>
         ) : an.hasGuessMark ? (
           <p className="arow arow--text" data-testid="row-guess-none">
-            {S.anatomy.rowGuessNone}
+            {an.allCorrectGuessCount > 0 ? S.anatomy.rowGuessNoneAllCorrect : S.anatomy.rowGuessNone}
           </p>
         ) : (
           <p className="arow arow--text" data-testid="row-guess-empty">
@@ -212,7 +212,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
                     <details>
                       <summary>{S.anatomy.luckSummary(an.luckAverageRounded)}</summary>
                       <p className="sub" data-testid="luck-detail">
-                        {S.anatomy.luckDetail(an.actual)}
+                        {S.anatomy.luckDetail(an.actual, an.allCorrectGuessCount > 0)}
                       </p>
                     </details>
                   </div>

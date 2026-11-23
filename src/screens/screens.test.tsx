@@ -154,12 +154,42 @@ describe('점수 해부 화면의 상태별 문구', () => {
     expect(t).not.toContain('표시한 문항이 없어');
     expect(t).not.toContain('추측했다고 표시한 정답');
     expect(t).not.toContain('찍기 운을 평균으로 보면');
-    // 모두 정답 처리 문항은 표시가 없는 정답으로 막대의 채움 구간에 들어간다.
-    expect(html).toContain('aria-label="100점 막대. 찍음 표시 없이 맞힌 점수 82점, 오답 18점."');
+    // 모두 정답 처리 문항은 표시가 없는 정답으로 막대의 채움 구간에 들어간다. 찍음 표시가 붙어 있어서 그 사실을 막대 이름에 덧붙인다(별도 검토 D1).
+    expect(html).toContain(
+      'aria-label="100점 막대. 찍음 표시 없이 맞힌 점수 82점, 오답 18점. 모두 정답으로 처리된 문항은 찍음 표시가 있어도 찍음 표시 없이 맞힌 점수에 넣었어요."',
+    );
     // 원인을 고른 행이 아래에 있어도 같은 문장이다.
     expect(text(anatomy(handleFor(exam, { 20: 'guess' }, exampleCauses())))).toContain('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요.');
     // 고민 표시만 있으면 표시는 있으니 "표시한 문항이 없어서"가 아니라 찍었다고 표시한 문항이 없다고 적는다.
     expect(text(anatomy(handleFor(exam, { 20: 'doubt' }, {})))).toContain('찍었다고 표시한 문항이 없어서 나눠 볼 것이 없어요. 82점 그대로예요.');
+  });
+
+  it('찍음 표시가 모두 정답 처리 문항과 다른 문항에 함께 있으면, 행과 문장과 막대 이름과 찍기 운 설명이 모두 정답 처리 문항을 따로 나누지 않았다고 적는다(별도 검토 D1)', () => {
+    // 20번(4점, 넣은 답 3)을 모두 정답 처리로 바꾼 사본(82점). 계산은 작업 지시서 3의 4-2 그대로이고 문장만 학생이 붙인 표시와 어긋나지 않게 한다.
+    const exam = withItem(examA, 20, { allCorrect: true });
+    // (가) 찍음 표시가 11번(틀림)과 20번(모두 정답 처리)에만 있으면, 찍음 표시 문항에서 나온 점수는 20번의 4점뿐이다.
+    const a = anatomy(handleFor(exam, { 11: 'guess', 20: 'guess' }, exampleCauses(), { targetGrade: '2' }));
+    expect(text(a)).toContain('모두 정답으로 처리된 문항 말고는 찍었다고 표시한 문항에서 나온 점수가 없어요.');
+    expect(text(a)).not.toContain('찍었다고 표시한 문항에서 나온 점수는 없어요.');
+    expect(a).toContain(
+      'aria-label="100점 막대. 찍음 표시 없이 맞힌 점수 82점, 실수라고 표시한 오답 8점, 그 외 오답 10점. 모두 정답으로 처리된 문항은 찍음 표시가 있어도 찍음 표시 없이 맞힌 점수에 넣었어요."',
+    );
+    // (나) 찍음 표시가 9, 11, 14, 20, 21번이면 추측 표시 정답 7점(9번 3점, 14번 4점)에 20번은 넣지 않는다.
+    const b = anatomy(handleFor(exam, exampleMarks(), exampleCauses(), { targetGrade: '2' }));
+    expect(exampleMarks()[20]).toBe('guess');
+    expect(text(b)).toContain('82점 가운데 7점은 찍었다고 표시한 문항에서 나왔어요. 모두 정답으로 처리된 문항은 찍음 표시가 있어도 이 점수에 넣지 않았어요.');
+    expect(b).toContain('찍음 표시 없이 맞힌 점수 75점, 추측했다고 표시한 정답 7점');
+    expect(b).toContain('모두 정답으로 처리된 문항은 찍음 표시가 있어도 찍음 표시 없이 맞힌 점수에 넣었어요.');
+    expect(text(b)).toContain('다시 계산한 평균이에요. 모두 정답으로 처리된 문항은 찍음 표시가 있어도 넣지 않았어요. 보기를 몇 개 지우고');
+    // 계단 화면에도 모두 정답 처리 문항은 계단에 넣지 않았다고 적는다.
+    const h = handleFor(exam, exampleMarks(), exampleCauses());
+    const steps = renderToStaticMarkup(<Steps h={h} grade={gradeExam(exam, h.session)} />);
+    expect(text(steps)).toContain('모두 정답으로 처리된 문항은 찍음 표시가 있어도 계단에 넣지 않았어요.');
+    // 모두 정답 처리 문항이 없는 검산 예시는 문장이 그대로다.
+    const plain = anatomy(handleFor(examA, exampleMarks(), exampleCauses(), { targetGrade: '2' }));
+    expect(text(plain)).not.toContain('모두 정답으로 처리된');
+    const plainSteps = renderToStaticMarkup(<Steps h={handleFor(examA, exampleMarks(), exampleCauses())} grade={gradeExam(examA, handleFor(examA, exampleMarks(), exampleCauses()).session)} />);
+    expect(plainSteps).not.toContain('steps-all-correct');
   });
 });
 

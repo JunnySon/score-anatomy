@@ -36,7 +36,11 @@ export function correctionText(n: CorrectionNotice): string {
 /** 점수 해부 화면의 문장. 표시가 없는 부분은 말하지 않는다. */
 export function anatomySentences(an: Anatomy): string[] {
   const out: string[] = [];
-  if (an.guessCorrectPoints > 0) out.push(S.anatomy.sentenceGuess(an.actual, an.guessCorrectPoints));
+  if (an.guessCorrectPoints > 0) {
+    out.push(S.anatomy.sentenceGuess(an.actual, an.guessCorrectPoints));
+    // 찍음 표시가 붙은 모두 정답 처리 문항의 점수는 이 점수에 넣지 않았다는 것을 덧붙인다(작업 지시서 3의 4-2, 별도 검토 D1).
+    if (an.allCorrectGuessCount > 0) out.push(S.anatomy.sentenceGuessAllCorrect);
+  }
   if (an.slipPoints > 0) out.push(S.anatomy.sentenceSlip(an.wrongPoints, an.slipPoints));
   return out;
 }

@@ -236,6 +236,10 @@ export function correctAnswers(exam: Exam): Answers {
   return a;
 }
 
+/**
+ * 틀린 답 하나(5지선다는 정답 다음 보기, 단답형은 정답에 1을 더한 값). answer 만 보고 고르므로
+ * 복수 정답(altAnswers)이나 모두 정답 처리(allCorrect) 문항이 있는 시험(작업 지시서 3의 4-2)에는 쓰지 않는다.
+ */
 export function wrongValue(exam: Exam, no: number): number {
   const it = exam.items.find((x) => x.no === no)!;
   const ans = it.answer as number;

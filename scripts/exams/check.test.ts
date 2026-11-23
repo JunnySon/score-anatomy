@@ -6,7 +6,20 @@ import type { Exam } from '../../src/types.ts';
 import { checkData, looksLikeAnswerNote, runCheck, screenTextProblems } from './check.ts';
 import { examPath } from './data.ts';
 import { compareWithPublished, stateEntryOf } from './state.ts';
-import { collectIo, makeDataDir, markPublished, releasedExam, removeDir, runTool, snapshot, testExam, writeExam, writeLocks } from './testkit.ts';
+import {
+  FORBIDDEN_CHANGES,
+  collectIo,
+  makeDataDir,
+  markPublished,
+  releasedExam,
+  removeDir,
+  runTool,
+  snapshot,
+  testExam,
+  withItem,
+  writeExam,
+  writeLocks,
+} from './testkit.ts';
 
 // exams:check(작업 지시서 3의 6-4): 원본 검사, 발행 기록(state.json)과의 비교, 변경 요약. 아무 파일도 쓰지 않는다.
 // 시험은 그 자리에서 지은 테스트 전용 시험이고(testkit.ts), 모든 쓰기는 임시 폴더에서 한다.
@@ -37,182 +50,9 @@ function rejections(dir: string): string[] {
   return report.errors;
 }
 
-interface Scenario {
-  /** 어떤 변경인지. */
-  label: string;
-  /** 발행해 둘 시험. */
-  published: Record<string, unknown>;
-  /** 발행 뒤에 원본을 바꾼다. */
-  change(dir: string): void;
-  /** 거부 문장에 들어 있어야 하는 글자. */
-  expected: string;
-}
-
-// 지시서 6-4 의 "publish 가 거부해야 하는 변경" 일곱 가지. 이름은 지시서의 문장 그대로이고, 다음 단계(publish)와 verify 가 이름으로 확인한다.
-const FORBIDDEN: { name: string; scenarios: Scenario[] }[] = [
-  {
-    name: '발행했던 시험 id 가 사라짐',
-    scenarios: [
-      { label: '원본 파일을 지움', published: testExam(), change: (dir) => rmSync(examPath(dir, 'test-tool-a')), expected: '발행했던 시험 test-tool-a 의 원본 파일이 없어요' },
-      {
-        label: '파일 이름과 id 를 바꿈',
-        published: testExam(),
-        change: (dir) => {
-          rmSync(examPath(dir, 'test-tool-a'));
-          writeExam(dir, testExam({ id: 'test-tool-c' }));
-        },
-        expected: '발행했던 시험 test-tool-a 의 원본 파일이 없어요',
-      },
-    ],
-  },
-  {
-    name: '내용이 바뀌었는데 rev 가 그대로이거나 rev 가 내려감',
-    scenarios: [
-      {
-        label: '제목을 고치고 rev 그대로',
-        published: testExam(),
-        change: (dir) => writeExam(dir, testExam({ title: '테스트 전용 시험(제목을 고침)' })),
-        expected: '내용이 발행한 판과 다른데 rev 가 그대로예요(1)',
-      },
-      { label: 'rev 를 내림', published: testExam({ rev: 2 }), change: (dir) => writeExam(dir, testExam({ rev: 1 })), expected: 'rev 가 발행한 판(2)보다 작아요(지금 1)' },
-    ],
-  },
-  {
-    name: 'answerReleased 가 true 에서 false 로 돌아감',
-    scenarios: [
-      {
-        label: '정답을 두고 공개만 거둠',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, releasedExam({ rev: 2, answerReleased: false })),
-        expected: 'answerReleased 가 false 로 돌아갔어요',
-      },
-      {
-        label: '정답 칸을 모두 빼고 공개 전으로 되돌림',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, testExam({ rev: 2 })),
-        expected: 'answerReleased 가 false 로 돌아갔어요',
-      },
-    ],
-  },
-  {
-    name: '문항의 no, kind, choices 가 바뀜',
-    scenarios: [
-      { label: '보기 수', published: testExam(), change: (dir) => writeExam(dir, withItem(testExam({ rev: 2 }), 3, { choices: 5 })), expected: '3번의 choices(발행한 판 4, 지금 5)' },
-      {
-        label: '문항 종류',
-        published: testExam(),
-        change: (dir) => writeExam(dir, withItem(testExam({ rev: 2 }), 6, { kind: 'mc', choices: 5 })),
-        expected: '6번의 kind(발행한 판 short, 지금 mc)',
-      },
-      { label: '문항 번호', published: testExam(), change: (dir) => writeExam(dir, withItem(testExam({ rev: 2 }), 6, { no: 7 })), expected: '6번째 문항의 번호(발행한 판 6, 지금 7)' },
-      {
-        label: '문항 수',
-        published: testExam(),
-        change: (dir) => {
-          const exam = testExam({ rev: 2 });
-          writeExam(dir, { ...exam, items: (exam.items as unknown[]).slice(0, 5) });
-        },
-        expected: '문항 수(발행한 판 6개, 지금 5개)',
-      },
-    ],
-  },
-  {
-    name: '채점에 영향을 주는 값이 바뀌었는데 answersRev 를 올리지 않았거나 answersNote 가 없음',
-    scenarios: [
-      {
-        label: '정답을 바꾸고 answersRev 그대로',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, withItem(releasedExam({ rev: 2 }), 2, { answer: 1 })),
-        expected: '공개한 정답이나 배점이 바뀌었는데(2번(정답)) answersRev 를 올리지 않았어요(1)',
-      },
-      {
-        label: '배점을 바꾸고 answersRev 그대로',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, withItem(releasedExam({ rev: 2 }), 1, { points: 3 })),
-        expected: '공개한 정답이나 배점이 바뀌었는데(1번(배점)) answersRev 를 올리지 않았어요(1)',
-      },
-      {
-        label: '모두 정답 처리를 더하고 answersRev 그대로',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, withItem(releasedExam({ rev: 2 }), 6, { answer: undefined, allCorrect: true })),
-        expected: '6번(정답, 모두 정답 처리)',
-      },
-      {
-        label: '복수 정답을 더하고 answersRev 는 올렸지만 answersNote 가 없음',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, withItem(releasedExam({ rev: 2, answersRev: 2 }), 1, { altAnswers: [4] })),
-        // 정답 판 번호가 2 이상인데 정정 안내가 없는 것은 시험 파일 검사(validate.ts)가 먼저 거부한다.
-        expected: 'answersRev가 2 이상이면 answersNote에 정정 안내를 적어야 해요.',
-      },
-      {
-        label: '정답을 바꾸고 answersRev 도 answersNote 도 그대로',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, withItem(releasedExam({ rev: 2 }), 5, { answer: 7 })),
-        expected: '공개한 정답이나 배점이 바뀌었는데(5번(정답)) answersNote 에 정정 안내가 없어요.',
-      },
-    ],
-  },
-  {
-    name: 'confirmed 가 true 인데 두 값이 다름',
-    scenarios: [
-      {
-        label: '발행한 시험에 확정 컷을 범위로 넣음',
-        published: releasedExam(),
-        change: (dir) => writeExam(dir, releasedExam({ rev: 2, cuts: { source: '예시 값', asOf: '2030-01-02T20:10', confirmed: true, grades: { 1: [17, 18] } } })),
-        expected: '확정 컷은 두 값이 같아야 해요',
-      },
-      {
-        label: '새 시험에 확정 컷을 범위로 넣음',
-        published: releasedExam(),
-        change: (dir) =>
-          writeExam(dir, releasedExam({ id: 'test-tool-b', cuts: { source: '예시 값', asOf: '2030-01-02', confirmed: true, grades: { 1: [18, 18], 2: [14, 15] } } })),
-        expected: '2등급: 확정 컷은 두 값이 같아야 해요',
-      },
-    ],
-  },
-  {
-    name: '잠금 달력 항목의 형식이 틀림',
-    scenarios: [
-      {
-        label: 'start 가 end 보다 늦음',
-        published: testExam(),
-        change: (dir) => writeLocks(dir, [{ id: 'test-lock-a', label: '테스트 전용 잠금', start: '2030-01-02T17:45', end: '2030-01-02T08:40' }]),
-        expected: '1번째 항목: start가 end보다 앞서야 해요',
-      },
-      {
-        label: '시각 모양이 틀림',
-        published: testExam(),
-        change: (dir) => writeLocks(dir, [{ id: 'test-lock-a', label: '테스트 전용 잠금', start: '2030-01-02T8:40', end: '2030-01-02T17:45' }]),
-        expected: 'start는 2030-01-02T08:40 같은',
-      },
-      {
-        label: 'id 가 겹침',
-        published: testExam(),
-        change: (dir) =>
-          writeLocks(dir, [
-            { id: 'test-lock-a', label: '테스트 전용 잠금', start: '2030-01-02T08:40', end: '2030-01-02T17:45' },
-            { id: 'test-lock-a', label: '테스트 전용 잠금 둘', start: '2030-01-02T08:40', end: '2030-01-02T17:10' },
-          ]),
-        expected: '앞의 항목과 id가 겹쳐요',
-      },
-    ],
-  },
-];
-
-/** no 번 문항의 칸을 바꾼 시험. undefined 인 칸은 뺀다. */
-function withItem(exam: Record<string, unknown>, no: number, patch: Record<string, unknown>): Record<string, unknown> {
-  const items = (exam.items as Record<string, unknown>[]).map((it) => {
-    if (it.no !== no) return it;
-    const next: Record<string, unknown> = { ...it, ...patch };
-    for (const [k, v] of Object.entries(next)) if (v === undefined) delete next[k];
-    return next;
-  });
-  return { ...exam, items };
-}
-
 describe('발행 도구 exams:check 금지된 변경(작업 지시서 3의 6-4)', () => {
   // 이름이 길어도 줄이지 않게 $name 대신 %s 로 넣는다.
-  it.each(FORBIDDEN.map((c) => [c.name, c.scenarios] as const))('%s: check 가 거부한다', (_name, scenarios) => {
+  it.each(FORBIDDEN_CHANGES.map((c) => [c.name, c.scenarios] as const))('%s: check 가 거부한다', (_name, scenarios) => {
     for (const s of scenarios) {
       const dir = published(s.published);
       // 바꾸기 전에는 통과한다(비교 대상이 맞는지).

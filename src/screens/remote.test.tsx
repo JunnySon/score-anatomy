@@ -6,6 +6,8 @@ import { catalog, findBundledExam, findExam } from '../exams';
 import { validateExam } from '../exams/validate';
 import { KST_OFFSET_MS } from '../logic/dates';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
+import { gradeExam, type Grade } from '../logic/scoring';
+import { rankTypes } from '../logic/steps';
 import { parseHash } from '../router';
 import { buildDemoSession } from '../state/demo';
 import { startSession, useDemoHandle, watchOldGradedRecords, type SessionHandle } from '../state/hooks';
@@ -13,9 +15,14 @@ import { markGraded, markSaved, newSession } from '../state/session';
 import { defaultData, parseStored, store } from '../state/store';
 import { formatDate, S } from '../strings';
 import type { Exam, Session } from '../types';
+import { Anatomy } from './Anatomy';
+import { Causes } from './Causes';
 import { ExamSelect } from './ExamSelect';
 import { History } from './History';
+import { Retry } from './Retry';
+import { Score } from './Score';
 import { Start, startPreview } from './Start';
+import { Steps } from './Steps';
 import { TestAdmin } from './TestAdmin';
 
 // 넘겨받은 시험 자료(다리 규격 2, 작업 지시서 3의 5-2, 5-3)로 시험 목록이 바뀔 때의 화면을 글자로 그려서(서버 렌더링) 확인한다.
@@ -235,6 +242,57 @@ describe('넘겨받은 시험 자료와 화면(작업 지시서 3의 5-2, 5-3)',
       'sample-b',
       'sample-c',
     ]);
+  });
+
+  it('넘겨받은 새 자료로 내용의 자리가 옮겨 갈 수 있는 화면 일곱(시험 선택, 기록, 점수, 점수 해부, 오답 원인, 계단, 재풀이)은 화면 틀에 shiftKey 를 넘기고, 새 자료가 오면 그 값이 바뀐다(별도 검토 A3, 처리 뒤 다시 확인 R1)', () => {
+    // 화면 틀(Screen)은 처음 그린 뒤 shiftKey 가 바뀌면 마지막 누름과 상관없이 화면 전체를 0.5초 막는다(src/tapGuard.ts 의 markContentShifted).
+    // 막는 동작은 브라우저 화면 테스트(e2e/appRemote.spec.ts 의 시험 선택과 오답 원인)가 보고, 여기서는 화면마다 그 값을 넘기는지와
+    // 새 자료에서 값이 바뀌는지를 본다. 값을 넘기지 않는 화면은 새 자료로 자리가 옮겨 가도 막지 않아서다.
+    const shiftOf = (tree: ReactElement | null): unknown => (tree as ReactElement<{ shiftKey?: string }> | null)?.props.shiftKey;
+    const expectChanged = (name: string, before: unknown, after: unknown) => {
+      expect(typeof before, `${name}: 앞 값`).toBe('string');
+      expect(typeof after, `${name}: 뒤 값`).toBe('string');
+      expect(after, `${name}: 새 자료에서 값이 바뀜`).not.toBe(before);
+    };
+    // 시험 선택과 기록: 넘겨받은 목록이 바뀌면(시험이 하나 더 옴) 값이 바뀐다.
+    arrive([remoteExam()]);
+    const selectBefore = shiftOf(treeOf(() => ExamSelect()));
+    const historyBefore = shiftOf(treeOf(() => History()));
+    arrive([remoteExam({ id: 'test-remote-b', title: '테스트 전용 시험 B' }), remoteExam()]);
+    expectChanged('시험 선택', selectBefore, shiftOf(treeOf(() => ExamSelect())));
+    expectChanged('기록', historyBefore, shiftOf(treeOf(() => History())));
+    // 채점한 기록의 화면 다섯: 같은 시험의 새 판(판 번호와 정답 판 번호를 올리고 15번 정답을 고친 테스트 전용 판)이 오면 값이 바뀐다.
+    const before = releasedA();
+    const after = remoteExam({
+      rev: 3,
+      answersRev: 2,
+      answersNote: '테스트 전용 정정 안내예요.',
+      items: examA.items.map((it) => (it.no === 15 ? { ...it, answer: 1 } : it)),
+    });
+    const session = markGraded(
+      { ...newSession('test-remote-a', 'not_yet', null, NOW), answers: exampleAnswers(examA), marks: exampleMarks(), causes: exampleCauses() },
+      before,
+      NOW,
+    );
+    const handleOf = (exam: Exam): SessionHandle => ({ isDemo: false, session, exam, update: () => {}, path: (p) => p });
+    // 재풀이는 두 판 모두에서 다시 풀 문항이 있는 유형으로 연다(없으면 다시 풀 것이 없다는 화면이라 누를 것이 없다).
+    const retryTypes = (exam: Exam) =>
+      rankTypes(exam, gradeExam(exam, session))
+        .filter((s) => s.retryNos.length > 0)
+        .map((s) => s.typeId);
+    const typeId = retryTypes(before).find((id) => retryTypes(after).includes(id));
+    expect(typeId).toBeDefined();
+    const screens: [string, (h: SessionHandle, grade: Grade) => ReactElement][] = [
+      ['점수', (h, grade) => Score({ h, grade })],
+      ['점수 해부', (h, grade) => Anatomy({ h, grade })],
+      ['오답 원인', (h, grade) => Causes({ h, grade })],
+      ['계단', (h, grade) => Steps({ h, grade })],
+      ['재풀이', (h, grade) => Retry({ h, grade, typeId: typeId! })],
+    ];
+    for (const [name, render] of screens) {
+      const keyFor = (exam: Exam) => shiftOf(treeOf(() => render(handleOf(exam), gradeExam(exam, session))));
+      expectChanged(name, keyFor(before), keyFor(after));
+    }
   });
 
   it('진행자용 화면의 풀이 잠금 한 줄은 넘겨받은 달력을 합친 달력으로 판정한다', () => {

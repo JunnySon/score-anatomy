@@ -4,7 +4,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { inlineDir } from './inline.mjs';
 import { ROOT } from './lib.mjs';
@@ -73,8 +73,47 @@ export function buildBundle(mode, outRoot) {
   }
 }
 
-/** 두 묶음을 모두 만든다. 파일별 SHA-256 과 크기를 돌려준다. */
+/** JSON 파일을 읽는다. 없거나 읽지 못하면 null. */
+function readJson(path) {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8').replace(/^\uFEFF/, ''));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 묶음 안 시험(examsDir 의 *.json, 잠금 달력 locks.json 은 빼고)과 발행한 시험(stateFile 의 exams)에 함께 있는 id(작업 지시서 3의 별도 검토 B1).
+ * 같은 id 의 두 판은 앱에서 판 번호(rev)로만 갈려서, 정답 정정 전인 판이 판 번호가 크면 학생 기기의 점수가 바뀔 수 있다.
+ * 발행 도구(exams:check)는 묶음 안 시험과 같은 id 의 발행을 거부하고, 여기서는 발행한 시험을 묶음에 넣은 것을 찾는다.
+ * state.json 이 없거나 읽지 못하면 발행한 적이 없는 것으로 보고 빈 배열이다(state.json 의 모양은 발행 도구가 검사한다).
+ */
+export function overlappingExamIds(examsDir = join(ROOT, 'src/exams'), stateFile = join(ROOT, 'exam-data/state.json')) {
+  const state = readJson(stateFile);
+  const published = state && typeof state.exams === 'object' && state.exams !== null && !Array.isArray(state.exams) ? Object.keys(state.exams) : [];
+  if (published.length === 0 || !existsSync(examsDir)) return [];
+  const bundled = readdirSync(examsDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.json') && e.name !== 'locks.json')
+    .map((e) => readJson(join(examsDir, e.name)))
+    .filter((exam) => exam && typeof exam.id === 'string')
+    .map((exam) => exam.id);
+  return [...new Set(bundled.filter((id) => published.includes(id)))].sort();
+}
+
+/** 묶음 안 시험과 발행한 시험의 id 가 겹치면 묶음을 만들지 않고 멈춘다. */
+export function assertNoPublishedBundled() {
+  const overlap = overlappingExamIds();
+  if (overlap.length > 0) {
+    throw new Error(
+      `묶음 안 시험(src/exams)과 발행한 시험(exam-data/state.json)의 id 가 겹쳐요: ${overlap.join(', ')}. 같은 id 의 두 판은 앱에서 판 번호(rev)로만 갈려서 학생 기기의 점수가 알림 없이 바뀔 수 있어요. 발행한 시험은 묶음에 넣지 않아요.`,
+    );
+  }
+}
+
+/** 두 묶음을 모두 만든다. 파일별 SHA-256 과 크기를 돌려준다. 묶음 안 시험과 발행한 시험의 id 가 겹치면 만들지 않는다. */
 export function buildAll(outRoot) {
+  assertNoPublishedBundled();
   const files = {};
   for (const mode of BUNDLES) {
     const dest = buildBundle(mode, outRoot);

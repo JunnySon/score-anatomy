@@ -1,5 +1,7 @@
-import { renameSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { checkExam } from '../../src/exams/validate.ts';
 import type { Exam } from '../../src/types.ts';
@@ -8,6 +10,7 @@ import { bundledExamIds, examPath } from './data.ts';
 import { compareWithPublished, stateEntryOf } from './state.ts';
 import {
   FORBIDDEN_CHANGES,
+  ROOT,
   collectIo,
   makeDataDir,
   markPublished,
@@ -248,6 +251,33 @@ describe('발행 도구 exams:check(작업 지시서 3의 6-4)', () => {
     expect(publish.status).toBe(1);
     expect(publish.stderr).toContain(`  - ${message}`);
     expect(snapshot(dir)).toEqual(before);
+  });
+
+  it('앱 묶음을 만들 때 묶음 안 시험과 발행한 시험(state.json)의 id 가 겹치면 멈춘다(scripts/app-bundles.mjs, 별도 검토 B1)', () => {
+    // 임시 폴더에 묶음 안 시험 자리(시험 하나와 잠금 달력)와, 그 시험을 발행한 자료 폴더를 둔다.
+    const bundle = dataDir();
+    writeFileSync(join(bundle, 'one.json'), JSON.stringify(releasedExam()));
+    writeFileSync(join(bundle, 'locks.json'), '[]');
+    const published = dataDir();
+    markPublished(published, [releasedExam()]);
+    const fresh = dataDir();
+    // app-bundles.mjs 는 자바스크립트라서 실제 Node 로 불러 함수를 부른다.
+    const overlap = (examsDir: string, stateFile: string): unknown => {
+      const url = pathToFileURL(join(ROOT, 'scripts', 'app-bundles.mjs')).href;
+      const script = `import(${JSON.stringify(url)}).then((m) => console.log(JSON.stringify(m.overlappingExamIds(process.argv[1], process.argv[2]))))`;
+      const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, examsDir, stateFile], { cwd: ROOT, encoding: 'utf8' });
+      expect(r.status, r.stderr).toBe(0);
+      return JSON.parse(r.stdout);
+    };
+    expect(overlap(bundle, join(published, 'state.json'))).toEqual(['test-tool-a']);
+    // 발행한 적이 없거나(처음 값) state.json 이 없으면 겹치지 않는다.
+    expect(overlap(bundle, join(fresh, 'state.json'))).toEqual([]);
+    expect(overlap(bundle, join(fresh, 'no-state.json'))).toEqual([]);
+    // 저장소의 묶음 안 시험과 자료 폴더는 지금 겹치지 않는다.
+    expect(overlap(join(ROOT, 'src', 'exams'), join(ROOT, 'exam-data', 'state.json'))).toEqual([]);
+    // 두 묶음을 만드는 함수(buildAll)가 만들기 전에 이 검사를 부른다.
+    const source = readFileSync(join(ROOT, 'scripts', 'app-bundles.mjs'), 'utf8');
+    expect(source).toMatch(/export function buildAll\(outRoot\) \{\n {2}assertNoPublishedBundled\(\);/);
   });
 
   it('학생 화면에 나오는 글자의 금지 문자, 느낌표, 이모지를 거부한다', () => {

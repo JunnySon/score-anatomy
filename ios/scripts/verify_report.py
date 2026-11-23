@@ -479,8 +479,10 @@ def cmd_render(out_dir, doc_path):
     issues = sum(len(a.get("issues", [])) for a in audit)
     add(12, "접근성 감사(기록용)", "통과" if all_passed(audit_tests, 1) and len(ran) == 4 else "실패", f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건(아래 표)", "네 화면 모두 감사를 돌리고 걸린 것을 기록(통과가 접근성을 보장하지 않음)")
 
-    cap_tests = suite("CaptureTests") + suite("CaptureTests", se_tests)
-    cap_ok = caps and not caps.get("missing") and not caps.get("duplicates") and not caps.get("wrongSize") and all_passed(cap_tests, 4)
+    main_dark = tests_of(load(os.path.join(out_dir, "ui-main-dark.json"), {}))
+    se_dark = tests_of(load(os.path.join(out_dir, "ui-se-dark.json"), {}))
+    cap_tests = suite("CaptureTests") + suite("CaptureTests", main_dark) + suite("CaptureTests", se_tests) + suite("CaptureTests", se_dark)
+    cap_ok = bool(caps) and not caps.get("missing") and not caps.get("duplicates") and not caps.get("wrongSize") and all_passed(cap_tests, 4)
     add(13, "캡처", "통과" if cap_ok else "실패", f"목록 {len(caps.get('expected', []))}장 중 {caps.get('copied', 0)}장, 빠진 것 {len(caps.get('missing', []))}, 겹친 것 {len(caps.get('duplicates', []))}, 크기 다름 {len(caps.get('wrongSize', []))}. 캡처 테스트 {fmt_tests(cap_tests)}", "9화면 x 2테마 x 2기기 = 36장, 빠진 것과 겹친 것 0")
 
     bridge = suite("BridgeIntegrationTests")
@@ -520,7 +522,9 @@ def cmd_render(out_dir, doc_path):
     lines.append("| 묶음 | 테스트 | 기기 | 결과 | 걸린 시간(초) |")
     lines.append("| --- | --- | --- | --- | --- |")
     release_ui = load(os.path.join(out_dir, "ui-release.json"), {})
-    for label, res in (("단위", unit), ("화면", main_ui), ("화면", live), ("화면", se_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
+    main_dark_ui = load(os.path.join(out_dir, "ui-main-dark.json"), {})
+    se_dark_ui = load(os.path.join(out_dir, "ui-se-dark.json"), {})
+    for label, res in (("단위", unit), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
         for t in tests_of(res):
             dur = t.get("duration")
             lines.append(f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | {dur:.1f} |" if isinstance(dur, (int, float)) else f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | |")
@@ -628,7 +632,7 @@ def network_numbers(rows):
     parts = []
     for r in pick(rows, "network"):
         if r.get("mode") == "blocked":
-            parts.append(f"차단 실행: 스크립트 요청 12가지가 수신기에 닿은 연결 {r.get('connections')}건, 닿은 요청 내용 {len(r.get('requests', []))}건, 껍데기가 취소한 이동 {r.get('blockedNavigations')}건과 새 창 {r.get('blockedWindows')}건. 참고: 페이지에 붙인 바깥 링크를 사람이 누르면 WebKit 이 내용 없이 미리 맺은 연결 {r.get('preconnectsAfterTaps')}건(웹 묶음에는 바깥 링크가 없다)")
+            parts.append(f"차단 실행: 하위 자원 요청 10가지(fetch 2, XHR, 그림, 스크립트, 스타일, 비컨, 웹소켓, 서버 이벤트, iframe)와 스크립트의 새 창이 수신기에 닿은 연결 {r.get('connections')}건, 문서 이동까지 모두 닿은 요청 내용 {len(r.get('requests', []))}건, 껍데기가 취소한 이동 {r.get('blockedNavigations')}건과 막은 새 창 {r.get('blockedWindows')}건. 참고: 링크로 가는 이동에서 WebKit 이 내용 없이 미리 맺은 연결 {r.get('preconnects')}건(웹 묶음에는 바깥 링크가 없다)")
         else:
             parts.append(f"대조 실행(규칙 없음): 닿은 연결 {r.get('connections')}건, 요청 내용 {r.get('requests')}건")
     return (". " + ". ".join(parts) + ".") if parts else "."

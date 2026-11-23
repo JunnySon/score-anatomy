@@ -30,7 +30,21 @@ struct RootView: View {
                 shell = ShellController()
             }
         }
+        #if DEBUG
+        // 캡처용: DEBUG 실행 인자 -SAAppearance 로 밝기를 정해 둔다. Release 에는 없다.
+        .preferredColorScheme(Self.debugColorScheme)
+        #endif
     }
+
+    #if DEBUG
+    private static let debugColorScheme: ColorScheme? = {
+        switch DebugOptions.parse(ProcessInfo.processInfo.arguments).appearance {
+        case "dark": return .dark
+        case "light": return .light
+        default: return nil
+        }
+    }()
+    #endif
 }
 
 /// 웹뷰나 실패 안내.

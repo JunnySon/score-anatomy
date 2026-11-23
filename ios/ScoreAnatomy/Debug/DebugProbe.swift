@@ -176,8 +176,9 @@ final class DebugProbe {
     };
     """
 
-    /// 바깥 요청 탐침. 이 맥의 주소(127.0.0.1)로 여러 방법의 요청을 보내 본다.
-    /// 막히면 그 포트에서 기다리는 시험용 수신기에 아무것도 오지 않는다. 결과는 각 시도가 어떻게 끝났는지다.
+    /// 바깥 요청 탐침. 이 맥의 주소(127.0.0.1)로 하위 자원 요청(fetch, XHR, 그림, 스크립트, 스타일, 비컨, 웹소켓,
+    /// 서버 이벤트, iframe)과 스크립트의 새 창 열기를 보내 본다. 막히면 그 포트의 시험용 수신기에 연결조차 오지 않는다.
+    /// 문서 이동(링크, location, form)은 화면 테스트가 따로 시도한다(WebKit 이 링크 이동에 연결을 미리 맺을 수 있어서 따로 센다).
     static func networkProbe(port: Int) -> String {
         """
         const base = 'http://127.0.0.1:\(port)';
@@ -200,17 +201,7 @@ final class DebugProbe {
         r.eventSource = await outcome((f) => { const s = new EventSource(base + '/sse'); s.onopen = () => f('open'); s.onerror = () => { s.close(); f('error'); }; }, 3000);
         r.iframe = await outcome((f) => { const fr = document.createElement('iframe'); fr.onload = () => f('loaded'); fr.onerror = () => f('error'); fr.src = base + '/frame'; document.body.appendChild(fr); }, 2000);
         r.windowOpenReturnedNull = (() => { try { return window.open(base + '/open') === null; } catch (e) { return 'throw:' + e.message; } })();
-        const before = location.href;
-        const a = document.createElement('a'); a.href = base + '/link'; document.body.appendChild(a); a.click(); a.remove();
-        await wait(400);
-        const blank = document.createElement('a'); blank.href = base + '/blank'; blank.target = '_blank'; document.body.appendChild(blank); blank.click(); blank.remove();
-        await wait(400);
-        location.href = base + '/assign';
-        await wait(600);
-        const form = document.createElement('form'); form.method = 'post'; form.action = base + '/form'; document.body.appendChild(form); form.submit();
-        await wait(600);
-        r.stillOnDocument = location.href === before;
-        r.href = location.href;
+        await wait(300);
         return r;
         """
     }

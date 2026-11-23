@@ -84,7 +84,7 @@ run_ui() {
   local args=()
   for t in "$@"; do args+=("-only-testing:$t"); done
   log "화면 테스트 $label ($device): $*"
-  TEST_RUNNER_SA_OUT="$dir" TEST_RUNNER_SA_DEVICE="$device" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+  TEST_RUNNER_SA_OUT="$dir" TEST_RUNNER_SA_DEVICE="$device" TEST_RUNNER_SA_THEME="${UI_THEME:-light}" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$BUILD" -resultBundlePath "$OUT/$label.xcresult" \
     "${args[@]}" "${TEST_TIME[@]}" test-without-building > "$OUT/$label.log" 2>&1
   local code=$?
@@ -213,6 +213,14 @@ run_ui main "$MAIN" iphone17 \
   ScoreAnatomyUITests/StartScreenTests ScoreAnatomyUITests/AccessibilityAuditTests ScoreAnatomyUITests/CaptureTests \
   ScoreAnatomyUITests/KeyboardInputTests
 
+# 13. 어두운 화면 캡처: 이 맥의 시뮬레이터에서는 시스템 밝기 바꾸기(simctl ui appearance)가 앱에 닿지 않아서,
+# 캡처 테스트가 DEBUG 실행 인자(-SAAppearance dark)로 앱의 밝기를 정한다.
+dark_capture() {
+  local label=$1 udid=$2 device=$3
+  UI_THEME=dark run_ui "$label" "$udid" "$device" ScoreAnatomyUITests/CaptureTests
+}
+dark_capture main-dark "$MAIN" iphone17
+
 # 7. 켜 둔 채 글자 크기를 바꾸면 fontScale 로 알리는지(시뮬레이터의 글자 크기를 이 스크립트가 바꾼다).
 log "7. 켜 둔 채 글자 크기 바꾸기"
 LIVE="$OUT/runs/live"
@@ -234,6 +242,7 @@ xcrun simctl ui "$MAIN" content_size large >/dev/null 2>&1 || true
 # ---------------------------------------------------------------- 8. iPhone SE 3세대
 if [ -n "$SE" ]; then
   run_ui se "$SE" iphonese ScoreAnatomyUITests/FlowTests ScoreAnatomyUITests/SmallScreenTests ScoreAnatomyUITests/CaptureTests
+  dark_capture se-dark "$SE" iphonese
 fi
 
 # ---------------------------------------------------------------- 9. iPad
@@ -263,8 +272,13 @@ TEST_RUNNER_SA_OUT="$OUT/runs/release" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNE
 # ---------------------------------------------------------------- 13. 캡처 모으기
 rm -rf "$OUT/screens"
 mkdir -p "$OUT/screens"
-[ -d "$OUT/runs/main/screens/iphone17" ] && cp -R "$OUT/runs/main/screens/iphone17" "$OUT/screens/"
-[ -d "$OUT/runs/se/screens/iphonese" ] && cp -R "$OUT/runs/se/screens/iphonese" "$OUT/screens/"
+for pair in "main:iphone17:light" "main-dark:iphone17:dark" "se:iphonese:light" "se-dark:iphonese:dark"; do
+  run=${pair%%:*}; rest=${pair#*:}; device=${rest%%:*}; theme=${rest#*:}
+  if [ -d "$OUT/runs/$run/screens/$device/$theme" ]; then
+    mkdir -p "$OUT/screens/$device/$theme"
+    cp "$OUT/runs/$run/screens/$device/$theme"/*.png "$OUT/screens/$device/$theme/" 2>/dev/null || true
+  fi
+done
 rm -rf "$REPO/docs/screens-ios"
 "${REPORT[@]}" captures "$OUT/screens" "$REPO/docs/screens-ios" "$OUT/captures.json"
 mkdir -p "$REPO/docs/screens-ios/extra"

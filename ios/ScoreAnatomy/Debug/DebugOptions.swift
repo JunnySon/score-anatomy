@@ -14,6 +14,7 @@ import Foundation
 /// - `-SAProbePort <번호>`: network 탐침이 부르는 주소(127.0.0.1)의 포트.
 /// - `-SAProbeControl`: 차단 규칙을 걸지 않는다. 탐침이 새는 요청을 잡아내는지 보는 대조 실행에만 쓴다.
 /// - `-SAForceLoadFailure`: 묶음 대신 없는 파일을 연다(불러오기 실패 안내 확인).
+/// - `-SAAppearance <light|dark>`: 앱의 밝기를 정해 둔다(캡처용). 이 맥의 시뮬레이터에서는 시스템 밝기 바꾸기가 앱에 닿지 않았다.
 struct DebugOptions: Sendable {
     var storeDirectory: URL?
     var seed: String?
@@ -22,6 +23,7 @@ struct DebugOptions: Sendable {
     var probePort: Int?
     var probeControl = false
     var forceLoadFailure = false
+    var appearance: String?
 
     static func parse(_ arguments: [String]) -> DebugOptions {
         var options = DebugOptions()
@@ -51,6 +53,9 @@ struct DebugOptions: Sendable {
                 options.probeControl = true
             case "-SAForceLoadFailure":
                 options.forceLoadFailure = true
+            case "-SAAppearance":
+                options.appearance = value
+                index += 1
             default:
                 break
             }

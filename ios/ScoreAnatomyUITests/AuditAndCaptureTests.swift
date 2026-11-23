@@ -96,12 +96,10 @@ final class CaptureTests: XCTestCase {
     /// 화면, 테마, 기기별로 남길 캡처 목록. verify.sh 가 빠진 것과 겹친 것을 이 목록으로 검사한다.
     static let screens = ["01-시작", "02-시험선택", "03-답입력-키패드", "04-잠금", "05-입력확인", "06-표시", "07-점수해부", "08-계단", "09-기록"]
 
-    func testCaptureLight() throws {
-        try captureAll(theme: "light")
-    }
-
-    func testCaptureDark() throws {
-        try captureAll(theme: "dark")
+    /// 지금 시뮬레이터의 밝기로 찍는다. verify.sh 가 simctl 로 밝기를 바꾸고 SA_THEME(light, dark)으로 알려 준다.
+    func testCaptureScreens() throws {
+        let theme = ProcessInfo.processInfo.environment["SA_THEME"] ?? "light"
+        try captureAll(theme: theme)
     }
 
     private func shot(_ handle: AppHandle, _ name: String, _ theme: String) {
@@ -116,12 +114,9 @@ final class CaptureTests: XCTestCase {
     }
 
     private func captureAll(theme: String) throws {
-        XCUIDevice.shared.appearance = theme == "dark" ? .dark : .light
-        defer { XCUIDevice.shared.appearance = .light }
-        // 기기 설정이 바뀌는 데 잠깐 걸린다.
-        Thread.sleep(forTimeInterval: 2.0)
         let handle = AppHandle(name: "capture-\(theme)")
-        handle.launch()
+        // 이 맥의 시뮬레이터에서는 시스템 밝기를 바꿔도 앱에 닿지 않아(설정 앱도 밝은 화면 그대로였다) DEBUG 실행 인자로 정한다.
+        handle.launch(extra: ["-SAAppearance", theme])
         var prefersDark: Bool?
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
@@ -166,13 +161,16 @@ final class CaptureTests: XCTestCase {
         let cell5 = handle.markCell(5)
         cell5.tap()
         XCTAssertTrue(handle.waitLabel(cell5, contains: "고민"))
-        // 단답형 표시는 눌림 상태가 있는 버튼(aria-pressed)이라 종류를 가리지 않고 찾는다.
+        // 단답형 표시는 눌림 상태가 있는 버튼(aria-pressed, 접근성에서는 스위치)이라 종류를 가리지 않고 찾는다.
+        // 아래에 고정된 채점 버튼에 가리지 않게 화면 가운데로 옮긴 뒤 누른다.
         let short25 = handle.web.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "25번,")).firstMatch
-        handle.reveal(short25)
+        _ = handle.evaluate("document.querySelector('[data-short-mark=\"25\"]').scrollIntoView({ block: 'center' }); return true;")
+        Thread.sleep(forTimeInterval: 0.4)
         short25.tap()
         XCTAssertTrue(handle.waitLabel(short25, contains: "자신 없음"))
         let tight = handle.any("빠듯했어요")
-        handle.reveal(tight)
+        _ = handle.evaluate("document.querySelector('[data-testid=\"time-tight\"]').scrollIntoView({ block: 'center' }); return true;")
+        Thread.sleep(forTimeInterval: 0.4)
         tight.tap()
         toTop(handle)
         shot(handle, "06-표시", theme)

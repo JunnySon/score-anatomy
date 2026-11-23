@@ -73,13 +73,14 @@ final class NetworkProbeTests: XCTestCase {
     }
 
     struct ProbeResult {
-        /// 스크립트로 낸 요청(탐침)이 끝난 뒤 수신기에 닿은 연결 수.
-        var scriptConnections: Int
-        /// 사람이 링크를 누른 뒤까지 닿은 연결 수.
-        var connectionsAfterTaps: Int
+        /// 하위 자원 요청(탐침)이 끝난 뒤 수신기에 닿은 연결 수.
+        var subresourceConnections: Int
+        /// 문서 이동 시도와 사람이 링크를 누른 뒤까지 닿은 연결 수.
+        var finalConnections: Int
         /// 내용(요청)이 온 연결의 첫 줄.
         var requests: [String]
         var outcomes: [String: Any]
+        var stillOnDocument: Bool
         var stats: [String: Any]
     }
 
@@ -91,15 +92,28 @@ final class NetworkProbeTests: XCTestCase {
         var extra = ["-SAProbe", "network", "-SAProbePort", "\(listener.port)"]
         if control { extra.append("-SAProbeControl") }
         handle.launch(extra: extra)
+        // 1) 하위 자원 요청 10가지와 스크립트의 새 창(앱 안 탐침).
         let output = try XCTUnwrap(handle.probeFile("probe-network.json", timeout: 90), "탐침 결과")
         XCTAssertEqual(output["ok"] as? Bool, true, "탐침이 끝까지 돌았다: \(output)")
         Thread.sleep(forTimeInterval: 1.5)
-        let scriptConnections = listener.connections
-        // 사람이 누른 링크(사용자 동작)는 팝업 차단을 지나 껍데기까지 온다. 새 창 링크와 바깥 링크를 붙이고 실제로 누른다.
+        let subresourceConnections = listener.connections
+        // 2) 스크립트로 시도하는 문서 이동: 링크 click, 새 창 링크 click, location 바꾸기, form 제출.
+        let base = "http://127.0.0.1:\(listener.port)"
+        _ = handle.evaluate("""
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const link = (path, target) => { const a = document.createElement('a'); a.href = '\(base)/' + path; if (target) a.target = target; document.body.appendChild(a); a.click(); a.remove(); };
+        link('link', null); await wait(400);
+        link('blank', '_blank'); await wait(400);
+        location.href = '\(base)/assign'; await wait(600);
+        const form = document.createElement('form'); form.method = 'post'; form.action = '\(base)/form'; document.body.appendChild(form); form.submit();
+        await wait(600);
+        return true;
+        """)
+        // 3) 사람이 누른 링크(사용자 동작)는 팝업 차단을 지나 껍데기까지 온다. 새 창 링크와 바깥 링크를 붙이고 실제로 누른다.
         _ = handle.evaluate("""
         const make = (id, top, target) => {
           const a = document.createElement('a');
-          a.id = id; a.textContent = id; a.href = 'http://127.0.0.1:\(listener.port)/' + id;
+          a.id = id; a.textContent = id; a.href = '\(base)/' + id;
           if (target) a.target = target;
           a.style.cssText = 'position:fixed;left:20px;top:' + top + 'px;z-index:99999;display:block;padding:16px;font-size:20px;background:#fff;color:#000';
           document.body.appendChild(a);
@@ -115,42 +129,43 @@ final class NetworkProbeTests: XCTestCase {
             link.tap()
             Thread.sleep(forTimeInterval: 1.0)
         }
-        XCTAssertEqual(handle.evaluate("return location.href.startsWith('file:');") as? Bool, true, "처음 문서에 머문다")
+        let still = handle.evaluate("return location.href.startsWith('file:');") as? Bool ?? false
         Thread.sleep(forTimeInterval: 1.0)
-        return ProbeResult(scriptConnections: scriptConnections, connectionsAfterTaps: listener.connections, requests: listener.firstLines,
-                           outcomes: output["value"] as? [String: Any] ?? [:], stats: handle.shellStats())
+        return ProbeResult(subresourceConnections: subresourceConnections, finalConnections: listener.connections, requests: listener.firstLines,
+                           outcomes: output["value"] as? [String: Any] ?? [:], stillOnDocument: still, stats: handle.shellStats())
     }
 
     func testRequestsToOutsideAreBlocked() throws {
         let r = try runProbe(control: false)
-        XCTAssertEqual(r.scriptConnections, 0, "스크립트로 낸 바깥 요청은 연결조차 닿지 않는다")
+        XCTAssertEqual(r.subresourceConnections, 0, "하위 자원 요청은 연결조차 닿지 않는다")
         XCTAssertEqual(r.requests, [], "어떤 요청 내용도 바깥으로 나가지 않는다")
-        XCTAssertEqual(r.outcomes["stillOnDocument"] as? Bool, true, "처음 문서에 머문다: \(r.outcomes["href"] ?? "")")
+        XCTAssertTrue(r.stillOnDocument, "처음 문서에 머문다")
         XCTAssertEqual(r.outcomes["windowOpenReturnedNull"] as? Bool, true, "스크립트가 연 새 창은 열리지 않는다")
         for key in ["fetch", "fetchHttps", "xhr", "image", "script", "style", "websocket", "eventSource"] {
             let outcome = "\(r.outcomes[key] ?? "")"
             XCTAssertFalse(outcome == "loaded" || outcome == "open", "\(key) 가 성공하면 안 된다: \(outcome)")
         }
         let navigations = r.stats["blockedNavigations"] as? [String] ?? []
-        // 스크립트가 연 새 창(window.open, 스크립트의 click)은 WebKit 의 팝업 차단(javaScriptCanOpenWindowsAutomatically = false)이
-        // 먼저 막는다(window.open 이 null). 사람이 누른 새 창 링크는 껍데기의 createWebViewWith 까지 와서 껍데기가 막는다.
         let windows = r.stats["blockedWindows"] as? [String] ?? []
-        XCTAssertGreaterThanOrEqual(navigations.count, 4, "링크, location, form 이동과 사람이 누른 바깥 링크를 껍데기가 취소했다: \(navigations)")
-        XCTAssertTrue(navigations.contains { $0.hasSuffix("/sa-probe-link") }, "사람이 누른 바깥 링크를 껍데기가 취소했다: \(navigations)")
-        XCTAssertTrue(windows.contains { $0.hasSuffix("/sa-probe-blank") }, "사람이 누른 새 창 링크를 껍데기가 막았다: \(windows)")
-        // 사람이 링크를 누르면 WebKit 이 요청을 정하기 전에 TCP 연결을 미리 맺을 수 있다(내용은 보내지 않음).
-        // 콘텐츠 규칙과 이동 취소로는 막히지 않는다. 웹 묶음에는 바깥 링크가 없어서(정적 검사) 실제로는 생기지 않는다. 숫자만 남긴다.
-        recordMetric(["kind": "network", "mode": "blocked", "connections": r.scriptConnections, "preconnectsAfterTaps": r.connectionsAfterTaps - r.scriptConnections,
+        for path in ["/link", "/assign", "/form", "/sa-probe-link"] {
+            XCTAssertTrue(navigations.contains { $0.hasSuffix(path) }, "\(path) 이동을 껍데기가 취소했다: \(navigations)")
+        }
+        // 스크립트의 새 창은 WebKit 의 팝업 차단이 먼저 막는다. 사람이 누른 새 창 링크는 WebKit 이 먼저 이동 결정(대상 틀 없음)을
+        // 물어서 껍데기가 취소하고, 그 단계를 지나면 새 창 만들기(createWebViewWith)에서 껍데기가 거절한다. 둘 중 하나여야 한다.
+        XCTAssertTrue((navigations + windows).contains { $0.hasSuffix("/sa-probe-blank") }, "사람이 누른 새 창 링크를 껍데기가 막았다: \(navigations) \(windows)")
+        // 링크로 가는 이동은 WebKit 이 요청을 정하기 전에 TCP 연결을 미리 맺을 수 있다(내용은 보내지 않음, 콘텐츠 규칙과 이동 취소로
+        // 막히지 않음). 웹 묶음에는 바깥 링크가 없어서(정적 검사) 실제로는 생기지 않는다. 숫자만 남긴다.
+        recordMetric(["kind": "network", "mode": "blocked", "connections": r.subresourceConnections, "preconnects": r.finalConnections - r.subresourceConnections,
                       "requests": r.requests, "outcomes": r.outcomes, "blockedNavigations": navigations.count, "blockedWindows": windows.count])
     }
 
     func testControlRunWithoutRulesWouldReachListener() throws {
         // 대조 실행: 차단 규칙을 걸지 않으면 같은 탐침이 수신기에 닿는다(탐침과 수신기가 새는 요청을 잡아낸다는 증거).
         let r = try runProbe(control: true)
-        XCTAssertGreaterThanOrEqual(r.scriptConnections, 1, "규칙이 없으면 요청이 닿아야 한다: \(r.outcomes)")
+        XCTAssertGreaterThanOrEqual(r.subresourceConnections, 1, "규칙이 없으면 요청이 닿아야 한다: \(r.outcomes)")
         XCTAssertFalse(r.requests.isEmpty, "규칙이 없으면 요청 내용도 닿는다")
-        XCTAssertEqual(r.outcomes["stillOnDocument"] as? Bool, true, "규칙이 없어도 이동은 껍데기가 취소한다")
-        recordMetric(["kind": "network", "mode": "control", "connections": r.scriptConnections, "requests": r.requests.count,
+        XCTAssertTrue(r.stillOnDocument, "규칙이 없어도 이동은 껍데기가 취소한다")
+        recordMetric(["kind": "network", "mode": "control", "connections": r.subresourceConnections, "requests": r.requests.count,
                       "blockedNavigations": (r.stats["blockedNavigations"] as? [String] ?? []).count])
     }
 }

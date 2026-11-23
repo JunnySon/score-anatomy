@@ -19,6 +19,7 @@ import { Anatomy } from './Anatomy';
 import { Causes } from './Causes';
 import { ExamSelect } from './ExamSelect';
 import { History } from './History';
+import { Marks } from './Marks';
 import { Retry } from './Retry';
 import { Score } from './Score';
 import { Start, startPreview } from './Start';
@@ -244,10 +245,10 @@ describe('넘겨받은 시험 자료와 화면(작업 지시서 3의 5-2, 5-3)',
     ]);
   });
 
-  it('넘겨받은 새 자료로 내용의 자리가 옮겨 갈 수 있는 화면 일곱(시험 선택, 기록, 점수, 점수 해부, 오답 원인, 계단, 재풀이)은 화면 틀에 shiftKey 를 넘기고, 새 자료가 오면 그 값이 바뀐다(별도 검토 A3, 처리 뒤 다시 확인 R1)', () => {
+  it('넘겨받은 새 자료로 내용의 자리나 버튼의 뜻이 바뀔 수 있는 화면 아홉(시험 선택, 기록, 시작, 표시, 점수, 점수 해부, 오답 원인, 계단, 재풀이)은 화면 틀에 shiftKey 를 넘기고, 새 자료가 오면 그 값이 바뀐다(별도 검토 A3, 처리 뒤 다시 확인 R1, 2차 검토 P2, W7)', () => {
     // 화면 틀(Screen)은 처음 그린 뒤 shiftKey 가 바뀌면 마지막 누름과 상관없이 화면 전체를 0.5초 막는다(src/tapGuard.ts 의 markContentShifted).
-    // 막는 동작은 브라우저 화면 테스트(e2e/appRemote.spec.ts 의 시험 선택과 오답 원인)가 보고, 여기서는 화면마다 그 값을 넘기는지와
-    // 새 자료에서 값이 바뀌는지를 본다. 값을 넘기지 않는 화면은 새 자료로 자리가 옮겨 가도 막지 않아서다.
+    // 막는 동작은 브라우저 화면 테스트(e2e/appRemote.spec.ts 의 시험 선택, 오답 원인, 재풀이, 표시, 시작)가 보고, 여기서는 화면마다 그 값을
+    // 넘기는지와 새 자료에서 값이 바뀌는지를 본다. 값을 넘기지 않는 화면은 새 자료로 자리가 옮겨 가도 막지 않아서다.
     const shiftOf = (tree: ReactElement | null): unknown => (tree as ReactElement<{ shiftKey?: string }> | null)?.props.shiftKey;
     const expectChanged = (name: string, before: unknown, after: unknown) => {
       expect(typeof before, `${name}: 앞 값`).toBe('string');
@@ -261,6 +262,13 @@ describe('넘겨받은 시험 자료와 화면(작업 지시서 3의 5-2, 5-3)',
     arrive([remoteExam({ id: 'test-remote-b', title: '테스트 전용 시험 B' }), remoteExam()]);
     expectChanged('시험 선택', selectBefore, shiftOf(treeOf(() => ExamSelect())));
     expectChanged('기록', historyBefore, shiftOf(treeOf(() => History())));
+    // 시작: 넘겨받은 자료로 지금 기록의 시험을 찾게 되어 "이어서 보기"가 생기면(App.tsx 의 resumeCandidate) 값이 바뀐다.
+    expectChanged('시작', shiftOf(treeOf(() => Start({ resumeTo: null }))), shiftOf(treeOf(() => Start({ resumeTo: '/input' }))));
+    // 표시: 정답 공개 전 판에서 정답을 공개한 판이 오면("답 저장하기"가 "채점하기"로 바뀜) 값이 바뀐다.
+    const open = { ...newSession('test-remote-a', 'not_yet', null, NOW), answers: exampleAnswers(examA) };
+    const marksKey = (exam: Exam) =>
+      shiftOf(treeOf(() => Marks({ h: { isDemo: false, session: open, exam, update: () => {}, path: (p) => p } })));
+    expectChanged('표시', marksKey(unreleasedA()), marksKey(releasedA()));
     // 채점한 기록의 화면 다섯: 같은 시험의 새 판(판 번호와 정답 판 번호를 올리고 15번 정답을 고친 테스트 전용 판)이 오면 값이 바뀐다.
     const before = releasedA();
     const after = remoteExam({

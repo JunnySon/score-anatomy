@@ -630,6 +630,98 @@ test('app-test: 학생이 누르지 않았는데 넘겨받은 새 자료로 목�
   await again.close();
 });
 
+test('app-test: 다시 풀기에서 정정으로 지금 문항이 옮겨 가면 0.5초 동안 숫자 키도 받지 않고, 옮겼다는 알림은 맞춰 보기 전까지 남으며, 맞춰 본 결과가 정정으로 빠진 뒤 새로 고른 답도 기록하지 않았다고 알린다(2차 검토 P1, P3)', async ({
+  page,
+}) => {
+  const record = sessionRecord('s-retry2', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+  await openBundle(page, 'app-test', { bridge: 2, store: storeOf([record]), remote: remoteData(1, AT_1710, [testExam()]) }, '/retry/t03');
+  await expectHash(page, '/retry/t03');
+  // 15번(5지선다)에 3을 골라 맞춰 본다. 그 기록은 정답 판 번호 1의 기록이다.
+  await expect(page.getByTestId('retry-no')).toHaveText('15번');
+  await tapKey(page, 3);
+  await tapKey(page, 'go');
+  await expect(page.getByTestId('retry-result')).toHaveCount(1);
+  // 7번 정답을 정정한 판(정답 판 번호 2): 15번은 목록에 남고, 맞춰 본 결과는 판이 달라 화면에서 빠지며 키패드가 다시 나온다.
+  await sendRemote(page, remoteData(2, AT_2010, [correctedExam(2, { 7: 4 })]));
+  await expect(page.getByTestId('retry-progress')).toHaveText(S.retry.progress(2, 3));
+  await expect(page.getByTestId('retry-no')).toHaveText('15번');
+  await expect(page.getByTestId('retry-result')).toHaveCount(0);
+  await expect(page.locator('.tap-shield')).toHaveCount(0);
+  // 4를 새로 고르고 맞춰 보기 전에, 15번이 맞게 정정된 판(정답 판 번호 3)이 오면 29번(단답형)으로 옮긴다.
+  await tapKey(page, 4);
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('4');
+  await sendRemote(page, remoteData(3, AT_2010, [correctedExam(3, { 7: 4, 15: 1 }, { answersRev: 3 })]));
+  await expect(page.getByTestId('retry-no')).toHaveText('29번');
+  await expect(page.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  // 옮긴 직후 누른 숫자 키와 "답 맞춰 보기"는 받지 않는다. 그 숫자는 옮겨 가기 전 문항에 넣던 답의 나머지일 수 있어서다.
+  await clickCenter(page, page.locator('[data-key="2"]'));
+  await clickCenter(page, page.locator('[data-key="go"]'));
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('');
+  await expect(page.getByTestId('retry-result')).toHaveCount(0);
+  // 15번은 빠졌고, 맞춰 보기 전에 새로 고른 4는 기록하지 않았다고 알린다.
+  await expect(page.getByTestId('retry-moved')).toHaveText(S.retry.moved(15, true));
+  // 막기가 끝나면 29번에 답을 넣을 수 있고, 첫 숫자를 눌러도 옮겼다는 알림은 맞춰 보기 전까지 남는다.
+  await expect(page.locator('.tap-shield')).toHaveCount(0);
+  await tapKey(page, 2);
+  await expect(page.getByTestId('retry-moved')).toHaveText(S.retry.moved(15, true));
+  for (const d of [5, 7]) await tapKey(page, d);
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('257');
+  await tapKey(page, 'go');
+  await expect(page.getByTestId('retry-result')).toHaveAttribute('data-correct', 'true');
+  await expect(page.getByTestId('retry-moved')).toHaveCount(0);
+  await expectCleanText(page, '다시 풀기(옮긴 뒤 맞춰 봄)');
+  // 기록: 15번은 처음 맞춰 본 기록(정답 판 번호 1) 하나뿐이고 4는 기록하지 않았다. 29번은 정답 판 번호 3의 기록이다.
+  const last = (await lastRecord(page, 's-retry2'))!;
+  expect(Object.keys(last.retries).sort()).toEqual(['15', '29']);
+  expect(last.retries['15']!.answersRev ?? 1).toBe(1);
+  expect(last.retries['29']).toMatchObject({ correct: true, answersRev: 3 });
+  expectSameInput(await savedRecords(page, 's-retry2'), record.answers, record.marks);
+  expectNoOtherRequests(page);
+});
+
+test('app-test: 새 자료로 같은 자리 버튼의 뜻이나 자리가 바뀌는 표시 화면과 시작 화면도 0.5초 동안 화면 전체의 누름을 받지 않아, 바뀌기 전 버튼을 보고 누른 것이 채점이나 기록 열기가 되지 않는다(2차 검토 P2, W7)', async ({
+  page,
+  context,
+}) => {
+  // 표시 화면: 정답 공개 전 판으로 답을 다 넣은 기록. "답 저장하기" 자리를 적어 두고, 정답을 공개한 판이 오자마자 그 자리를 누른다.
+  const open = sessionRecord('s-marks', 'test-remote-a', { gradedAt: null, firstGradedAt: null, causes: {} });
+  await openBundle(page, 'app-test', { bridge: 2, store: storeOf([open]), remote: remoteData(1, AT_0840, [unreleasedExam()]) }, '/marks');
+  await expectHash(page, '/marks');
+  const saveBox = (await page.getByRole('button', { name: S.marks.save }).boundingBox())!;
+  await sendRemote(page, remoteData(2, AT_1710, [testExam({ rev: 2 })]));
+  await expect(page.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  await expect(page.getByTestId('grade')).toBeVisible();
+  await page.mouse.click(saveBox.x + saveBox.width / 2, saveBox.y + saveBox.height / 2);
+  // 그 누름은 받지 않아서 채점하지 않았고 표시 화면 그대로다. 0.5초가 지나면 채점할 수 있다.
+  await expect(page.locator('.tap-shield')).toHaveCount(0);
+  await expectHash(page, '/marks');
+  for (const r of await savedRecords(page, 's-marks')) expect(r.gradedAt).toBeNull();
+  await page.getByTestId('grade').click();
+  await expectHash(page, '/score');
+
+  // 시작 화면: 넘겨받은 시험의 채점 기록이 지금 기록인데 자료가 아직 없어서 "이어서 보기"가 없다.
+  // "예시 결과 보기"의 오른쪽 자리를 적어 두고, 자료가 와서 "이어서 보기"가 그 자리에 생기자마자 누른다.
+  const graded = sessionRecord('s-start', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+  const again = await context.newPage();
+  const errors = errorsOf(again);
+  await openBundle(again, 'app-test', { bridge: 2, store: storeOf([graded]) }, '/');
+  await expectHash(again, '/');
+  await expect(again.getByRole('button', { name: S.start.resume })).toHaveCount(0);
+  const sampleBox = (await again.getByRole('button', { name: S.start.sampleResult }).boundingBox())!;
+  await sendRemote(again, remoteData(1, AT_1710, [testExam()]));
+  await expect(again.getByRole('button', { name: S.start.resume })).toHaveCount(1);
+  await expect(again.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  await again.mouse.click(sampleBox.x + sampleBox.width * 0.85, sampleBox.y + sampleBox.height / 2);
+  // 받지 않아서 기록도 예시 결과도 열지 않았다.
+  await expect(again.locator('.tap-shield')).toHaveCount(0);
+  await expectHash(again, '/');
+  await again.getByRole('button', { name: S.start.resume }).click();
+  await expectHash(again, '/anatomy');
+  expect(errors, '다시 연 앱의 콘솔 오류').toEqual([]);
+  expectNoOtherRequests(page, again);
+  await again.close();
+});
+
 test('app-test: "새로 확인"을 누르면 saRemote 로 { op: "refresh" } 를 보내고 응답이 올 때까지 버튼을 쓸 수 없으며, 결과 셋(같은 seq, remoteFailed, 새 자료)을 보여 준다', async ({ page }) => {
   const first = remoteData(1, AT_1710, []);
   const next = remoteData(2, AT_2010, [testExam()]);

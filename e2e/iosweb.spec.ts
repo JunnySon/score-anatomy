@@ -222,6 +222,17 @@ test.describe('3-4 목표 등급을 고르면 등급컷 상자의 첫 줄이 보
     const box = (await chip.boundingBox())!;
     const x = box.x + box.width / 2;
     const y = box.y + box.height / 2;
+    // 초점을 옮기는 호출(focus())을 센다. 마우스로 누른 때 초점이 어디로 가는지는 브라우저마다 달라서(사파리 계열은 버튼에 주지 않음)
+    // 초점의 자리가 아니라 이 화면의 코드가 초점을 옮기려 했는지를 본다.
+    await page.evaluate(() => {
+      const w = window as Window & { __focusCalls?: number };
+      w.__focusCalls = 0;
+      const original = HTMLElement.prototype.focus;
+      HTMLElement.prototype.focus = function (this: HTMLElement, ...rest: Parameters<HTMLElement['focus']>) {
+        w.__focusCalls! += 1;
+        return original.apply(this, rest);
+      };
+    });
     const before = await scrollTop(page);
     await page.mouse.click(x, y);
     // 스크롤로 내용이 옮겨 가서 그 자리에 다른 요소가 왔다.
@@ -241,8 +252,9 @@ test.describe('3-4 목표 등급을 고르면 등급컷 상자의 첫 줄이 보
         modal: document.querySelectorAll('[aria-modal="true"]').length,
         open: Array.from(document.querySelectorAll('details[open]')).length,
       }));
-    // 스크롤할 때 초점은 옮기지 않는다(누른 칩에 그대로 있다).
-    expect(await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe('grade-2');
+    // 스크롤할 때 초점은 옮기지 않는다: 이 화면의 코드는 focus() 를 부르지 않았고, 초점은 등급컷 상자 안으로 가지 않았다.
+    expect(await page.evaluate(() => (window as Window & { __focusCalls?: number }).__focusCalls)).toBe(0);
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-testid="cutbox"] .mt3') === null || document.activeElement === null)).toBe(true);
     const s0 = await state();
     await page.mouse.click(x, y);
     await page.waitForTimeout(100);

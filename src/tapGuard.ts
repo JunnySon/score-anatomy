@@ -22,15 +22,23 @@
 //
 // 빠진 누름 채우기(작업 지시서 3-1의 3-1):
 // 아이폰의 웹뷰는 손을 떼고 몇 ms 안에 같은 자리를 다시 누르면 첫 누름의 click(detail 1)을 보내지 않고
-// click(detail 2) 하나와 dblclick 만 보낸다. 그래서 click 의 detail 을 "이 자리에서 이어서 누른 횟수"로 보고,
-// detail 이 d(2 이상)인 click 이 왔는데 바로 앞에 받은 click 이 이 누름 묶음의 d-1 번째가 아니면
-// 모자란 click 을 같은 요소, 같은 좌표로 먼저 만들어 보낸 뒤에 지금 click 을 평소대로 처리한다.
-// - 만들어 보낸 click 도 진짜 click 과 똑같이 이 보호를 거친다(막고 있는 곳이면 버려진다).
-// - 보호가 버린 click 도 "받은 것"으로 센다. 버려진 누름을 다시 채워 넣지 않는다.
+// 손뗌 두 번(touchend, pointerup) 뒤에 click(detail 2) 하나와 dblclick 만 보낸다. 그래서 detail 이 d(2 이상)인 click 이 오면,
+// 마지막으로 받은 click 뒤에 이 자리(가로세로 24px 안)에서 1초 안에 손을 뗀 횟수를 센다. 손뗌은 click 마다 하나씩이라
+// 손뗌이 click 보다 많으면 그만큼 click 이 빠진 것이다. 빠진 수(손뗌 수 - 1, 많아도 d-1)만큼의 click 을
+// 같은 요소, 같은 좌표로 먼저 만들어 보낸 뒤에 지금 click 을 평소대로 처리한다.
+// - detail 의 이어짐만으로 짐작하지 않는다. 안드로이드 크롬은 다른 키를 빠르게 이어 눌러도 detail 을 올리고,
+//   윈도우의 Chromium 은 detail 을 3까지만 올려서, 그것만 보면 진짜 click 이 다 오는데도 누름을 더 넣게 된다(별도 검토 F1, F2).
+//   click 마다 손뗌이 하나씩 오는 브라우저(마우스, 안드로이드, 보통 빠르기의 아이폰 누름)에서는 채우지 않는다.
+// - 입력은 그대로 click 으로만 받는다. 손뗌은 세기만 한다. 끌기와 스크롤(누른 자리에서 16px 넘게 움직인 손뗌, 취소된 누름)은 세지 않는다.
+// - 만들어 보낸 click 도 진짜 click 과 똑같이 이 보호를 거친다(막고 있는 곳이면 버려진다). 보호를 볼 때의 시각은
+//   그 누름의 손뗌 시각이다(진짜 click 이 왔을 시각, 별도 검토 F5).
+// - 보호가 버린 click 도 "받은 것"으로 센다(손뗌 수를 거기서 다시 센다). 버려진 누름을 다시 채워 넣지 않는다.
 // - 만들어 보낸 click 의 처리(화면 그리기와 그 뒤의 효과)는 지금 click 보다 먼저 끝낸다(flushSync).
 //   그래야 지금 click 이 첫 누름이 바꾼 화면과 상태를 보고 처리된다. 진짜 click 이 차례로 다 온 것과 같다.
-// - 만들어 보낸 click 으로 원래 요소가 화면에서 사라졌거나 쓸 수 없게 됐거나 그 자리를 다른 요소가 덮었으면
-//   지금 click 은 (보호에 버려지지 않았더라도) 어디에도 들어가지 않게 한다. 바뀐 화면의 다른 요소가 대신 눌리지 않게 한다.
+// - 누른 요소는 가장 가까운 누를 수 있는 요소(버튼 등)로 본다. 만들어 보낸 click 으로 그 요소가 화면에서 사라졌거나
+//   쓸 수 없게 됐거나 그 자리를 다른 요소가 덮었으면 지금 click 은 (보호에 버려지지 않았더라도) 어디에도 들어가지 않게 한다.
+//   바뀐 화면의 다른 요소가 대신 눌리지 않게 한다. 요소는 그대로인데 그 안의 글자 요소만 바뀌었으면(예: "찍음" 글자가 지워짐)
+//   지금 click 을 그 자리의 지금 요소로 다시 보낸다(별도 검토 F3).
 // - 키보드나 스크립트로 낸 click(detail 0)과 dblclick 은 건드리지 않는다. 보호의 시간, 거리, 대상은 그대로다.
 // - 측정 중이면 채운 누름을 센다(src/App.tsx, filled_taps).
 
@@ -41,18 +49,16 @@ export const TAP_GUARD_MS = 500;
 export const TAP_GUARD_PX = 24;
 
 /**
- * 빠진 누름 채우기: 바로 앞에 받은 click 을 이 누름 묶음의 앞 누름으로 보는 가장 긴 사이(ms).
- * 브라우저가 이어 누름으로 세는 시간(윈도우 기본 0.5초, 설정의 가장 긴 값 0.9초, 안드로이드 0.3초)보다 넉넉하게 잡는다.
- * 짧게 잡으면 진짜 click 이 다 오는 브라우저에서 앞 click 을 놓친 것으로 잘못 보고 누름을 한 번 더 넣게 된다.
- * 길게 잡아서 생기는 잘못은 채우지 못하는 것(고치기 전과 같음)뿐이다. 결정기록 7장.
+ * 빠진 누름 채우기: click 앞의 손뗌을 이 click 의 누름 묶음으로 세는 가장 긴 사이(ms). 아이폰에서 빠지는 첫 누름은
+ * 손을 떼고 몇 ms 안에 다시 누른 것이라 넉넉하다. 오래전의 손뗌(끌기 끝 등)을 세지 않으려고 둔다.
  */
-export const FILL_CHAIN_MS = 1000;
+export const FILL_WINDOW_MS = 1000;
 
-/**
- * 빠진 누름 채우기: 바로 앞에 받은 click 을 같은 누름 묶음으로 보는 거리(px, 가로세로). 같은 요소를 누른 것이면 거리를 보지 않는다
- * (안드로이드는 두 번 누름의 허용 거리가 넓다). 요소가 다시 그려져 바뀐 경우를 위해 연달아 누르기 보호와 같은 거리를 쓴다.
- */
-export const FILL_CHAIN_PX = TAP_GUARD_PX;
+/** 빠진 누름 채우기: click 의 자리에서 가로세로 이만큼 안의 손뗌만 센다(px). 연달아 누르기 보호와 같은 거리다. */
+export const FILL_SPOT_PX = TAP_GUARD_PX;
+
+/** 빠진 누름 채우기: 누른 자리에서 이만큼 넘게 움직인 손뗌은 누름이 아니라 끌기나 스크롤로 보고 세지 않는다(px). */
+export const FILL_MOVE_PX = 16;
 
 interface Spot {
   x: number;
@@ -64,10 +70,24 @@ export type GuardArea = 'spot' | 'screen';
 
 /** 마지막으로 받아들인 누름. */
 let lastClick: (Spot & { at: number }) | null = null;
-/** 마지막으로 받은 누름(보호가 버린 것도 센다). 빠진 누름 채우기가 앞 누름을 볼 때 쓴다. */
-let lastReceived: (Spot & { at: number; detail: number; target: EventTarget | null }) | null = null;
+/** 손을 뗀 자리와 시각(이벤트의 timeStamp). */
+interface Release extends Spot {
+  t: number;
+}
+/**
+ * 마지막으로 받은 click(보호가 버린 것도 센다) 뒤의 손뗌. pointerup 과 touchend 를 따로 모아 많은 쪽을 쓴다
+ * (한 번 뗀 것이 둘 다로 오므로 더하지 않는다. 둘 가운데 하나만 오는 브라우저도 센다).
+ */
+const releases: { pointer: Release[]; touch: Release[] } = { pointer: [], touch: [] };
+/** 누르기 시작한 자리(pointerId 와 touch identifier 별). 손뗌이 끌기였는지 볼 때 쓴다. */
+const pointerDowns = new Map<number, Spot>();
+const touchDowns = new Map<number, Spot>();
 /** 빠진 누름을 만들어 보내는 중인지. 만들어 보낸 click 에서는 다시 채우지 않는다. */
 let filling = false;
+/** 만들어 보내는 click 의 보호를 볼 시각(그 누름의 손뗌 시각). 없으면 지금 시각. */
+let fillClock: number | null = null;
+/** 지금 click 을 그 자리의 지금 요소로 다시 보내는 중인지. 다시 보낸 click 에서는 채우지 않는다. */
+let redispatching = false;
 /** 만들어 보낸 click 을 처리할 때 감싸는 함수. 화면 그리기를 지금 끝내게 한다(src/main.tsx 가 React 의 flushSync 를 넣는다). */
 let flushRunner: (fn: () => void) => void = (fn) => fn();
 /** 지금 막고 있는 자리. strict 면 단답형 숫자 키(data-tap-safe)도 버린다. */
@@ -164,26 +184,72 @@ function isGuarded(e: MouseEvent, now: number): boolean {
   return Math.abs(e.clientX - guard.x) <= TAP_GUARD_PX && Math.abs(e.clientY - guard.y) <= TAP_GUARD_PX;
 }
 
-/** 누른 요소(가장 가까운 누를 수 있는 요소, 없으면 누른 요소 자체). 같은 누름 묶음인지 볼 때 쓴다. */
-function controlOf(target: EventTarget | null): EventTarget | null {
-  return target instanceof Element ? (target.closest(INTERACTIVE_SELECTOR) ?? target) : target;
+/** 누른 요소(가장 가까운 누를 수 있는 요소, 없으면 누른 요소 자체). */
+function controlOf(target: Element): Element {
+  return target.closest(INTERACTIVE_SELECTOR) ?? target;
+}
+
+/** 손뗌을 모은다. 오래된 것은 버리고 많아도 8개만 둔다. */
+function remember(list: Release[], r: Release): void {
+  list.push(r);
+  while (list.length > 0 && r.t - list[0]!.t > FILL_WINDOW_MS) list.shift();
+  if (list.length > 8) list.splice(0, list.length - 8);
+}
+
+function moved(from: Spot | undefined, x: number, y: number): boolean {
+  return from !== undefined && Math.hypot(x - from.x, y - from.y) > FILL_MOVE_PX;
+}
+
+function onPointerDown(e: PointerEvent): void {
+  if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  pointerDowns.set(e.pointerId, { x: e.clientX, y: e.clientY });
+}
+
+function onPointerUp(e: PointerEvent): void {
+  if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const from = pointerDowns.get(e.pointerId);
+  pointerDowns.delete(e.pointerId);
+  if (moved(from, e.clientX, e.clientY)) return;
+  remember(releases.pointer, { x: e.clientX, y: e.clientY, t: e.timeStamp });
+}
+
+function onPointerCancel(e: PointerEvent): void {
+  pointerDowns.delete(e.pointerId);
+}
+
+function onTouchStart(e: TouchEvent): void {
+  for (const t of Array.from(e.changedTouches)) touchDowns.set(t.identifier, { x: t.clientX, y: t.clientY });
+}
+
+function onTouchEnd(e: TouchEvent): void {
+  for (const t of Array.from(e.changedTouches)) {
+    const from = touchDowns.get(t.identifier);
+    touchDowns.delete(t.identifier);
+    if (moved(from, t.clientX, t.clientY)) continue;
+    remember(releases.touch, { x: t.clientX, y: t.clientY, t: e.timeStamp });
+  }
+}
+
+function onTouchCancel(e: TouchEvent): void {
+  for (const t of Array.from(e.changedTouches)) touchDowns.delete(t.identifier);
 }
 
 /**
- * 이 click 앞에 빠진 누름의 수. detail 이 d 인데 바로 앞에 받은 click 이 이 누름 묶음의 앞 누름(detail 이 d 보다 작고,
- * FILL_CHAIN_MS 안이고, 같은 요소이거나 FILL_CHAIN_PX 안)이면 그 사이에 모자란 수, 아니면 d-1 이다.
+ * 이 click 앞에 빠진 누름의 손뗌 시각들(오래된 것부터). detail 이 d(2 이상)이면, 마지막으로 받은 click 뒤에
+ * 이 click 의 자리에서 FILL_WINDOW_MS 안에 뗀 손뗌 가운데 이 click 자신의 것(가장 늦은 것)을 뺀 나머지가 빠진 누름이다.
+ * 많아도 d-1 개다. 손뗌이 click 마다 하나씩이면 빈 목록이다.
  */
-function missingBefore(e: MouseEvent, now: number): number {
+function missingReleases(e: MouseEvent): number[] {
   const d = e.detail;
-  if (d < 2) return 0;
-  const prev = lastReceived;
-  const chained =
-    prev !== null &&
-    prev.detail >= 1 &&
-    prev.detail < d &&
-    now - prev.at <= FILL_CHAIN_MS &&
-    (controlOf(prev.target) === controlOf(e.target) || (Math.abs(e.clientX - prev.x) <= FILL_CHAIN_PX && Math.abs(e.clientY - prev.y) <= FILL_CHAIN_PX));
-  return chained ? d - 1 - prev.detail : d - 1;
+  if (d < 2) return [];
+  const near = (r: Release) =>
+    Math.abs(r.x - e.clientX) <= FILL_SPOT_PX && Math.abs(r.y - e.clientY) <= FILL_SPOT_PX && e.timeStamp - r.t <= FILL_WINDOW_MS;
+  const fromPointer = releases.pointer.filter(near);
+  const fromTouch = releases.touch.filter(near);
+  const list = fromPointer.length >= fromTouch.length ? fromPointer : fromTouch;
+  const count = Math.min(list.length - 1, d - 1);
+  if (count <= 0) return [];
+  return list.slice(list.length - 1 - count, list.length - 1).map((r) => r.t);
 }
 
 /** 누른 요소를 지금 그 자리에서 누를 수 있는지를 몇 가지로 나눠 본다. 채우기 전과 뒤를 견준다. */
@@ -195,15 +261,14 @@ interface Usable {
   hit: Element | null;
 }
 
-function usableOf(target: Element, x: number, y: number): Usable {
-  const connected = target.isConnected && target.closest('[inert]') === null;
-  const control = target.closest(INTERACTIVE_SELECTOR);
-  const enabled = control === null || (!control.matches(':disabled') && control.getAttribute('aria-disabled') !== 'true');
+function usableOf(control: Element, x: number, y: number): Usable {
+  const connected = control.isConnected && control.closest('[inert]') === null;
+  const enabled = !control.matches(':disabled') && control.getAttribute('aria-disabled') !== 'true';
   let onTop = true;
   let hit: Element | null = null;
   if (typeof document.elementFromPoint === 'function') {
     hit = document.elementFromPoint(x, y);
-    onTop = hit !== null && (hit === target || target.contains(hit));
+    onTop = hit !== null && (hit === control || control.contains(hit));
   }
   return { connected, enabled, onTop, hit };
 }
@@ -213,35 +278,51 @@ function becameUnusable(before: Usable, after: Usable): boolean {
   return (before.connected && !after.connected) || (before.enabled && !after.enabled) || (before.onTop && !after.onTop);
 }
 
-/** 빠진 click 을 같은 요소, 같은 좌표로 만들어 보낸다. 하나씩 보내고 그 처리(화면 그리기)를 끝낸 뒤 다음 것을 보낸다. */
-function fillMissing(e: MouseEvent, target: Element, count: number): void {
-  const first = e.detail - count;
-  for (let i = 0; i < count; i += 1) {
-    if (!target.isConnected) return;
-    const ev = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      composed: true,
-      view: window,
-      detail: first + i,
-      clientX: e.clientX,
-      clientY: e.clientY,
-      screenX: e.screenX,
-      screenY: e.screenY,
-      button: e.button,
-      ctrlKey: e.ctrlKey,
-      shiftKey: e.shiftKey,
-      altKey: e.altKey,
-      metaKey: e.metaKey,
-    });
+/** e 와 같은 click 을 detail 만 정해 새로 만든다. */
+function cloneClick(e: MouseEvent, detail: number): MouseEvent {
+  return new MouseEvent('click', {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    view: window,
+    detail,
+    clientX: e.clientX,
+    clientY: e.clientY,
+    screenX: e.screenX,
+    screenY: e.screenY,
+    button: e.button,
+    ctrlKey: e.ctrlKey,
+    shiftKey: e.shiftKey,
+    altKey: e.altKey,
+    metaKey: e.metaKey,
+  });
+}
+
+/**
+ * 빠진 click 을 같은 요소, 같은 좌표로 만들어 보낸다. 하나씩 보내고 그 처리(화면 그리기)를 끝낸 뒤 다음 것을 보낸다.
+ * 누른 글자 요소가 앞 click 으로 바뀌었으면 같은 요소 안의 그 자리의 지금 요소로 보낸다. 그것도 없으면 멈춘다.
+ */
+function fillMissing(e: MouseEvent, target: Element, control: Element, times: number[]): void {
+  const first = e.detail - times.length;
+  for (let i = 0; i < times.length; i += 1) {
+    let to: Element | null = target.isConnected ? target : null;
+    if (!to && control.isConnected && typeof document.elementFromPoint === 'function') {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      if (hit && control.contains(hit)) to = hit;
+    }
+    if (!to) return;
+    const at = to;
+    const ev = cloneClick(e, first + i);
     for (const l of fillListeners) l();
     filling = true;
+    fillClock = times[i]!;
     try {
       flushRunner(() => {
-        target.dispatchEvent(ev);
+        at.dispatchEvent(ev);
       });
     } finally {
       filling = false;
+      fillClock = null;
     }
   }
 }
@@ -254,20 +335,36 @@ function onClick(e: MouseEvent): void {
   // 지금 click 이 실제로 닿는 요소. 채운 누름으로 화면이 바뀌었으면 진짜 click 이 차례로 다 왔을 때 이 click 이 닿았을 요소
   // (그 좌표의 지금 맨 위 요소)로 본다. 보호가 버릴 때의 알림 여부와 숫자 키 여부를 이것으로 정한다.
   let hitTarget: EventTarget | null = e.target;
-  if (!filling && e.target instanceof Element) {
-    const missing = missingBefore(e, performance.now());
-    if (missing > 0) {
+  if (!filling && !redispatching) {
+    const times = e.target instanceof Element ? missingReleases(e) : [];
+    // 받은 click 이므로 손뗌은 여기서 다시 센다(보호가 버리는 click 도 같다).
+    releases.pointer = [];
+    releases.touch = [];
+    if (times.length > 0 && e.target instanceof Element) {
       const target = e.target;
-      const before = usableOf(target, e.clientX, e.clientY);
-      fillMissing(e, target, missing);
-      const after = usableOf(target, e.clientX, e.clientY);
+      const control = controlOf(target);
+      const before = usableOf(control, e.clientX, e.clientY);
+      fillMissing(e, target, control, times);
+      const after = usableOf(control, e.clientX, e.clientY);
       lost = becameUnusable(before, after);
+      if (!lost && !target.isConnected && after.hit !== null && control.contains(after.hit)) {
+        // 누른 요소는 그대로인데 그 안의 글자 요소가 바뀌었다. 이 click 은 떨어져 나간 요소로는 처리되지 않으므로
+        // 그 자리의 지금 요소로 다시 보내고, 다시 보낸 click 이 아래의 보호를 거친다.
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        redispatching = true;
+        try {
+          after.hit.dispatchEvent(cloneClick(e, e.detail));
+        } finally {
+          redispatching = false;
+        }
+        return;
+      }
       if (before.onTop && after.hit !== null) hitTarget = after.hit;
     }
   }
-  const now = performance.now();
-  // 보호가 버리는 누름도 받은 것으로 센다(버린 누름을 다음 click 에서 다시 채우지 않게).
-  lastReceived = { x: e.clientX, y: e.clientY, at: now, detail: e.detail, target: e.target };
+  // 만들어 보낸 click 은 그 누름의 손뗌 시각으로 보호를 본다(진짜 click 이 왔을 시각, 별도 검토 F5).
+  const now = filling && fillClock !== null ? Math.min(fillClock, performance.now()) : performance.now();
   if (guard && isGuarded(e, now)) {
     const safe = !guard.strict && hitTarget instanceof Element && hitTarget.closest('[data-tap-safe]') !== null;
     if (!safe) {
@@ -305,6 +402,13 @@ export function installTapGuard(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('click', onClick, true);
+  // 빠진 누름 채우기가 손뗌을 센다. 누름을 받거나 막지 않고 세기만 한다.
+  window.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true });
+  window.addEventListener('pointerup', onPointerUp, { capture: true, passive: true });
+  window.addEventListener('pointercancel', onPointerCancel, { capture: true, passive: true });
+  window.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+  window.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
+  window.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
 }
 
 /**

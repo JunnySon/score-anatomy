@@ -129,21 +129,38 @@ interface ScreenProps {
   moreHint?: boolean;
 }
 
-/** 내용이 아래로 더 이어지는지 본다(스크롤, 크기 바뀜). 남은 높이가 1px 이하면 끝까지 내린 것으로 본다. */
+/**
+ * 내용이 아래로 더 이어지는지 본다(스크롤, 크기 바뀜, 내용이 생기거나 빠짐). 남은 높이가 1px 이하면 끝까지 내린 것으로 본다.
+ * 나중에 생긴 내용(채점한 뒤의 안내 등)도 보도록 자식이 바뀌면 새 자식까지 다시 지켜본다(별도 검토 F6).
+ */
 function useMoreBelow(ref: React.RefObject<HTMLElement | null>, on: boolean): boolean {
   const [more, setMore] = useState(false);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!on || !el) return undefined;
     const check = () => setMore(el.scrollHeight - el.clientHeight - el.scrollTop > 1);
-    check();
-    el.addEventListener('scroll', check, { passive: true });
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(check) : null;
-    ro?.observe(el);
-    for (const child of Array.from(el.children)) ro?.observe(child);
+    const watch = () => {
+      if (!ro) return;
+      ro.disconnect();
+      ro.observe(el);
+      for (const child of Array.from(el.children)) ro.observe(child);
+    };
+    check();
+    watch();
+    el.addEventListener('scroll', check, { passive: true });
+    const mo =
+      typeof MutationObserver === 'function'
+        ? new MutationObserver(() => {
+            watch();
+            check();
+          })
+        : null;
+    mo?.observe(el, { childList: true, subtree: true, characterData: true });
     return () => {
       el.removeEventListener('scroll', check);
       ro?.disconnect();
+      mo?.disconnect();
     };
   }, [ref, on]);
   return on && more;

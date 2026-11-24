@@ -2,10 +2,11 @@ import type { Page } from '@playwright/test';
 import { chooseExam, correctAnswers, expect, expectHash, loadExam, openApp, seedStore, test } from './helpers';
 
 // 빠진 누름 채우기(작업 지시서 3-1의 3-1, src/tapGuard.ts).
-// 아이폰의 웹뷰는 아주 빠른 두 번 누름에서 첫 click(detail 1)을 보내지 않고 click(detail 2) 하나만 보낸다.
+// 아이폰의 웹뷰는 아주 빠른 두 번 누름에서 손뗌 두 번 뒤에 click(detail 2) 하나만 보내고 첫 click(detail 1)은 보내지 않는다.
 // 그 click 하나만 온 경우의 끝 상태가 진짜 click 이 차례로 다 온 경우와 같은지 본다.
-// click 은 그 좌표의 맨 위 요소에 detail 을 정해 보낸다(손가락이 누른 것과 같은 요소). 한 click 을 보낼 때마다
-// page.evaluate 를 따로 불러서, 진짜 누름처럼 click 사이에 브라우저가 할 일(화면 그리기 등)을 할 틈을 둔다.
+// 누름은 실제 순서대로 보낸다: 손뗌('r', 그 좌표에 pointerup)과 click(그 좌표의 맨 위 요소에 detail 을 정해 보냄).
+// 진짜 click 이 다 오는 경우는 [손뗌, click 1, 손뗌, click 2], 첫 click 이 빠진 경우는 [손뗌, 손뗌, click 2]다.
+// 한 번 보낼 때마다 page.evaluate 를 따로 불러서, 진짜 누름처럼 그 사이에 브라우저가 할 일(화면 그리기 등)을 할 틈을 둔다.
 
 const exam = loadExam('a');
 const all: Record<number, unknown> = correctAnswers(exam);
@@ -14,6 +15,9 @@ interface Pt {
   x: number;
   y: number;
 }
+
+/** 누름 열의 한 칸: 숫자는 그 detail 의 click, 'r' 는 손뗌. */
+type Step = number | 'r';
 
 async function centerOf(page: Page, selector: string): Promise<Pt> {
   const box = (await page.locator(selector).first().boundingBox())!;
@@ -34,7 +38,42 @@ async function clickAt(page: Page, p: Pt, detail: number): Promise<void> {
   );
 }
 
-/** 테스트가 보내지 않은 click(빠진 누름 채우기가 만들어 보낸 것)을 센다. */
+/** 그 좌표에서 손을 뗀다(pointerup). from 을 주면 그 자리에서 누르기 시작한 것으로 한다(pointerdown). */
+async function releaseAt(page: Page, p: Pt, from?: Pt): Promise<void> {
+  await page.evaluate(
+    ({ x, y, from }) => {
+      const at = (px: number, py: number) => document.elementFromPoint(px, py) ?? document.body;
+      const init = { bubbles: true, cancelable: true, composed: true, isPrimary: true, pointerId: 1, pointerType: 'touch', button: 0 };
+      if (from) at(from.x, from.y).dispatchEvent(new PointerEvent('pointerdown', { ...init, clientX: from.x, clientY: from.y }));
+      at(x, y).dispatchEvent(new PointerEvent('pointerup', { ...init, clientX: x, clientY: y }));
+    },
+    { x: p.x, y: p.y, from: from ?? null },
+  );
+}
+
+/** 그 좌표에서 손을 뗀다(touchend 만, pointer 이벤트가 없는 브라우저를 흉내 낸다). */
+async function touchEndAt(page: Page, p: Pt, id: number): Promise<void> {
+  await page.evaluate(
+    ({ x, y, id }) => {
+      const el = document.elementFromPoint(x, y) ?? document.body;
+      const touch = new Touch({ identifier: id, target: el, clientX: x, clientY: y });
+      el.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, composed: true, changedTouches: [touch], touches: [] }));
+    },
+    { x: p.x, y: p.y, id },
+  );
+}
+
+async function play(page: Page, p: Pt, steps: Step[]): Promise<void> {
+  for (const s of steps) {
+    if (s === 'r') await releaseAt(page, p);
+    else await clickAt(page, p, s);
+  }
+}
+
+/**
+ * 테스트가 보내지 않은 click(빠진 누름 채우기가 만들어 보낸 것)을 센다. 글자 요소가 바뀌어 지금 click 을 그 자리의 지금 요소로
+ * 다시 보낸 것도 여기에 들어간다(그 click 의 detail 은 지금 click 과 같다).
+ */
 async function countFills(page: Page): Promise<void> {
   await page.evaluate(() => {
     const w = window as Window & { __fills?: number[] };
@@ -88,12 +127,18 @@ async function seedAndOpen(page: Page, answers: Record<number, unknown>, hash: s
   await page.waitForTimeout(600);
 }
 
+async function answersOf(page: Page): Promise<Record<string, unknown>> {
+  return ((await snapshot(page)) as { answers: Record<string, unknown> }).answers;
+}
+
 interface Case {
   name: string;
   /** 기록을 넣고 그 화면을 연 뒤 누르기 직전까지 만든다. 누를 자리를 돌려준다. */
   setup: (page: Page) => Promise<Pt>;
   /** 끝 상태에서 따로 볼 것. */
   check?: (page: Page) => Promise<void>;
+  /** 첫 click 이 빠진 경우에 테스트가 보내지 않은 click 의 detail(기본은 채운 detail 1 하나). */
+  loneFills?: number[];
 }
 
 const firstAnswers = (n: number) => Object.fromEntries(exam.items.slice(0, n).map((it) => [it.no, all[it.no]!]));
@@ -131,8 +176,7 @@ const CASES: Case[] = [
     },
     check: async (page) => {
       await expect(page.getByTestId('now-no')).toHaveText('3번');
-      const s = await snapshot(page);
-      expect((s as { answers: Record<string, number> }).answers).toEqual({ 1: 3, 2: 3 });
+      expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
     },
   },
   {
@@ -144,8 +188,8 @@ const CASES: Case[] = [
     },
     check: async (page) => {
       await expect(page.getByTestId('now-no')).toHaveText('7번');
-      const s = (await snapshot(page)) as { answers: Record<string, number> };
-      expect([s.answers[5], s.answers[6]]).toEqual([2, 2]);
+      const a = await answersOf(page);
+      expect([a[5], a[6]]).toEqual([2, 2]);
     },
   },
   {
@@ -158,8 +202,7 @@ const CASES: Case[] = [
     check: async (page) => {
       await expectHash(page, '/review');
       await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);
-      const s = (await snapshot(page)) as { answers: Record<string, number> };
-      expect(s.answers[21]).toBe(4);
+      expect((await answersOf(page))[21]).toBe(4);
     },
   },
   {
@@ -176,9 +219,9 @@ const CASES: Case[] = [
       return centerOf(page, '[data-key="1"]');
     },
     check: async (page) => {
-      const s = (await snapshot(page)) as { answers: Record<string, number> };
-      expect(s.answers[9]).toBe(5);
-      expect(s.answers[12]).toBeUndefined();
+      const a = await answersOf(page);
+      expect(a[9]).toBe(5);
+      expect(a[12]).toBeUndefined();
       await expect(page.getByTestId('now-no')).toHaveText('9번');
     },
   },
@@ -228,13 +271,41 @@ const CASES: Case[] = [
       await expect(page.locator('[aria-modal="true"]')).toHaveCount(0);
     },
   },
+  {
+    name: '표시 칸이 "찍음"일 때 "찍음" 글자 위(채운 누름으로 글자가 지워짐)',
+    setup: async (page) => {
+      await seedAndOpen(page, all, '/marks', { marks: { 3: 'guess' } });
+      await expect(page.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', 'guess');
+      return centerOf(page, '[data-mark-cell="3"] .mark-cell__tag');
+    },
+    check: async (page) => {
+      // 찍음에서 두 번 누르면 표시 없음을 거쳐 고민이 된다.
+      await expect(page.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', 'doubt');
+    },
+  },
+  {
+    name: '단답형 칸이 켜져 있을 때 "자신 없음" 글자 위(채운 누름으로 글자 요소가 빠짐)',
+    setup: async (page) => {
+      await seedAndOpen(page, all, '/marks', { marks: { 24: 'unsure' } });
+      await page.locator('[data-short-mark="24"]').scrollIntoViewIfNeeded();
+      await page.waitForTimeout(100);
+      await expect(page.locator('[data-short-mark="24"]')).toHaveAttribute('aria-pressed', 'true');
+      return centerOf(page, '[data-short-mark="24"] small');
+    },
+    check: async (page) => {
+      // 켜짐에서 두 번 누르면 꺼졌다가 다시 켜진다.
+      await expect(page.locator('[data-short-mark="24"]')).toHaveAttribute('aria-pressed', 'true');
+    },
+    // 채운 click(detail 1)으로 누른 글자 요소가 빠져서, 지금 click(detail 2)을 그 자리의 지금 요소로 다시 보낸다.
+    loneFills: [1, 2],
+  },
 ];
 
 /** 누름 열을 보내고 막기가 풀릴 때까지 기다린 뒤 끝 상태를 읽는다. */
-async function runSequence(page: Page, c: Case, details: number[]): Promise<{ state: unknown; filled: number[] }> {
+async function runSequence(page: Page, c: Case, steps: Step[]): Promise<{ state: unknown; filled: number[] }> {
   const p = await c.setup(page);
   await countFills(page);
-  for (const d of details) await clickAt(page, p, d);
+  await play(page, p, steps);
   // 버린 누름 알림은 2초 동안 남으므로 그 안에 읽는다. 막기(0.5초)는 끝난 뒤다.
   await page.waitForTimeout(700);
   if (c.check) await c.check(page);
@@ -245,10 +316,10 @@ test.describe('빠진 누름 채우기: click(detail 2) 하나만 온 것과 cli
   for (const c of CASES) {
     test(c.name, async ({ page }) => {
       // 같은 페이지에서 차례로 돌린다. 열 때마다 기록을 새로 넣고 다시 읽으므로 앞 차례의 상태(보호, 알림, 기록)가 남지 않는다.
-      const full = await runSequence(page, c, [1, 2]);
-      const lone = await runSequence(page, c, [2]);
+      const full = await runSequence(page, c, ['r', 1, 'r', 2]);
+      const lone = await runSequence(page, c, ['r', 'r', 2]);
       expect(full.filled, '진짜 click 이 다 오면 채우지 않는다').toEqual([]);
-      expect(lone.filled, 'detail 2 하나만 오면 detail 1 하나를 채운다').toEqual([1]);
+      expect(lone.filled, '손뗌 둘 뒤에 detail 2 하나만 오면 detail 1 하나를 채운다').toEqual(c.loneFills ?? [1]);
       expect(lone.state).toEqual(full.state);
     });
   }
@@ -258,10 +329,10 @@ test.describe('빠진 누름 채우기: 세 번 누름', () => {
   const markCase = CASES[0]!;
   test('표시 칸: click(detail 3) 하나만, click(detail 1, 3)만 온 것이 세 번 다 온 것과 같다(표시 없음으로 돌아온다)', async ({ page }) => {
     const noCheck = { ...markCase, check: undefined };
-    const all3 = await runSequence(page, noCheck, [1, 2, 3]);
+    const all3 = await runSequence(page, noCheck, ['r', 1, 'r', 2, 'r', 3]);
     await expect(page.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', 'none');
-    const only3 = await runSequence(page, noCheck, [3]);
-    const oneThree = await runSequence(page, noCheck, [1, 3]);
+    const only3 = await runSequence(page, noCheck, ['r', 'r', 'r', 3]);
+    const oneThree = await runSequence(page, noCheck, ['r', 1, 'r', 'r', 3]);
     expect(all3.filled).toEqual([]);
     expect(only3.filled).toEqual([1, 2]);
     expect(oneThree.filled).toEqual([2]);
@@ -270,22 +341,20 @@ test.describe('빠진 누름 채우기: 세 번 누름', () => {
   });
 });
 
-test.describe('빠진 누름 채우기: 채우지 않는 경우', () => {
+test.describe('빠진 누름 채우기: 채우는 경우와 채우지 않는 경우', () => {
   test('보호가 click(detail 1)을 버린 뒤에 온 click(detail 2)에서는 채우는 것이 0개다', async ({ page }) => {
     await seedAndOpen(page, all, '/review');
     await countFills(page);
     const cell = await centerOf(page, '[data-cell="2"]');
     // 칸을 눌러 시트를 연다. 화면이 바뀌어 그 자리를 0.5초 막는다.
-    await clickAt(page, cell, 1);
+    await play(page, cell, ['r', 1]);
     await expect(page.locator('[aria-modal="true"]')).toHaveCount(1);
-    // 같은 자리의 새 누름 묶음: detail 1 은 보호가 버리고, 이어 온 detail 2 는 버린 것을 앞 누름으로 보고 채우지 않는다.
-    await clickAt(page, cell, 1);
-    await clickAt(page, cell, 2);
+    // 같은 자리의 새 누름 묶음: detail 1 은 보호가 버리고, 이어 온 detail 2 는 버린 click 을 받은 것으로 세어 채우지 않는다.
+    await play(page, cell, ['r', 1, 'r', 2]);
     expect(await fills(page)).toEqual([]);
     // 둘 다 버려져 시트는 그대로 열려 있고 시트 안의 다른 것도 바뀌지 않는다.
     await expect(page.locator('[aria-modal="true"]')).toHaveCount(1);
-    const s = (await snapshot(page)) as { answers: Record<string, number> };
-    expect(s.answers[2]).toBe(all[2]);
+    expect((await answersOf(page))[2]).toBe(all[2]);
   });
 
   test('다른 자리에서 이어진 click 과 한참 지난 뒤의 click 은 채우지 않는다', async ({ page }) => {
@@ -294,15 +363,14 @@ test.describe('빠진 누름 채우기: 채우지 않는 경우', () => {
     const k1 = await centerOf(page, '[data-key="1"]');
     const k2 = await centerOf(page, '[data-key="2"]');
     // 다른 자리(다른 키)를 이어 누른 것: 각각 한 번씩만 들어간다.
-    await clickAt(page, k1, 1);
-    await clickAt(page, k2, 1);
+    await play(page, k1, ['r', 1]);
+    await play(page, k2, ['r', 1]);
     // 같은 자리를 한참(1.5초) 지난 뒤에 누른 것: 한 번만 들어간다.
     await page.waitForTimeout(1500);
-    await clickAt(page, k2, 1);
+    await play(page, k2, ['r', 1]);
     expect(await fills(page)).toEqual([]);
     await expect(page.getByTestId('now-no')).toHaveText('4번');
-    const s = (await snapshot(page)) as { answers: Record<string, number> };
-    expect(s.answers).toEqual({ 1: 1, 2: 2, 3: 2 });
+    expect(await answersOf(page)).toEqual({ 1: 1, 2: 2, 3: 2 });
   });
 
   test('진짜 click 이 다 오는 브라우저의 두 번 누름(같은 요소 안에서 조금 옮겨 누름)은 채우지 않는다', async ({ page }) => {
@@ -310,11 +378,76 @@ test.describe('빠진 누름 채우기: 채우지 않는 경우', () => {
     await countFills(page);
     const box = (await page.locator('[data-key="3"]').boundingBox())!;
     // 같은 키의 왼쪽 끝과 오른쪽 끝(보호의 거리 24px 보다 멀다)을 detail 1, 2 로 누른다.
-    await clickAt(page, { x: box.x + 4, y: box.y + box.height / 2 }, 1);
-    await clickAt(page, { x: box.x + box.width - 4, y: box.y + box.height / 2 }, 2);
+    await play(page, { x: box.x + 4, y: box.y + box.height / 2 }, ['r', 1]);
+    await play(page, { x: box.x + box.width - 4, y: box.y + box.height / 2 }, ['r', 2]);
     expect(await fills(page)).toEqual([]);
-    const s = (await snapshot(page)) as { answers: Record<string, number> };
-    expect(s.answers).toEqual({ 1: 3, 2: 3 });
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+  });
+
+  test('안드로이드 크롬처럼 다른 키를 빠르게 이어 눌러 detail 이 오른 click 은 채우지 않는다(키마다 손뗌이 하나씩)', async ({ page }) => {
+    await seedAndOpen(page, {}, '/input?input=keypad');
+    await countFills(page);
+    // 안드로이드 크롬은 0.3초 안에 약 100dp 안을 다시 누르면 요소가 달라도 detail 을 1, 2, 3 으로 올린다(별도 검토 F1).
+    await play(page, await centerOf(page, '[data-key="3"]'), ['r', 1]);
+    await play(page, await centerOf(page, '[data-key="4"]'), ['r', 2]);
+    await play(page, await centerOf(page, '[data-key="5"]'), ['r', 3]);
+    expect(await fills(page)).toEqual([]);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 4, 3: 5 });
+  });
+
+  test('윈도우의 Chromium 처럼 detail 이 3에서 멈춰도 채우지 않는다(같은 자리를 네 번 누름)', async ({ page }) => {
+    await seedAndOpen(page, {}, '/input?input=keypad');
+    await countFills(page);
+    // 윈도우, 리눅스, ChromeOS 의 Chromium 은 detail 을 3까지만 올린다(1, 2, 3, 3, 별도 검토 F2).
+    await play(page, await centerOf(page, '[data-key="3"]'), ['r', 1, 'r', 2, 'r', 3, 'r', 3]);
+    expect(await fills(page)).toEqual([]);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3, 3: 3, 4: 3 });
+  });
+
+  test('한 번 누른 뒤 1초 안에 아주 빠르게 두 번 누른 것(뒤의 첫 click 이 빠짐)은 하나를 채운다', async ({ page }) => {
+    await seedAndOpen(page, {}, '/input?input=keypad');
+    await countFills(page);
+    const k = await centerOf(page, '[data-key="3"]');
+    // 아이폰은 보통 누름을 detail 1, 두 번 누름 인식을 detail 2 로 보낸다(별도 검토 F4). 앞의 detail 1 은 다른 누름 묶음이다.
+    await play(page, k, ['r', 1]);
+    await page.waitForTimeout(300);
+    await play(page, k, ['r', 'r', 2]);
+    expect(await fills(page)).toEqual([1]);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3, 3: 3 });
+  });
+
+  test('끌기(누른 자리에서 16px 넘게 움직인 손뗌), 다른 자리의 손뗌, 1초가 지난 손뗌은 세지 않는다', async ({ page }) => {
+    const cases: { name: string; before: (page: Page, k: Pt) => Promise<void> }[] = [
+      { name: '끌기', before: (page, k) => releaseAt(page, k, { x: k.x, y: k.y - 20 }) },
+      { name: '다른 자리', before: async (page) => releaseAt(page, await centerOf(page, '[data-key="5"]')) },
+      {
+        name: '1초가 지남',
+        before: async (page, k) => {
+          await releaseAt(page, k);
+          await page.waitForTimeout(1100);
+        },
+      },
+    ];
+    for (const c of cases) {
+      await seedAndOpen(page, {}, '/input?input=keypad');
+      await countFills(page);
+      const k = await centerOf(page, '[data-key="1"]');
+      await c.before(page, k);
+      await play(page, k, ['r', 2]);
+      expect(await fills(page), c.name).toEqual([]);
+      expect(await answersOf(page), c.name).toEqual({ 1: 1 });
+    }
+  });
+
+  test('pointer 이벤트 없이 touchend 만 오는 브라우저에서도 손뗌을 센다', async ({ page }) => {
+    await seedAndOpen(page, {}, '/input?input=keypad');
+    await countFills(page);
+    const k = await centerOf(page, '[data-key="2"]');
+    await touchEndAt(page, k, 1);
+    await touchEndAt(page, k, 2);
+    await clickAt(page, k, 2);
+    expect(await fills(page)).toEqual([1]);
+    expect(await answersOf(page)).toEqual({ 1: 2, 2: 2 });
   });
 
   test('키보드로 낸 click 은 한 번에 한 번씩만 들어간다', async ({ page }) => {
@@ -326,8 +459,7 @@ test.describe('빠진 누름 채우기: 채우지 않는 경우', () => {
     await page.keyboard.press('Enter');
     await expect(page.getByTestId('now-no')).toHaveText('3번');
     expect(await fills(page)).toEqual([]);
-    const s = (await snapshot(page)) as { answers: Record<string, number> };
-    expect(s.answers).toEqual({ 1: 4, 2: 4 });
+    expect(await answersOf(page)).toEqual({ 1: 4, 2: 4 });
   });
 });
 
@@ -343,10 +475,10 @@ test('측정 중 채운 누름이 filled_taps 에 세어진다', async ({ page, 
   await expect(page.getByTestId('now-no')).toHaveText('1번');
   await page.waitForTimeout(600);
   const key = await centerOf(page, '[data-key="2"]');
-  // detail 2 하나만 온 아주 빠른 두 번 누름을 두 번 한다: 채운 누름 2번.
-  await clickAt(page, key, 2);
+  // 첫 click 이 빠진 아주 빠른 두 번 누름을 두 번 한다: 채운 누름 2번.
+  await play(page, key, ['r', 'r', 2]);
   await page.waitForTimeout(1200);
-  await clickAt(page, key, 2);
+  await play(page, key, ['r', 'r', 2]);
   await expect(page.getByTestId('now-no')).toHaveText('5번');
   await openApp(page, '/test');
   const card = page.locator('[data-testid="run-card"][data-participant="P07"]');

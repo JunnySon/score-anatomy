@@ -461,4 +461,31 @@ test.describe('3-5 보기 문제', () => {
     await openApp(page, '/review');
     await expect(page.locator('.dock')).not.toHaveAttribute('data-more', /.*/);
   });
+
+  test('표시 화면: 나중에 생긴 내용으로 띠 밑까지 이어지면 스크롤하지 않아도 그림자가 생기고, 그 내용이 빠지면 없어진다', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 1600 });
+    await openApp(page, '/');
+    await seedStore(page, {
+      version: 1,
+      sessions: [{ id: 's1', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', seenBefore: 'first', answers: correctAnswers(examA) }],
+      currentId: 's1',
+    });
+    await page.reload();
+    await openApp(page, '/marks');
+    const dock = page.locator('.dock');
+    await expect(dock).toHaveAttribute('data-more', 'false');
+    // 화면 안에 나중에 내용이 생긴 것(채점한 뒤의 안내 같은)을 흉내 낸다: 맨 아래 묶음 안에 높은 요소를 넣는다(별도 검토 F6).
+    await page.evaluate(() => {
+      const sections = document.querySelectorAll('main.body section');
+      const last = sections[sections.length - 1]!;
+      const tall = document.createElement('div');
+      tall.dataset.testid = 'late-content';
+      tall.style.height = '1200px';
+      last.appendChild(tall);
+    });
+    await expect(dock).toHaveAttribute('data-more', 'true');
+    expect(await page.locator('main.body').evaluate((el) => el.scrollTop)).toBe(0);
+    await page.evaluate(() => document.querySelector('[data-testid="late-content"]')!.remove());
+    await expect(dock).toHaveAttribute('data-more', 'false');
+  });
 });

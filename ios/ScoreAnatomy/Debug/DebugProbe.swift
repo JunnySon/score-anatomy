@@ -25,6 +25,17 @@ final class DebugProbe {
         var received: [String: Int] = [:]
         var sent: [String] = []
         var archives: [Bool] = []
+        var remote: [RemoteNote] = []
+    }
+
+    /// 시험 자료 받기 한 번의 기록.
+    struct RemoteNote: Codable {
+        var trigger: String
+        var outcome: String
+        var seq: Int?
+        var exams: Int?
+        var ms: Int
+        var detail: String?
     }
 
     init(options: DebugOptions, webView: WKWebView) {
@@ -82,6 +93,25 @@ final class DebugProbe {
         scheduleStats()
     }
 
+    func noteRemote(trigger: String, outcome: RemoteOutcome, seconds: TimeInterval) {
+        var note = RemoteNote(trigger: trigger, outcome: "", ms: Int((seconds * 1000).rounded()))
+        switch outcome {
+        case .accepted(let snapshot):
+            note.outcome = "accepted"
+            note.seq = snapshot.seq
+            note.exams = snapshot.exams.count
+        case .unchanged(let seq):
+            note.outcome = "unchanged"
+            note.seq = seq
+        case .failed(let why):
+            note.outcome = "failed"
+            note.detail = why
+        }
+        stats.remote.append(note)
+        // 결과를 기다리는 화면 테스트가 곧바로 읽을 수 있게 바로 쓴다.
+        writeStats()
+    }
+
     func pageDidRender() {
         stats.rendered += 1
         scheduleStats()
@@ -125,7 +155,7 @@ final class DebugProbe {
     private func run(_ body: String, writeTo fileName: String) async {
         guard let directory, let webView else { return }
         let wrapped = "const __v = await (async () => {\n\(body)\n})();\nreturn JSON.stringify(__v === undefined ? null : __v);"
-        // Swift 전용 함수(libswiftWebKit)를 쓰지 않으려고 Objective-C 기본 API 를 그대로 부른다(iOS 17, 18 에서도 켜지게).
+        // Swift 전용 함수(libswiftWebKit)를 쓰지 않으려고 Objective-C 기본 API 를 그대로 부른다(iOS 18 에서도 켜지게).
         let output: String = await withCheckedContinuation { continuation in
             webView.__callAsyncJavaScript(wrapped, arguments: nil, inFrame: nil, in: .page) { value, error in
                 if let error {
@@ -204,7 +234,7 @@ final class DebugProbe {
       htmlClass: document.documentElement.className,
       hasHandlers: !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saStore),
       fromAppType: typeof window.__saFromApp,
-      app: app && typeof app === 'object' ? { platform: app.platform, bridge: app.bridge, appVersion: app.appVersion, fontScale: app.fontScale, storeType: app.store === null ? 'null' : typeof app.store, storeLength: typeof app.store === 'string' ? app.store.length : -1 } : null,
+      app: app && typeof app === 'object' ? { platform: app.platform, bridge: app.bridge, appVersion: app.appVersion, fontScale: app.fontScale, storeType: app.store === null ? 'null' : typeof app.store, storeLength: typeof app.store === 'string' ? app.store.length : -1, remoteType: app.remote === null ? 'null' : typeof app.remote, remoteSeq: app.remote && typeof app.remote === 'object' ? app.remote.seq : null, remoteExams: app.remote && Array.isArray(app.remote.exams) ? app.remote.exams.length : null, keys: Object.keys(app).sort().join(',') } : null,
       localStorageLength: ls,
       cookie: document.cookie,
       rootFontSize: getComputedStyle(document.documentElement).fontSize,

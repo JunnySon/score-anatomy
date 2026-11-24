@@ -5,4 +5,10 @@
 SA_BUNDLE_ID = com.junnyson.scoreanatomy
 DEVELOPMENT_TEAM =
 
+// 시험 자료를 받는 주소(작업 지시서 4의 3-3, docs/시험_배포_규격.md 6장). 지금은 비어 있어서 앱이 시험 자료를 받지 않는다.
+// 사람이 주소를 정하면 이 한 줄만 채운다. xcconfig 에서는 // 뒤를 주석으로 읽어서 https:// 를 그대로 적으면 주소가 잘린다.
+// 그래서 빈 값 $() 를 넣어 https:/$()/ 처럼 적는다(빌드하면 https:// 가 된다). 끝은 / 로, https 만 쓴다. 적는 법은 ios/README.md.
+// 형식 예시(쓰지 않는 주소): SA_EXAM_BASE_URL = https:/$()/exams.example.com/score-anatomy/
+SA_EXAM_BASE_URL =
+
 #include? "Signing.local.xcconfig"

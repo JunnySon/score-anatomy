@@ -31,12 +31,15 @@ enum ShellFailure: String, Sendable {
 }
 
 /// 껍데기의 중심. 웹뷰 하나를 만들어 앱 안의 웹 묶음을 싣고, 다리(docs/앱_다리_규격.md)를 잇는다.
-/// 화면과 계산은 웹 코드가 맡고, 여기서는 기록 파일 저장, 햅틱, 글자 크기 전달, 복사, 바깥 통신 차단만 맡는다.
+/// 화면과 계산은 웹 코드가 맡고, 여기서는 기록 파일 저장, 햅틱, 글자 크기 전달, 복사, 웹뷰의 바깥 통신 차단,
+/// 정해진 주소에서 시험 자료를 받아 확인해 넘기기(규격 2, RemoteUpdater)만 맡는다.
 @MainActor
 final class ShellController {
     let state = ShellState()
     let webView: WKWebView
     let store: StoreFile
+    /// 시험 자료 받기(규격 2).
+    let remote: RemoteUpdater
 
     private var documentURL: URL?
     private let appVersion: String
@@ -64,9 +67,13 @@ final class ShellController {
         debugOptions = options
         store = StoreFile(directory: options.storeDirectory ?? StoreLocation.defaultDirectory())
         documentURL = options.forceLoadFailure ? bundle.bundleURL.appendingPathComponent("없는-묶음/index.html") : WebBundle.indexURL(in: bundle)
+        remote = RemoteUpdater(settings: options.remoteSettings(fallback: RemoteSettings.fromBundle(bundle)),
+                               store: RemoteStore(storeDirectory: store.directory),
+                               interval: options.examInterval ?? RemoteUpdater.foregroundInterval)
         #else
         store = StoreFile(directory: StoreLocation.defaultDirectory())
         documentURL = WebBundle.indexURL(in: bundle)
+        remote = RemoteUpdater(settings: RemoteSettings.fromBundle(bundle), store: RemoteStore(storeDirectory: store.directory))
         #endif
         appVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         self.background = background ?? AppBackgroundTasks()
@@ -77,6 +84,7 @@ final class ShellController {
         delegate.owner = self
         webView.navigationDelegate = delegate
         webView.uiDelegate = delegate
+        remote.deliver = { [weak self] message in self?.send(message) }
 
         #if DEBUG
         if let seed = options.seed {
@@ -84,6 +92,9 @@ final class ShellController {
         }
         if options.probeDirectory != nil {
             debug = DebugProbe(options: options, webView: webView)
+        }
+        remote.onFinish = { [weak self] trigger, outcome, seconds in
+            self?.debug?.noteRemote(trigger: trigger, outcome: outcome, seconds: seconds)
         }
         #endif
 
@@ -173,7 +184,8 @@ final class ShellController {
         let scale = FontScale.current()
         lastFontScale = scale
         // 받은 저장을 모두 마친 뒤의 내용을 읽는다(다시 읽는 문서가 예전 기록으로 덮어쓰지 않게).
-        let source = AppInfoScript.source(appVersion: appVersion, store: store.read(), fontScale: scale)
+        // 시험 자료는 지금 가진 것(보관해 둔 것이나 이 실행에서 마지막으로 받아들인 것)을 넣는다.
+        let source = AppInfoScript.source(appVersion: appVersion, store: store.read(), fontScale: scale, remote: remote.snapshot)
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
@@ -241,6 +253,8 @@ final class ShellController {
                 #if DEBUG
                 debug?.pageDidRender()
                 #endif
+                // 화면이 뜬 다음에 시험 자료를 받는다(화면을 막지 않는다. 처음 한 번만).
+                remote.pageRendered()
                 return
             }
             try? await Task.sleep(for: .milliseconds(250))
@@ -326,6 +340,8 @@ final class ShellController {
             send(.copied(Clipboard.copy(text)))
         case .copyMalformed:
             send(.copied(false))
+        case .remoteRefresh:
+            remote.refreshRequested()
         case .ignored:
             break
         }
@@ -357,6 +373,10 @@ final class ShellController {
         observers.append(center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             // 앱이 끝나기 전에 쓰던 저장을 마친다.
             MainActor.assumeIsolated { self?.store.flush() }
+        })
+        observers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+            // 앞으로 돌아오면 마지막 시도에서 5분이 지났을 때 시험 자료를 다시 받는다(뒤에서는 받지 않는다).
+            MainActor.assumeIsolated { self?.remote.appWillEnterForeground() }
         })
     }
 

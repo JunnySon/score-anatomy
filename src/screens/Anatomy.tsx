@@ -214,11 +214,16 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
                     </span>
                   </button>
                 </div>
-                {/* 첫 줄은 한 조각의 글자로 그린다(조각으로 나뉘면 화면 낭독기가 끊어 읽는다, 작업 지시서 3-1의 3-2).
-                    앞 조각("실제 78점 기준")과 뒤 조각("3~7점 남았어요")은 줄바꿈 없는 빈칸(U+00A0)으로 묶어 조각 안에서 끊기지 않게 한다
-                    (바탕의 word-break: keep-all 이라 한글은 빈칸에서만 끊긴다). 보이는 글자는 같다. */}
+                {/* 첫 줄은 고치기 전처럼 앞 조각("실제 78점 기준")과 뒤 조각("3~7점 남았어요")을 줄바꿈 없는 덩어리로 둔다.
+                    한 글자 조각으로 바꾸면(조각 안을 U+00A0 로 묶음) 아이폰 화면 테스트가 보통 빈칸으로 찾는 글자와 달라져서 그대로 둔다
+                    (작업 지시서 3-1의 3-2, 결정기록 7.2). */}
                 <p className="num" data-testid="cut-actual" ref={firstLineRef}>
-                  {line1.lead.map((part) => part.replace(/ /g, '\u00a0')).join(' ')}
+                  {line1.lead.map((part, i) => (
+                    <span key={part}>
+                      {i > 0 ? ' ' : ''}
+                      <span className="nowrap">{part}</span>
+                    </span>
+                  ))}
                 </p>
                 {line1.rest ? <p className="mt2">{line1.rest}</p> : null}
                 {line2 ? (

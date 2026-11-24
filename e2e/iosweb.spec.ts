@@ -43,31 +43,30 @@ test.describe('3-2 계단 카드의 번호와 이름이 한 조각의 글자로 
     await expect(page.getByRole('listitem', { name: '1. 적분' })).toHaveCount(1);
   });
 
-  test('점수 해부의 등급컷 첫 줄도 한 조각의 글자이고, 앞 조각과 뒤 조각은 각각 끊기지 않는다', async ({ page }) => {
+  test('점수 해부의 등급컷 첫 줄은 고치기 전과 같다(보통 빈칸, 두 조각이 각각 끊기지 않음, 아이폰 화면 테스트가 찾는 글자)', async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 640 });
     await openApp(page, '/demo/anatomy');
     await page.getByTestId('grade-2').click();
     await expect(page.getByTestId('cut-actual')).toHaveText('실제 78점 기준 3~7점 남았어요');
-    const [p] = await textPieces(page, '[data-testid="cut-actual"]');
-    expect(p!.count).toBe(1);
-    // 조각 안의 빈칸은 줄바꿈 없는 빈칸이고 조각 사이만 보통 빈칸이다.
-    expect(p!.texts[0]).toBe('실제 78점 기준 3~7점 남았어요');
-    // 폭 360px 에서 첫 줄은 두 줄로 나뉜다. 나뉘는 곳은 두 조각 사이이고, 각 조각은 한 줄 안에 있다.
-    const lines = await page.getByTestId('cut-actual').evaluate((el) => {
-      const node = el.firstChild!;
-      const text = node.textContent ?? '';
-      const cut = text.indexOf(' ');
-      const tops = (from: number, to: number) => {
+    // 줄바꿈 없는 빈칸(U+00A0)이 없다. 아이폰 화면 테스트(ios/ScoreAnatomyUITests/FlowTests.swift)는 "3~7점 남았어요"를 보통 빈칸으로 찾는다.
+    const raw = await page.getByTestId('cut-actual').evaluate((el) => el.textContent ?? '');
+    expect(raw).toBe('실제 78점 기준 3~7점 남았어요');
+    expect(raw.includes(' ')).toBe(false);
+    // 두 조각은 각각 줄바꿈 없는 덩어리이고, 폭 360px 에서 나뉘는 곳은 두 조각 사이다.
+    const chunks = await page.locator('[data-testid="cut-actual"] .nowrap').evaluateAll((els) =>
+      els.map((el) => {
         const range = document.createRange();
-        range.setStart(node, from);
-        range.setEnd(node, to);
-        return new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size;
-      };
-      return { all: tops(0, text.length), first: tops(0, cut), second: tops(cut + 1, text.length) };
-    });
-    expect(lines.first).toBe(1);
-    expect(lines.second).toBe(1);
-    expect(lines.all).toBeLessThanOrEqual(2);
+        range.selectNodeContents(el);
+        return { text: el.textContent, lines: new Set(Array.from(range.getClientRects()).map((r) => Math.round(r.top))).size };
+      }),
+    );
+    expect(chunks).toEqual([
+      { text: '실제 78점 기준', lines: 1 },
+      { text: '3~7점 남았어요', lines: 1 },
+    ]);
+    await page.getByTestId('grade-3').click();
+    await expect(page.getByTestId('cut-actual')).toHaveText('컷 범위보다 위예요.');
+    expect(await page.getByTestId('cut-actual').evaluate((el) => (el.textContent ?? '').includes(' '))).toBe(false);
   });
 });
 

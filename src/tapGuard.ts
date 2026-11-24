@@ -304,25 +304,33 @@ function cloneClick(e: MouseEvent, detail: number): MouseEvent {
 
 /**
  * 빠진 click 을 같은 요소, 같은 좌표로 만들어 보낸다. 하나씩 보내고 그 처리(화면 그리기)를 끝낸 뒤 다음 것을 보낸다.
- * 누른 글자 요소가 앞 click 으로 바뀌었으면 같은 요소 안의 그 자리의 지금 요소로 보낸다. 그것도 없으면 멈춘다.
+ * 누른 글자 요소가 앞 click 으로 바뀌었으면 같은 요소 안의 그 자리의 지금 요소로 보낸다.
+ * 둘째 것부터는 앞 것이 바꾼 화면을 본다(별도 검토 C6). 누른 요소가 사라졌거나 쓸 수 없게 됐거나 덮였으면,
+ * 그 자리를 보호가 막고 있을 때만 보낸다(진짜 누름처럼 보호가 버리고 센다). 막고 있지 않으면 거기서 멈춘다(다른 요소가 눌리지 않게).
  */
-function fillMissing(e: MouseEvent, target: Element, control: Element, times: number[]): void {
+function fillMissing(e: MouseEvent, target: Element, control: Element, times: number[], before: Usable): void {
   const first = e.detail - times.length;
   for (let i = 0; i < times.length; i += 1) {
-    let to: Element | null = target.isConnected ? target : null;
-    if (!to && control.isConnected && typeof document.elementFromPoint === 'function') {
-      const hit = document.elementFromPoint(e.clientX, e.clientY);
-      if (hit && control.contains(hit)) to = hit;
+    let to: Element | null = null;
+    const now = usableOf(control, e.clientX, e.clientY);
+    if (becameUnusable(before, now)) {
+      const at = Math.min(times[i]!, performance.now());
+      if (!guard || !isGuarded(e, at)) return;
+      to = now.hit ?? (target.isConnected ? target : null);
+    } else if (target.isConnected) {
+      to = target;
+    } else if (now.hit && control.contains(now.hit)) {
+      to = now.hit;
     }
     if (!to) return;
-    const at = to;
+    const dest = to;
     const ev = cloneClick(e, first + i);
     for (const l of fillListeners) l();
     filling = true;
     fillClock = times[i]!;
     try {
       flushRunner(() => {
-        at.dispatchEvent(ev);
+        dest.dispatchEvent(ev);
       });
     } finally {
       filling = false;
@@ -339,6 +347,10 @@ function onClick(e: MouseEvent): void {
   // 지금 click 이 실제로 닿는 요소. 채운 누름으로 화면이 바뀌었으면 진짜 click 이 차례로 다 왔을 때 이 click 이 닿았을 요소
   // (그 좌표의 지금 맨 위 요소)로 본다. 보호가 버릴 때의 알림 여부와 숫자 키 여부를 이것으로 정한다.
   let hitTarget: EventTarget | null = e.target;
+  if (filling && typeof document.elementFromPoint === 'function') {
+    // 만들어 보낸 click 은 진짜 누름이었다면 지금 그 자리의 맨 위 요소에 닿았을 것이다. 알림과 숫자 키 여부를 그것으로 정한다.
+    hitTarget = document.elementFromPoint(e.clientX, e.clientY) ?? e.target;
+  }
   if (!filling && !redispatching) {
     const times = e.target instanceof Element ? missingReleases(e) : [];
     // 받은 click 이므로 손뗌은 여기서 다시 센다(보호가 버리는 click 도 같다).
@@ -348,7 +360,7 @@ function onClick(e: MouseEvent): void {
       const target = e.target;
       const control = controlOf(target);
       const before = usableOf(control, e.clientX, e.clientY);
-      fillMissing(e, target, control, times);
+      fillMissing(e, target, control, times, before);
       const after = usableOf(control, e.clientX, e.clientY);
       lost = becameUnusable(before, after);
       if (!lost && !target.isConnected && after.hit !== null && control.contains(after.hit)) {

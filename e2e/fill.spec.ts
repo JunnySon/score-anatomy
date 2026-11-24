@@ -71,20 +71,31 @@ async function play(page: Page, p: Pt, steps: Step[]): Promise<void> {
 }
 
 /**
- * 테스트가 보내지 않은 click(빠진 누름 채우기가 만들어 보낸 것)을 센다. 글자 요소가 바뀌어 지금 click 을 그 자리의 지금 요소로
- * 다시 보낸 것도 여기에 들어간다(그 click 의 detail 은 지금 click 과 같다).
+ * 테스트가 보내지 않은 click(빠진 누름 채우기가 만들어 보낸 것)을 센다. 앱의 스크립트보다 먼저 붙인 window capture 듣기로 세서,
+ * 보호가 버리는 채움도 센다(별도 검토 C12). 글자 요소가 바뀌어 지금 click 을 그 자리의 지금 요소로 다시 보낸 것도 여기에 들어간다
+ * (그 click 의 detail 은 지금 click 과 같다).
  */
-async function countFills(page: Page): Promise<void> {
-  await page.evaluate(() => {
+const counted = new WeakSet<Page>();
+async function watchFills(page: Page): Promise<void> {
+  if (counted.has(page)) return;
+  counted.add(page);
+  await page.addInitScript(() => {
     const w = window as Window & { __fills?: number[] };
     w.__fills = [];
-    document.addEventListener(
+    window.addEventListener(
       'click',
       (e) => {
         if (e.detail > 0 && !(e as MouseEvent & { __test?: boolean }).__test) w.__fills!.push(e.detail);
       },
       true,
     );
+  });
+}
+
+/** 센 채움을 비운다(화면을 연 뒤, 누르기 직전에 부른다). */
+async function countFills(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as Window & { __fills?: number[] }).__fills = [];
   });
 }
 
@@ -115,6 +126,7 @@ async function snapshot(page: Page): Promise<unknown> {
 
 /** 기록을 넣고 화면을 연다. */
 async function seedAndOpen(page: Page, answers: Record<number, unknown>, hash: string, extra: Record<string, unknown> = {}): Promise<void> {
+  await watchFills(page);
   await openApp(page, '/');
   await seedStore(page, {
     version: 1,
@@ -272,6 +284,16 @@ const CASES: Case[] = [
     },
   },
   {
+    name: '아래 탭의 링크("기록", 앱이 링크를 직접 받아 화면을 바로 바꿈)',
+    setup: async (page) => {
+      await seedAndOpen(page, all, '/marks');
+      return centerOf(page, 'a.tab[href="#/history"]');
+    },
+    check: async (page) => {
+      await expectHash(page, '/history');
+    },
+  },
+  {
     name: '표시 칸이 "찍음"일 때 "찍음" 글자 위(채운 누름으로 글자가 지워짐)',
     setup: async (page) => {
       await seedAndOpen(page, all, '/marks', { marks: { 3: 'guess' } });
@@ -341,6 +363,19 @@ test.describe('빠진 누름 채우기: 세 번 누름', () => {
   });
 });
 
+test.describe('빠진 누름 채우기: detail 3 하나만 온 경우 둘째 채움부터는 앞 채움이 바꾼 화면을 본다', () => {
+  for (const c of [CASES.find((x) => x.name.startsWith('표시 화면의 채점 버튼'))!, CASES.find((x) => x.name.startsWith('바텀시트를 여는 버튼'))!]) {
+    test(`${c.name}: 세 번 다 온 것과 detail 3 하나만 온 것이 같다`, async ({ page }) => {
+      const all3 = await runSequence(page, c, ['r', 1, 'r', 2, 'r', 3]);
+      const only3 = await runSequence(page, c, ['r', 'r', 'r', 3]);
+      expect(all3.filled).toEqual([]);
+      // 첫 채움이 화면을 바꾸고 그 자리를 막아서, 둘째 채움은 진짜 누름처럼 보호가 버린다(채움으로는 센다).
+      expect(only3.filled).toEqual([1, 2]);
+      expect(only3.state).toEqual(all3.state);
+    });
+  }
+});
+
 test.describe('빠진 누름 채우기: 채우는 경우와 채우지 않는 경우', () => {
   test('보호가 click(detail 1)을 버린 뒤에 온 click(detail 2)에서는 채우는 것이 0개다', async ({ page }) => {
     await seedAndOpen(page, all, '/review');
@@ -350,6 +385,7 @@ test.describe('빠진 누름 채우기: 채우는 경우와 채우지 않는 경
     await play(page, cell, ['r', 1]);
     await expect(page.locator('[aria-modal="true"]')).toHaveCount(1);
     // 같은 자리의 새 누름 묶음: detail 1 은 보호가 버리고, 이어 온 detail 2 는 버린 click 을 받은 것으로 세어 채우지 않는다.
+    // 채움은 보호보다 먼저 세므로, 채웠다가 보호가 버린 경우도 여기에 잡힌다.
     await play(page, cell, ['r', 1, 'r', 2]);
     expect(await fills(page)).toEqual([]);
     // 둘 다 버려져 시트는 그대로 열려 있고 시트 안의 다른 것도 바뀌지 않는다.

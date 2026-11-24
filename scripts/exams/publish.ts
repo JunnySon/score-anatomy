@@ -184,6 +184,10 @@ export function runPublish(opts: PublishOptions, io: Io): number {
   let refusedLater: string | null = null;
   if (opts.dryRun && (opts.env[KEY_ENV] ?? '').trim() === '') {
     keyNote = `서명: 비밀 키를 확인하지 않았어요(${KEY_ENV} 이 없어요). 실제 발행에는 필요해요.`;
+    // 비밀 키 없이 보여 줄 때도, 진짜 자료 폴더에 공개 키가 없으면 키를 넣은 실제 발행이 거부된다는 것을 결과 줄에 적는다(별도 검토 2차 뒤 확인 Y2).
+    if (isRepoDataDir(opts.dataDir, opts.root) && !existsSync(join(opts.dataDir, PUBLIC_KEY_FILE))) {
+      refusedLater = `자료 폴더(저장소의 exam-data)에 ${PUBLIC_KEY_FILE} 가 없어서 실제 발행은 거부돼요. 키를 맡은 사람이 npm run exams:keygen 으로 만든 공개 키를 먼저 커밋해요.`;
+    }
   } else {
     const loaded = loadSigningKey(opts.env, opts.base, places);
     if (loaded.key === null) return fail(loaded.errors);

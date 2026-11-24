@@ -443,6 +443,12 @@ describe('발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4)', () => {
     );
     expect(dry.out.join('\n')).not.toContain('결과: 발행하면 위와 같아요');
     expect(picture(real, o)).toEqual(before);
+    // 비밀 키 없이 보여 줄 때도 같은 결과 줄이다(키를 넣은 실제 발행도 공개 키가 없어서 거부되니까, 2차 뒤 확인 Y2).
+    const keyless = publishTo(real, o.out, null, { root, dryRun: true });
+    expect(keyless.code).toBe(0);
+    expect(keyless.out.join('\n')).toContain('서명: 비밀 키를 확인하지 않았어요(SA_EXAM_KEY_FILE 이 없어요). 실제 발행에는 필요해요.');
+    expect(keyless.out[keyless.out.length - 1]).toBe(dry.out[dry.out.length - 1]);
+    expect(picture(real, o)).toEqual(before);
     // 짝인 공개 키를 두면 발행한다.
     writeFileSync(join(real, 'public-key.txt'), publicKeyText(key.key));
     expect(publishTo(real, o.out, key.keyFile, { root }).code).toBe(0);

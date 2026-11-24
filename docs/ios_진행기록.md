@@ -63,6 +63,7 @@
 | 3-1 버전 확인 스크립트와 verify.sh 시작 확인 | 완료 | --check 로 견주고 다르면 verify.sh 가 아무것도 돌리지 않고 멈춤. XcodeGen 이 없을 때, 버전 모양이 틀릴 때도 시험함 |
 | 3-1 bridgeMax 읽기 | 완료(빌드 전) | 단위 테스트가 bridgeMax 를 읽고 규격 범위(bridge 이상 bridgeMax 이하)를 봄. 껍데기 앱 코드는 manifest 를 읽지 않음 |
 | 3-1 manifest SHA-256 | 완료 | 두 묶음 모두 일치(app-test 1fbe8140, app-release 34f5b80f) |
+| 앱 이름 모고칸(작업 중 사람이 정함, 19:3x) | 완료 | 홈 화면 이름(CFBundleDisplayName)만 바꿈. 번들 ID, 타깃과 프로젝트 이름(ScoreAnatomy)은 그대로. 웹 묶음의 title 과 appName 은 아직 "점수 해부"(웹 쪽에 알릴 것) |
 | 3-1 규격 1 껍데기에서 받은 자료 안내와 "새로 확인"이 없음 | 할 일 | 화면 테스트 |
 | 3-4 결정기록 7.6 화면 테스트 | 할 일 | |
 | 3-3 Release 모양 확인 | 할 일 | |

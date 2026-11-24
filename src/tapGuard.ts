@@ -70,7 +70,7 @@ export type GuardArea = 'spot' | 'screen';
 
 /** 마지막으로 받아들인 누름. */
 let lastClick: (Spot & { at: number }) | null = null;
-/** 손을 뗀 자리와 시각(이벤트의 timeStamp). */
+/** 손을 뗀 자리와 시각(받은 때의 performance.now()). */
 interface Release extends Spot {
   t: number;
 }
@@ -210,7 +210,7 @@ function onPointerUp(e: PointerEvent): void {
   const from = pointerDowns.get(e.pointerId);
   pointerDowns.delete(e.pointerId);
   if (moved(from, e.clientX, e.clientY)) return;
-  remember(releases.pointer, { x: e.clientX, y: e.clientY, t: e.timeStamp });
+  remember(releases.pointer, { x: e.clientX, y: e.clientY, t: performance.now() });
 }
 
 function onPointerCancel(e: PointerEvent): void {
@@ -222,11 +222,12 @@ function onTouchStart(e: TouchEvent): void {
 }
 
 function onTouchEnd(e: TouchEvent): void {
+  const now = performance.now();
   for (const t of Array.from(e.changedTouches)) {
     const from = touchDowns.get(t.identifier);
     touchDowns.delete(t.identifier);
     if (moved(from, t.clientX, t.clientY)) continue;
-    remember(releases.touch, { x: t.clientX, y: t.clientY, t: e.timeStamp });
+    remember(releases.touch, { x: t.clientX, y: t.clientY, t: now });
   }
 }
 
@@ -242,8 +243,11 @@ function onTouchCancel(e: TouchEvent): void {
 function missingReleases(e: MouseEvent): number[] {
   const d = e.detail;
   if (d < 2) return [];
+  // 시각은 이벤트의 timeStamp 가 아니라 받은 때의 performance.now() 로 견준다. timeStamp 의 기준점이 엔진과 이벤트 종류마다
+  // 다를 수 있어서다(보호를 볼 때도 같은 시계를 쓴다).
+  const now = performance.now();
   const near = (r: Release) =>
-    Math.abs(r.x - e.clientX) <= FILL_SPOT_PX && Math.abs(r.y - e.clientY) <= FILL_SPOT_PX && e.timeStamp - r.t <= FILL_WINDOW_MS;
+    Math.abs(r.x - e.clientX) <= FILL_SPOT_PX && Math.abs(r.y - e.clientY) <= FILL_SPOT_PX && now - r.t <= FILL_WINDOW_MS;
   const fromPointer = releases.pointer.filter(near);
   const fromTouch = releases.touch.filter(near);
   const list = fromPointer.length >= fromTouch.length ? fromPointer : fromTouch;

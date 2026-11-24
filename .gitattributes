@@ -10,3 +10,6 @@
 
 # 앱용 묶음은 만든 그대로의 바이트를 둔다(manifest.json 의 SHA-256 과 맞아야 한다).
 ios/ScoreAnatomy/Web/** -text
+
+# 발행 도구의 테스트 전용 발행물(작업 지시서 3의 6-5). 서명과 SHA-256 이 바이트에 걸려 있어서 줄바꿈을 바꾸지 않는다.
+exam-data/testdata/** -text

@@ -1,0 +1,379 @@
+import { spawnSync } from 'node:child_process';
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { afterEach, describe, expect, it } from 'vitest';
+import { checkExam } from '../../src/exams/validate.ts';
+import type { Exam } from '../../src/types.ts';
+import { checkData, looksLikeAnswerNote, runCheck, screenTextProblems } from './check.ts';
+import { bundledExamIds, examPath } from './data.ts';
+import { compareWithPublished, stateEntryOf } from './state.ts';
+import {
+  FORBIDDEN_CHANGES,
+  ROOT,
+  collectIo,
+  makeDataDir,
+  markPublished,
+  releasedExam,
+  removeDir,
+  runTool,
+  snapshot,
+  testExam,
+  withItem,
+  writeExam,
+  writeLocks,
+} from './testkit.ts';
+
+// exams:check(작업 지시서 3의 6-4): 원본 검사, 발행 기록(state.json)과의 비교, 변경 요약. 아무 파일도 쓰지 않는다.
+// 시험은 그 자리에서 지은 테스트 전용 시험이고(testkit.ts), 모든 쓰기는 임시 폴더에서 한다.
+
+const dirs: string[] = [];
+function dataDir(): string {
+  const dir = makeDataDir();
+  dirs.push(dir);
+  return dir;
+}
+afterEach(() => {
+  for (const dir of dirs.splice(0)) removeDir(dir);
+});
+
+/** 시험을 발행해 둔 자료 폴더. */
+function published(exam: Record<string, unknown>): string {
+  const dir = dataDir();
+  writeExam(dir, exam);
+  markPublished(dir, [exam]);
+  return dir;
+}
+
+/** 검사하고 거부가 있으면 그 문장들을, 없으면 빈 배열을 돌려준다. runCheck 의 종료 코드도 함께 본다. */
+function rejections(dir: string): string[] {
+  const report = checkData(dir);
+  const { io } = collectIo();
+  expect(runCheck({ dataDir: dir, dataName: 'data' }, io)).toBe(report.ok ? 0 : 1);
+  return report.errors;
+}
+
+describe('발행 도구 exams:check 금지된 변경(작업 지시서 3의 6-4)', () => {
+  // 이름이 길어도 줄이지 않게 $name 대신 %s 로 넣는다.
+  it.each(FORBIDDEN_CHANGES.map((c) => [c.name, c.scenarios] as const))('%s: check 가 거부한다', (_name, scenarios) => {
+    for (const s of scenarios) {
+      const dir = published(s.published);
+      // 바꾸기 전에는 통과한다(비교 대상이 맞는지).
+      expect(rejections(dir), s.label).toEqual([]);
+      s.change(dir);
+      const found = rejections(dir);
+      expect(found.length, s.label).toBeGreaterThan(0);
+      expect(found.join('\n'), s.label).toContain(s.expected);
+    }
+  });
+
+  it('바뀐 것이 없으면 통과하고, 발행한 판과 같다고 적는다', () => {
+    const dir = published(releasedExam());
+    const report = checkData(dir);
+    expect(report.errors).toEqual([]);
+    expect(report.ok).toBe(true);
+    expect(report.lines).toContain('  발행한 판과 같아요(rev 1).');
+    expect(report.lines).toContain('잠금 달력(locks.json): 항목 0개, 발행한 것과 같아요.');
+    expect(report.exams.map((e) => e.exam.id)).toEqual(['test-tool-a']);
+  });
+
+  it('허락된 변경은 통과한다: rev 를 올린 수정, 처음 정답 공개, answersRev 와 answersNote 를 갖춘 정정', () => {
+    const fix = published(testExam());
+    writeExam(fix, testExam({ rev: 2, title: '테스트 전용 시험(제목을 고침)' }));
+    expect(rejections(fix)).toEqual([]);
+
+    const first = published(testExam());
+    writeExam(first, releasedExam({ rev: 2 }));
+    expect(rejections(first)).toEqual([]);
+    expect(checkData(first).lines).toContain('  정답을 처음 공개해요(answerReleased 가 false 에서 true 로).');
+
+    const fixed = published(releasedExam());
+    writeExam(fixed, withItem(releasedExam({ rev: 2, answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }), 2, { answer: 1 }));
+    const report = checkData(fixed);
+    expect(report.errors).toEqual([]);
+    expect(report.lines).toContain('  정답 정정: 채점이 바뀌는 문항 2번(정답). answersRev 가 1에서 2로 올라요. 정정 안내: "테스트 전용 정정 안내예요."');
+  });
+
+  it('채점은 그대로인데 answersRev 를 올리면 거부한다(학생에게 거짓 정정 알림이 가서)', () => {
+    const dir = published(releasedExam());
+    writeExam(dir, releasedExam({ rev: 2, answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }));
+    expect(rejections(dir).join('\n')).toContain('발행한 판과 같은데 answersRev 가 올랐어요(발행한 판 1, 지금 2). 학생에게 거짓 정정 알림이 가요.');
+    // answer 와 altAnswers 를 맞바꾼 것도 인정하는 답이 같아서 채점이 같다.
+    const swapped = published(releasedExam());
+    writeExam(swapped, withItem(releasedExam({ rev: 2, answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }), 3, { answer: 4, altAnswers: [2] }));
+    expect(rejections(swapped).join('\n')).toContain('학생에게 거짓 정정 알림이 가요');
+    writeExam(swapped, withItem(releasedExam({ rev: 2 }), 3, { answer: 4, altAnswers: [2] }));
+    expect(rejections(swapped)).toEqual([]);
+  });
+
+  it('발행 기록과 견주는 함수(compareWithPublished)는 시험 파일 검사 없이도 정정 안내가 없는 정정을 거부한다(publish 가 같은 함수를 써서)', () => {
+    const before = checkExam(releasedExam()).exam as Exam;
+    const prev = stateEntryOf(before, 'files/test-tool-a.1.json');
+    const after = { ...before, rev: 2, answersRev: 2, items: before.items.map((it) => (it.no === 2 ? { ...it, answer: 1 } : it)) } as Exam;
+    const texts = compareWithPublished(prev, after).findings.map((f) => `${f.level} ${f.text}`);
+    expect(texts).toEqual(['error 공개한 정답이나 배점이 바뀌었는데(2번(정답)) answersNote 에 정정 안내가 없어요.']);
+    // 같은 시험 객체를 그대로 견주면 바뀐 것이 없다.
+    expect(compareWithPublished(prev, before)).toEqual({ findings: [], changes: ['발행한 판과 같아요(rev 1).'] });
+  });
+
+  it('answersRev 가 내려가면 거부한다', () => {
+    const dir = published(withItem(releasedExam({ answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }), 2, { answer: 1 }));
+    writeExam(dir, withItem(releasedExam({ rev: 2 }), 2, { answer: 1 }));
+    expect(rejections(dir).join('\n')).toContain('answersRev 가 발행한 판(2)보다 작아요(지금 1)');
+  });
+
+  it('정답 공개 전에 발행한 시험의 첫 정답 공개에서 answersRev 를 올리면 거부한다(처음 공개는 정정이 아니어서)', () => {
+    const dir = published(testExam());
+    writeExam(dir, releasedExam({ rev: 2, answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }));
+    expect(rejections(dir).join('\n')).toContain('처음 공개하는 정답은 정정이 아니라서 answersRev 를 올리지 않아요');
+  });
+
+  it('내용은 같고 rev 만 오르거나, 판 번호가 한 번에 2 이상 오르면 알리기만 한다', () => {
+    const dir = published(releasedExam());
+    writeExam(dir, releasedExam({ rev: 3 }));
+    const report = checkData(dir);
+    expect(report.errors).toEqual([]);
+    expect(report.warnings).toContain('src/test-tool-a.json: 내용은 발행한 판과 같고 rev 만 올랐어요(발행한 판 1, 지금 3). 학생 화면은 바뀌지 않아요.');
+    expect(report.warnings).toContain('src/test-tool-a.json: rev 가 한 번에 2 이상 올랐어요(발행한 판 1, 지금 3).');
+  });
+
+  it('정정인데 answersNote 가 발행한 판과 같거나, 유형 분류와 등급컷을 거두면 알린다', () => {
+    const note = '테스트 전용 정정 안내예요.';
+    const cuts = { source: '예시 값', asOf: '2030-01-02T20:10', confirmed: false, grades: { 1: [17, 18] } };
+    const dir = published(withItem(releasedExam({ answersRev: 2, answersNote: note, cuts }), 2, { answer: 1 }));
+    writeExam(dir, withItem(releasedExam({ rev: 2, answersRev: 3, answersNote: note, typesReady: false }), 2, { answer: 4 }));
+    const report = checkData(dir);
+    expect(report.errors).toEqual([]);
+    expect(report.warnings).toContain(
+      'src/test-tool-a.json: answersRev 가 올랐는데 answersNote 가 발행한 판과 같아요. 이번 정정이 빠지지 않았는지 확인해 주세요. 정정 안내에는 정답 공개 뒤의 정정을 모두 적어요.',
+    );
+    expect(report.warnings).toContain('src/test-tool-a.json: 유형 분류를 마친 판을 발행했는데 typesReady 가 false 로 돌아갔어요. 학생 화면에서 계단이 사라져요.');
+    expect(report.warnings).toContain('src/test-tool-a.json: 발행한 등급컷을 뺐어요. 학생 화면에서 등급컷이 사라져요.');
+  });
+});
+
+describe('발행 도구 exams:check(작업 지시서 3의 6-4)', () => {
+  it('check 는 통과하든 거부하든 아무 파일도 쓰지 않는다(함수와 실제 Node 실행 모두)', () => {
+    const dir = published(releasedExam());
+    // 거부가 생기게 바꾼다: 정답을 바꾸고 answersRev 그대로, 잠금 항목 하나는 형식이 틀림.
+    writeExam(dir, withItem(releasedExam({ rev: 2 }), 2, { answer: 1 }));
+    writeLocks(dir, [{ id: 'test-lock-a', label: '테스트 전용 잠금', start: '2030-01-02T17:45', end: '2030-01-02T08:40' }]);
+    const before = snapshot(dir);
+    expect(checkData(dir).ok).toBe(false);
+    const { io } = collectIo();
+    expect(runCheck({ dataDir: dir, dataName: 'data' }, io)).toBe(1);
+    const run = runTool(['check', '--data', dir]);
+    expect(run.status).toBe(1);
+    expect(run.stdout).toContain('결과: 검사를 통과하지 못했어요.');
+    expect(snapshot(dir)).toEqual(before);
+
+    const ok = published(releasedExam());
+    const okBefore = snapshot(ok);
+    const okRun = runTool(['check', '--data', ok]);
+    expect(okRun.status).toBe(0);
+    expect(okRun.stdout).toContain('결과: 검사를 통과했어요. 이 검사는 파일을 쓰지 않아요.');
+    expect(snapshot(ok)).toEqual(okBefore);
+  });
+
+  it('사람이 읽을 변경 요약: 새 시험, 발행한 판, rev, 정답 공개, 유형 분류, 등급컷, 잠금 달력', () => {
+    const dir = published(testExam({ typesReady: false }));
+    writeExam(
+      dir,
+      releasedExam({ rev: 2, typesReady: true, cuts: { source: '기관 가의 추정 값', asOf: '2030-01-02T20:10', confirmed: false, grades: { 1: [18, 18], 2: [15, 15] } } }),
+    );
+    writeExam(dir, testExam({ id: 'test-tool-b', title: '테스트 전용 시험(둘째)' }));
+    writeLocks(dir, [{ id: 'test-lock-a', label: '테스트 전용 잠금', start: '2030-01-02T08:40', end: '2030-01-02T17:45' }]);
+    const { io, out } = collectIo();
+    expect(runCheck({ dataDir: dir, dataName: 'data' }, io)).toBe(0);
+    expect(out).toEqual([
+      '시험 자료를 검사해요: data',
+      '마지막 발행: seq 1, issuedAt 2030-01-02T17:10.',
+      'src/test-tool-a.json(테스트 전용 시험(발행 도구))',
+      '  발행한 판: rev 1, answersRev 1, 정답 공개 전.',
+      '  rev 가 1에서 2로 바뀌어요. 내용이 발행한 판과 달라요.',
+      '  정답을 처음 공개해요(answerReleased 가 false 에서 true 로).',
+      '  유형 분류를 마쳐요(typesReady 가 false 에서 true 로). 계단이 나와요.',
+      '  유형마다 문항 수: 테스트 유형 가 3개, 테스트 유형 나 3개.',
+      '  등급컷을 처음 넣어요(추정, 기준 2030-01-02T20:10, 등급 2개).',
+      'src/test-tool-b.json(테스트 전용 시험(둘째))',
+      '  새 시험이에요. rev 1, 문항 6개(5지선다 4개, 단답형 2개), 만점 20점, 정답 공개 전, 유형 분류 끝남, 등급컷 없음.',
+      '잠금 달력(locks.json): 항목 1개, 발행한 것과 달라요.',
+      '  test-lock-a: 2030-01-02T08:40부터 2030-01-02T17:45까지',
+      '알림 2개',
+      '  - src/test-tool-a.json: isSample 이 true 라 앱에서 예시 시험으로 보여요. 실제 시험이면 false 로 적어요.',
+      '  - src/test-tool-b.json: isSample 이 true 라 앱에서 예시 시험으로 보여요. 실제 시험이면 false 로 적어요.',
+      '거부 0개',
+      '결과: 검사를 통과했어요. 이 검사는 파일을 쓰지 않아요.',
+    ]);
+  });
+
+  it('변경 요약에 유형이 바뀐 문항과 유형 이름이 바뀐 것을 적고, 유형 분류를 마칠 때 유형마다 문항 수와 자리만 채우던 유형을 아직 가리키는 문항을 알린다(별도 검토 B2)', () => {
+    // 유형 분류를 마친 판끼리: 1번과 2번의 유형을 바꾸고 t02 의 이름을 바꾼다(rev 를 올린 수정).
+    const ready = published(releasedExam());
+    writeExam(
+      ready,
+      withItem(withItem(releasedExam({ rev: 2, types: { t01: { name: '테스트 유형 가' }, t02: { name: '테스트 유형 다' } } }), 1, { typeId: 't02' }), 2, { typeId: 't02' }),
+    );
+    const a = checkData(ready);
+    expect(a.errors).toEqual([]);
+    expect(a.lines).toContain('  유형이 바뀌는 문항: 1번(발행한 판 테스트 유형 가, 지금 테스트 유형 다), 2번(발행한 판 테스트 유형 가, 지금 테스트 유형 다).');
+    expect(a.lines).toContain('  유형 이름이 바뀌어요: t02(발행한 판 테스트 유형 나, 지금 테스트 유형 다).');
+    // 유형 분류 전 판(모든 문항이 자리만 채우는 유형 t00)을 발행한 뒤, 분류를 마치는 판에서 5번과 6번이 아직 t00 을 가리킨다.
+    const pendingItems = (releasedExam().items as Record<string, unknown>[]).map((it) => ({ ...it, typeId: 't00' }));
+    const pending = published(releasedExam({ typesReady: false, types: { t00: { name: '분류 중' } }, items: pendingItems }));
+    const finishing = releasedExam({ rev: 2, typesReady: true, types: { t00: { name: '분류 중' }, t01: { name: '테스트 유형 가' }, t02: { name: '테스트 유형 나' } } });
+    writeExam(pending, withItem(withItem(finishing, 5, { typeId: 't00' }), 6, { typeId: 't00' }));
+    const b = checkData(pending);
+    expect(b.errors).toEqual([]);
+    expect(b.lines).toContain('  유형마다 문항 수: 테스트 유형 가 2개, 테스트 유형 나 2개, 분류 중 2개.');
+    expect(b.warnings).toContain(
+      'src/test-tool-a.json: 유형 분류를 마치는 판인데, 유형 분류 전에 모든 문항이 가리키던 유형(분류 중)을 아직 가리키는 문항이 있어요(5번, 6번). 계단에 그 유형 이름이 나와요. 분류를 마쳤는지 확인해 주세요.',
+    );
+    // 모든 문항을 분류했으면 알리지 않는다.
+    writeExam(pending, finishing);
+    expect(checkData(pending).warnings.filter((w) => w.includes('유형 분류를 마치는 판인데'))).toEqual([]);
+  });
+
+  it('변경 요약에서 같은 이름의 다른 유형으로 옮긴 문항은 유형 id 도 적는다(이름만 적으면 바뀐 것이 없어 보임, 2차 검토 T8)', () => {
+    const ready = published(releasedExam());
+    // t02 를 이름이 같은 t03 으로 바꾼 판(rev 를 올린 수정). t02 를 가리키던 문항이 모두 t03 으로 옮긴다.
+    const items = (releasedExam().items as Record<string, unknown>[]).map((it) => (it.typeId === 't02' ? { ...it, typeId: 't03' } : it));
+    const moved = items.filter((it) => it.typeId === 't03').map((it) => it.no as number);
+    expect(moved.length).toBeGreaterThan(0);
+    writeExam(ready, releasedExam({ rev: 2, types: { t01: { name: '테스트 유형 가' }, t03: { name: '테스트 유형 나' } }, items }));
+    const r = checkData(ready);
+    expect(r.errors).toEqual([]);
+    expect(r.lines).toContain(`  유형이 바뀌는 문항: ${moved.map((no) => `${no}번(발행한 판 t02 테스트 유형 나, 지금 t03 테스트 유형 나)`).join(', ')}.`);
+  });
+
+  it('시험 파일의 검사는 src/exams/validate.ts 의 규칙을 그대로 쓴다', () => {
+    const dir = dataDir();
+    writeExam(dir, withItem(testExam(), 1, { typeId: 't09' }));
+    writeExam(dir, releasedExam({ id: 'test-tool-b', answersRev: 2 }));
+    const found = rejections(dir);
+    // 문장도 validate.ts 의 것 그대로다.
+    expect(found).toContain('src/test-tool-a.json: 1번: typeId가 types에 없어요.');
+    expect(found).toContain('src/test-tool-b.json: answersRev가 2 이상이면 answersNote에 정정 안내를 적어야 해요.');
+  });
+
+  it('발행 도구만의 규칙: 파일 이름은 <id>.json, id 는 소문자와 숫자와 붙임표, rev 를 꼭 적음, JSON 으로 읽을 수 있어야 함', () => {
+    const dir = dataDir();
+    writeExam(dir, testExam());
+    renameSync(examPath(dir, 'test-tool-a'), examPath(dir, 'test-tool-x'));
+    writeExam(dir, testExam({ id: 'Test_Tool' }));
+    const { rev: _rev, ...noRev } = testExam({ id: 'test-tool-b' });
+    writeExam(dir, noRev);
+    writeFileSync(examPath(dir, 'test-tool-c'), '{\n  "id": "test-tool-c",\n}\n');
+    const found = rejections(dir);
+    expect(found).toContain('src/test-tool-x.json: 파일 이름은 시험 id 에 .json 을 붙인 test-tool-a.json 이어야 해요.');
+    expect(found).toContain('src/Test_Tool.json: id 는 영어 소문자와 숫자를 붙임표(-)로 이은 모양이어야 해요(형식 예시: test-only-exam).');
+    expect(found).toContain('src/test-tool-b.json: rev 를 적어야 해요. 발행하는 시험 파일에는 판 번호를 꼭 적어요(처음은 1).');
+    expect(found).toContain('src/test-tool-c.json: JSON 으로 읽지 못했어요(3번째 줄 1번째 글자 근처).');
+  });
+
+  it('앱 묶음에 든 시험(src/exams)과 id 가 같은 원본은 check 와 publish 가 거부한다(별도 검토 A2, B1)', () => {
+    // 묶음 안 예시 시험 A와 id 가 같은 테스트 전용 시험(구성과 정답은 이 테스트의 것). 앱에서 판 번호로만 갈려 점수나 답이 엇갈릴 수 있다.
+    expect(bundledExamIds().get('sample-a')).toBe('sample-a.json');
+    expect([...bundledExamIds().keys()].sort()).toEqual(['sample-a', 'sample-b', 'sample-c']);
+    const dir = dataDir();
+    writeExam(dir, releasedExam({ id: 'sample-a' }));
+    const message =
+      'src/sample-a.json: 앱 묶음에 든 시험(src/exams/sample-a.json)과 id 가 같아요(sample-a). 같은 id 의 두 판은 앱에서 판 번호(rev)로만 갈려서, 학생 기기의 점수가 알림 없이 바뀌거나 저장한 답이 다른 문항에 붙을 수 있어요. 발행하는 시험에는 묶음 안 시험과 다른 id 를 써요.';
+    expect(rejections(dir)).toEqual([message]);
+    // 묶음 안 시험이 아닌 id 는 그대로 통과한다(바탕이 맞는지).
+    const other = dataDir();
+    writeExam(other, releasedExam());
+    expect(rejections(other)).toEqual([]);
+    // 실제 Node: check 와 쓰지 않는 publish 가 모두 거부한다(종료 코드 1).
+    const check = runTool(['check', '--data', dir]);
+    expect(check.status).toBe(1);
+    expect(check.stdout).toContain(`  - ${message}`);
+    const before = snapshot(dir);
+    const publish = runTool(['publish', '--dry-run', '--data', dir, '--issued-at', '2030-01-02T17:10']);
+    expect(publish.status).toBe(1);
+    expect(publish.stderr).toContain(`  - ${message}`);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  it('앱 묶음을 만들 때 묶음 안 시험과 발행한 시험(state.json)의 id 가 겹치면 멈춘다(scripts/app-bundles.mjs, 별도 검토 B1)', () => {
+    // 임시 폴더에 묶음 안 시험 자리(시험 하나와 잠금 달력)와, 그 시험을 발행한 자료 폴더를 둔다.
+    const bundle = dataDir();
+    writeFileSync(join(bundle, 'one.json'), JSON.stringify(releasedExam()));
+    writeFileSync(join(bundle, 'locks.json'), '[]');
+    const published = dataDir();
+    markPublished(published, [releasedExam()]);
+    const fresh = dataDir();
+    // app-bundles.mjs 는 자바스크립트라서 실제 Node 로 불러 함수를 부른다.
+    const overlap = (examsDir: string, stateFile: string): unknown => {
+      const url = pathToFileURL(join(ROOT, 'scripts', 'app-bundles.mjs')).href;
+      const script = `import(${JSON.stringify(url)}).then((m) => console.log(JSON.stringify(m.overlappingExamIds(process.argv[1], process.argv[2]))))`;
+      const r = spawnSync(process.execPath, ['--input-type=module', '-e', script, examsDir, stateFile], { cwd: ROOT, encoding: 'utf8' });
+      expect(r.status, r.stderr).toBe(0);
+      return JSON.parse(r.stdout);
+    };
+    expect(overlap(bundle, join(published, 'state.json'))).toEqual(['test-tool-a']);
+    // 발행한 적이 없거나(처음 값) state.json 이 없으면 겹치지 않는다.
+    expect(overlap(bundle, join(fresh, 'state.json'))).toEqual([]);
+    expect(overlap(bundle, join(fresh, 'no-state.json'))).toEqual([]);
+    // 저장소의 묶음 안 시험과 자료 폴더는 지금 겹치지 않는다.
+    expect(overlap(join(ROOT, 'src', 'exams'), join(ROOT, 'exam-data', 'state.json'))).toEqual([]);
+    // 두 묶음을 만드는 함수(buildAll)가 만들기 전에 이 검사를 부른다.
+    const source = readFileSync(join(ROOT, 'scripts', 'app-bundles.mjs'), 'utf8');
+    expect(source).toMatch(/export function buildAll\(outRoot\) \{\n {2}assertNoPublishedBundled\(\);/);
+  });
+
+  it('학생 화면에 나오는 글자의 금지 문자, 느낌표, 이모지를 거부한다', () => {
+    const dash = String.fromCodePoint(0x2014);
+    const dot = String.fromCodePoint(0x00b7);
+    expect(screenTextProblems({ title: `테스트${dash}시험`, types: { t01: { name: `가${dot}나` } } })).toEqual([
+      'title: 쓰지 않는 문자가 있어요(U+2014).',
+      'types.t01.name: 쓰지 않는 문자가 있어요(U+00B7).',
+    ]);
+    const dir = dataDir();
+    writeExam(dir, releasedExam({ answersRev: 2, answersNote: `정정됐어요${String.fromCodePoint(0x21)}` }));
+    expect(rejections(dir)).toContain('src/test-tool-a.json: answersNote: 화면에 나오는 글자에는 느낌표를 쓰지 않아요.');
+  });
+
+  it('정정 안내(answersNote)가 정답 값을 드러내는 것처럼 보이면 알린다(정답 보기 전에 보이는 글자라서)', () => {
+    expect(looksLikeAnswerNote('12번 정답이 3번에서 5번으로 정정됐어요.')).toBe(true);
+    expect(looksLikeAnswerNote('12번 정답은 5예요.')).toBe(true);
+    expect(looksLikeAnswerNote('12번 답: 4')).toBe(true);
+    expect(looksLikeAnswerNote(`12번 정답이 ${String.fromCodePoint(0x2462)}로 바뀌었어요.`)).toBe(true);
+    expect(looksLikeAnswerNote('12번 정답이 정정됐어요.')).toBe(false);
+    expect(looksLikeAnswerNote('테스트 전용 정정 안내예요.')).toBe(false);
+    const dir = dataDir();
+    writeExam(dir, releasedExam({ answersRev: 2, answersNote: '2번 정답이 5에서 1로 정정됐어요.' }));
+    const report = checkData(dir);
+    expect(report.ok).toBe(true);
+    expect(report.warnings.join('\n')).toContain('answersNote 에 정답 값처럼 보이는 글자가 있어요');
+  });
+
+  it('state.json, locks.json, src 폴더가 없거나 틀리면 거부한다', () => {
+    const noState = dataDir();
+    rmSync(join(noState, 'state.json'));
+    expect(rejections(noState)).toContain('state.json: 파일이 없어요. 아직 발행한 적이 없으면 처음 값을 둬요(seq 0).');
+    const badState = dataDir();
+    writeFileSync(join(badState, 'state.json'), '{"format":1,"seq":-1,"issuedAt":null,"locksSha256":null,"exams":{}}\n');
+    expect(rejections(badState)).toContain('state.json: seq 는 0 이상의 정수여야 해요.');
+    const noLocks = dataDir();
+    rmSync(join(noLocks, 'locks.json'));
+    expect(rejections(noLocks)).toContain('locks.json: 파일이 없어요. 잠금 항목이 없으면 빈 배열([])로 둬요.');
+    const noSrc = dataDir();
+    rmSync(join(noSrc, 'src'), { recursive: true });
+    expect(rejections(noSrc)).toContain('src 폴더가 없어요. 원본 시험 파일은 src/<시험 id>.json 에 둬요.');
+  });
+
+  it('처음 발행하는 시험의 answersRev 가 2 이상이거나, 정답 공개 전 파일에 정답이 있으면 알린다', () => {
+    const dir = dataDir();
+    writeExam(dir, releasedExam({ answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' }));
+    writeExam(dir, withItem(testExam({ id: 'test-tool-b' }), 2, { answer: 5 }));
+    const report = checkData(dir);
+    expect(report.ok).toBe(true);
+    expect(report.warnings).toContain(
+      'src/test-tool-a.json: 처음 발행하는 시험인데 answersRev 가 1보다 커요(지금 2). 앱 묶음에 든 예전 판이 없으면 칸을 빼거나 1로 둬요.',
+    );
+    expect(report.warnings).toContain(
+      'src/test-tool-b.json: 정답 공개 전(answerReleased false)인데 정답 칸(answer, altAnswers, allCorrect)이 든 문항이 있어요(2번). 발행하면 누구나 파일에서 볼 수 있어요.',
+    );
+  });
+});

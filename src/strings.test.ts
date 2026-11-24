@@ -256,6 +256,61 @@ describe('화면 문구', () => {
     expect(S.exams.held(2030, 1, 2)).toBe('2030년 1월 2일 시행');
     expect(S.anatomy.barLabel(100, 71, 7, 8, 14)).toBe('100점 막대. 찍음 표시 없이 맞힌 점수 71점, 추측했다고 표시한 정답 7점, 실수라고 표시한 오답 8점, 그 외 오답 14점.');
   });
+
+  it('작업 지시서 3(시험 당일 경로)에 적힌 문구를 그대로 쓴다', () => {
+    const texts = new Set(all.map((s) => s.text));
+    // 4-2: 모두 정답 처리.
+    for (const text of ['이 문항은 모두 정답으로 처리됐어요.']) expect(texts.has(text), text).toBe(true);
+    // 4-2: 복수 정답이면 인정하는 답을 모두 보여 주고 함께 인정한다고 알린다. 정답이 하나면 지금 글자 그대로다.
+    expect(S.causes.answer([164])).toBe('정답 164');
+    expect(S.causes.answer([3, 5])).toBe('정답 3, 5');
+    expect(S.causes.acceptedAll(2)).toBe('둘 다 정답으로 인정해요.');
+    expect(S.causes.acceptedAll(3)).toBe('모두 정답으로 인정해요.');
+    expect(S.anatomy.emptyGuessAllCorrect(60)).toBe('찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. 60점 그대로예요.');
+    // 4-3: 유형 분류가 늦을 때 계단 대신 보여 주는 안내.
+    for (const text of ['유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.']) expect(texts.has(text), text).toBe(true);
+    // 4-4: 등급컷 설명 셋과, 확정을 약속하던 문장 대신 쓰는 문장. 기준에 시각이 있으면 한국 시간으로 적는다.
+    for (const text of [
+      '주관 기관이 발표한 컷이에요.',
+      '추정한 컷이라 범위로 적었어요. 새 자료가 나오면 고쳐요.',
+      '추정한 컷이에요. 새 자료가 나오면 고쳐요.',
+      '컷 자료가 바뀌면 이 화면도 바뀌어요.',
+    ]) {
+      expect(texts.has(text), text).toBe(true);
+    }
+    expect(S.anatomy.asOfTime(2030, 1, 2, 20, 10)).toBe('기준: 2030년 1월 2일 오후 8시 10분');
+    expect(S.anatomy.asOfTime(2030, 1, 2, 20, 0)).toBe('기준: 2030년 1월 2일 오후 8시');
+    expect(S.anatomy.asOf('2026-11-22')).toBe('기준일: 2026-11-22');
+    expect(S.anatomy.cutTitle('2', 82, 82)).toBe('2등급 컷 82점');
+    // 4-5: 풀이 잠금 안내(학생 화면에는 아직 붙이지 않음)와 진행자용 화면의 한 줄. 시각 자리에는 그 항목의 end 가 들어간다.
+    expect(S.solutionLock.notice(17, 45)).toBe('지금은 시험 시간이라 풀이는 잠시 쉬어요. 오후 5시 45분부터 다시 볼 수 있어요. 답 입력은 지금도 할 수 있어요.');
+    expect(S_TEST.lockOpen).toBe('풀이 잠금: 지금 열림');
+    expect(S_TEST.lockClosed(17, 45)).toBe('풀이 잠금: 지금 잠김(오후 5시 45분까지)');
+    // 4-6: 정답 정정 알림(점수 화면과 점수 해부 화면 위쪽), "확인했어요", 기록 화면의 표시. 점수는 지시서의 형식 예시 그대로다.
+    expect(S.correction.changed(76, 79)).toBe('정답이 정정돼서 다시 채점했어요. 76점에서 79점으로 바뀌었어요.');
+    expect(S.correction.same(76)).toBe('정답이 정정됐지만 점수는 76점 그대로예요.');
+    for (const text of ['정답이 정정돼서 지금 정답으로 채점했어요.', '확인했어요', '정답 정정으로 다시 채점됨']) expect(texts.has(text), text).toBe(true);
+    expect(S.history.openCorrected('예시 시험 A', '2026년 11월 22일, 79점')).toBe('예시 시험 A 기록 열기, 2026년 11월 22일, 79점, 정답 정정으로 다시 채점됨');
+    // 5-4: 시험 선택 화면의 받은 시험 자료 안내, "새로 확인"과 그 결과 셋(10초 동안 응답이 없을 때도 받지 못했다는 문구).
+    // 앱에서 다리 규격 2 이상일 때만 보여서 S_APP 에 둔다. 받은 자료 기준의 시각은 지시서의 형식 예시 그대로다.
+    for (const text of [
+      '시험 자료는 정해진 주소 한 곳에서 받아요. 넣은 답과 기록은 보내지 않아요.',
+      '새로 확인',
+      '시험 자료를 새로 받았어요.',
+      '이미 가장 새 자료예요.',
+      '새 시험 자료를 받지 못했어요. 지금 있는 자료로 쓸 수 있어요.',
+    ]) {
+      expect(texts.has(text), text).toBe(true);
+    }
+    expect(S_APP.remoteSource).toBe('시험 자료는 정해진 주소 한 곳에서 받아요. 넣은 답과 기록은 보내지 않아요.');
+    expect(S_APP.remoteIssued(2030, 1, 2, 17, 10)).toBe('받은 자료 기준: 2030년 1월 2일 오후 5시 10분');
+    expect(S_APP.remoteRefresh).toBe('새로 확인');
+    expect(S_APP.remoteResult).toEqual({
+      new: '시험 자료를 새로 받았어요.',
+      same: '이미 가장 새 자료예요.',
+      failed: '새 시험 자료를 받지 못했어요. 지금 있는 자료로 쓸 수 있어요.',
+    });
+  });
 });
 
 describe('문구 도우미', () => {

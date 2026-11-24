@@ -5,7 +5,7 @@ import { cutView } from './cuts';
 import { exampleResponses } from './example';
 import { analyze, gradeExam } from './scoring';
 import { selectSteps } from './steps';
-import { actualLine, anatomySentences, luckLine, retryLabel, retrySentence, selfCheckLabel, selfCheckSentence, stepReasons } from './text';
+import { actualLine, anatomySentences, asOfLine, cutNote, luckLine, retryLabel, retrySentence, selfCheckLabel, selfCheckSentence, stepReasons } from './text';
 
 const examA = findExam('sample-a') as Exam;
 const grade = gradeExam(examA, exampleResponses(examA));
@@ -38,10 +38,10 @@ describe('검산 예시의 화면 문장', () => {
     expect(luckLine(cv, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 컷 범위 안이에요');
   });
 
-  it('컷 범위 안이면 컷이 확정되면 바뀐다고 알린다', () => {
+  it('컷 범위 안이면 컷 자료가 바뀌면 이 화면도 바뀐다고 알린다(작업 지시서 3의 4-4)', () => {
     const exam: Exam = { ...examA, cuts: { ...examA.cuts!, grades: { '2': [76, 80] } } };
     const cv = cutView(exam, an, '2')!;
-    expect(actualLine(cv, an.actual)).toEqual({ lead: ['컷 범위 안이에요.'], rest: '컷이 확정되면 이 화면이 바뀌어요.' });
+    expect(actualLine(cv, an.actual)).toEqual({ lead: ['컷 범위 안이에요.'], rest: '컷 자료가 바뀌면 이 화면도 바뀌어요.' });
     // 첫 줄이 남은 점수가 아니라서 둘째 줄에 "남았어요"를 붙인다.
     expect(luckLine(cv, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 1~5점 남았어요');
   });
@@ -53,9 +53,53 @@ describe('검산 예시의 화면 문장', () => {
     expect(luckLine(cv1, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 7점이에요');
     const cv2 = cutView(exam, an, '2')!;
     expect(actualLine(cv2, an.actual).lead).toEqual(['컷과 같은 점수예요.']);
+    // 주관 기관이 발표한 컷이라 컷 자료가 바뀐다고 덧붙이지 않는다.
+    expect(actualLine(cv2, an.actual).rest).toBeNull();
     const cv3 = cutView(exam, an, '3')!;
     expect(actualLine(cv3, an.actual).lead).toEqual(['컷보다 위예요.']);
     expect(luckLine(cv3, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 컷과 같은 점수예요');
+  });
+
+  it('추정인데 두 값이 같은 컷은 한 숫자로 적고 배지는 추정이다. 컷과 같은 점수면 컷 자료가 바뀌면 이 화면도 바뀐다고 알린다(작업 지시서 3의 4-4)', () => {
+    // 테스트 전용 값: 예시 시험 A의 컷을 두 값이 같은 추정 컷으로 바꾼 사본. 실제 78점, 약 75점.
+    const exam: Exam = { ...examA, cuts: { source: '예시 값', asOf: '2030-01-02T20:10', confirmed: false, grades: { '1': [82, 82], '2': [78, 78], '3': [75, 75] } } };
+    const cv1 = cutView(exam, an, '1')!;
+    expect(cv1.single).toBe(true);
+    expect(cv1.confirmed).toBe(false);
+    expect(actualLine(cv1, an.actual)).toEqual({ lead: ['실제 78점 기준', '4점 남았어요'], rest: null });
+    expect(luckLine(cv1, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 7점이에요');
+    const cv2 = cutView(exam, an, '2')!;
+    expect(actualLine(cv2, an.actual)).toEqual({ lead: ['컷과 같은 점수예요.'], rest: '컷 자료가 바뀌면 이 화면도 바뀌어요.' });
+    expect(luckLine(cv2, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 3점 남았어요');
+    const cv3 = cutView(exam, an, '3')!;
+    expect(actualLine(cv3, an.actual)).toEqual({ lead: ['컷보다 위예요.'], rest: null });
+    expect(luckLine(cv3, an.luckAverageRounded)).toBe('찍기 운을 평균으로 보면 약 75점, 그 기준으로는 컷과 같은 점수예요');
+    // 범위인 추정 컷은 한 숫자로 보지 않는다.
+    expect(cutView(examA, an, '2')!.single).toBe(false);
+  });
+
+  it('등급컷 출처의 설명은 주관 기관 발표, 추정 범위, 추정 한 값 셋 가운데 하나다(작업 지시서 3의 4-4)', () => {
+    const withCuts = (confirmed: boolean, range: [number, number]): Exam => ({
+      ...examA,
+      cuts: { source: '예시 값', asOf: '2026-11-22', confirmed, grades: { '2': range } },
+    });
+    expect(cutNote(cutView(withCuts(true, [82, 82]), an, '2')!)).toBe('주관 기관이 발표한 컷이에요.');
+    expect(cutNote(cutView(withCuts(false, [81, 85]), an, '2')!)).toBe('추정한 컷이라 범위로 적었어요. 새 자료가 나오면 고쳐요.');
+    expect(cutNote(cutView(withCuts(false, [82, 82]), an, '2')!)).toBe('추정한 컷이에요. 새 자료가 나오면 고쳐요.');
+  });
+
+  it('등급컷 기준은 시각이 있으면 한국 시간으로 적고, 날짜만이면 지금 글자 그대로다(작업 지시서 3의 4-4)', () => {
+    // 지시서의 형식 예시 2030-01-02 20:10 과 경계 값(0시, 12시, 분 0)만 쓴다.
+    expect(asOfLine('2030-01-02T20:10')).toBe('기준: 2030년 1월 2일 오후 8시 10분');
+    expect(asOfLine('2030-01-02T20:00')).toBe('기준: 2030년 1월 2일 오후 8시');
+    expect(asOfLine('2030-01-02T00:00')).toBe('기준: 2030년 1월 2일 오전 0시');
+    expect(asOfLine('2030-01-02T12:30')).toBe('기준: 2030년 1월 2일 오후 12시 30분');
+    expect(asOfLine('2030-12-31T08:40')).toBe('기준: 2030년 12월 31일 오전 8시 40분');
+    // 날짜만이면 1.1의 글자 그대로다(예시 시험 A, B).
+    expect(asOfLine('2026-11-22')).toBe('기준일: 2026-11-22');
+    expect(asOfLine(examA.cuts!.asOf)).toBe('기준일: 2026-11-22');
+    // 읽을 수 없는 값(검사를 거친 시험에는 없다)은 적힌 그대로 둔다.
+    expect(asOfLine('2030-01-02T24:00')).toBe('기준일: 2030-01-02T24:00');
   });
 
   it('첫 줄이 남은 점수가 아니면 둘째 줄에 "남았어요"를 붙인다', () => {

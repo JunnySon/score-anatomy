@@ -113,6 +113,22 @@ describe('이어서 보기', () => {
     expect(resumeCandidate(store.get())).toBeNull();
   });
 
+  it('지금 보는 기록의 시험을 시험 목록에서 찾지 못하면 다른 시험의 기록으로 옮겨 가지 않는다(별도 검토 A6)', () => {
+    // 다른 시험(예시 시험 B)의 기록과, 지금 목록에 없는 테스트 전용 시험의 기록(지금 보는 기록)이 있다.
+    startSession('sample-b', 'not_yet', 'first');
+    const other = current()!.id;
+    const missing = { ...current()!, id: 's-missing', examId: 'test-missing-exam', createdAt: '2030-01-02T08:40:00.000Z' };
+    store.update((d) => ({ ...d, sessions: [missing, ...d.sessions], currentId: missing.id }));
+    expect(findExam('test-missing-exam')).toBeNull();
+    expect(resumeCandidate(store.get())).toBeNull();
+    // 기록은 그대로이고 지금 보는 기록도 바뀌지 않는다.
+    expect(store.get().currentId).toBe('s-missing');
+    expect(store.get().sessions.map((s) => s.id)).toEqual(['s-missing', other]);
+    // 지금 보는 기록이 없으면 지금처럼 시험을 찾은 기록 가운데 가장 최근 것이다.
+    store.update((d) => ({ ...d, currentId: null }));
+    expect(resumeCandidate(store.get())!.session.id).toBe(other);
+  });
+
   it('테스트 중에는 앞 참가자의 기록을 이어 보지 않는다', () => {
     startSession('sample-a', 'not_yet', null);
     startTestRun('P01', 'keypad', 'sample-a');

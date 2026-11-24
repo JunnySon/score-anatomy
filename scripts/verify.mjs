@@ -1,5 +1,9 @@
 // npm run verify
-// 작업 지시서 10장의 자동 검증(1~10번)과 작업 지시서 1의 앱용 묶음 검증(11, 12번)을 전부 실행하고 결과를 docs/검증결과.md 에 남긴다.
+// 작업 지시서 10장의 자동 검증(1~10번), 작업 지시서 1의 앱용 묶음 검증(11, 12번), 작업 지시서 3의 발행 도구 검증(13번)을
+// 전부 실행하고 결과를 docs/검증결과.md 에 남긴다.
+// 12번에는 작업 지시서 3의 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts)와
+// 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts)도 들어 있다.
+// 13번은 발행 도구(scripts/exams)의 단위 테스트와, 커밋된 테스트 전용 발행물(exam-data/testdata)을 실제 Node 의 exams:verify 로 확인한 결과다.
 // 실행해서 확인한 수치만 적는다.
 
 import { spawnSync } from 'node:child_process';
@@ -7,8 +11,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { APP_WEB_DIR, BRIDGE_VERSION, BUNDLES, buildAll, INPUTS as APP_INPUTS } from './app-bundles.mjs';
-import { findForbidden, OUT, ROOT } from './lib.mjs';
+import { APP_WEB_DIR, BRIDGE_MAX, BRIDGE_VERSION, BUNDLES, buildAll, INPUTS as APP_INPUTS } from './app-bundles.mjs';
+import { findForbidden, OUT, rel, ROOT } from './lib.mjs';
 
 const require = createRequire(import.meta.url);
 const isWin = process.platform === 'win32';
@@ -51,8 +55,8 @@ function pngCount(dir) {
   return readdirSync(full).filter((f) => f.endsWith('.png') && statSync(join(full, f)).size > 0).length;
 }
 
-// 1번 항목에서 반드시 있어야 하고 통과해야 하는 단위 테스트(7장 검산 예시의 기대값과 추가 경우).
-// 테스트가 지워지거나 이름이 바뀌면 이 항목은 실패한다.
+// 1번 항목에서 반드시 있어야 하고 통과해야 하는 단위 테스트(7장 검산 예시의 기대값과 추가 경우, 작업 지시서 1과 3의 꼭 넣을 테스트).
+// 이름은 vitest 결과의 fullName(describe 와 it 을 공백으로 이은 것)이다. 테스트가 지워지거나 이름이 바뀌면 이 항목은 실패한다.
 const REQUIRED_UNIT_TESTS = [
   '7장 검산 예시 틀린 문항 6개와 배점',
   '7장 검산 예시 실제 78점, 맞힌 문항 24개',
@@ -87,7 +91,88 @@ const REQUIRED_UNIT_TESTS = [
   '키패드 답 입력의 흐름(3-2) (h) 6번을 넣고 7번으로 넘어온 직후 지우기를 누르면 6번이 지워지고 6번에 머문다. 다시 넣으면 7번으로 간다',
   '키패드 답 입력의 흐름(3-2) (i) 빈칸을 직접 눌러 들어온 직후의 지우기는 아무것도 지우지 않는다',
   '키패드 답 입력의 흐름(3-2) (j) 무작위 누름 열 1만 개에서 규칙이 한 번도 깨지지 않는다',
+  // 작업 지시서 3의 4-2: 복수 정답과 모두 정답 처리의 채점, 찍기 운 평균(꼭 넣을 테스트, 손으로 계산해 고정한 기대값).
+  '정답 정정과 복수 정답(4-2) 복수 정답 문항은 answer 도 altAnswers 의 답도 정답이고 그 밖의 답은 오답이다',
+  '정답 정정과 복수 정답(4-2) 모두 정답 처리 문항은 오답을 넣어도 안 풂이어도 배점을 받는다',
+  '정답 정정과 복수 정답(4-2) 실제 60점, 찍음 표시 4점 문항 하나(보기 5개, 인정하는 답 2개, 오답): 61.6, 약 62점',
+  '정답 정정과 복수 정답(4-2) 같은 문항을 맞혔고 실제 60점: 57.6, 약 58점',
+  '정답 정정과 복수 정답(4-2) 실제 60점, 찍음 표시가 모두 정답 처리 문항 하나뿐이면 둘째 줄을 보여 주지 않는다',
+  // 작업 지시서 3의 4-5: 풀이 잠금 판정과 두 달력 합치기(꼭 넣을 테스트).
+  '풀이 잠금(4-5) 시작 1분 전은 열림',
+  '풀이 잠금(4-5) 시작 시각은 잠김',
+  '풀이 잠금(4-5) 종료 1분 전은 잠김',
+  '풀이 잠금(4-5) 종료 시각은 열림',
+  '풀이 잠금(4-5) 달력이 비면 늘 열림',
+  '풀이 잠금(4-5) 같은 UTC 시각이면 기기 시간대가 달라도 결과가 같고 판정 코드는 지역 시각을 읽는 Date 메서드를 쓰지 않는다',
+  '풀이 잠금(4-5) id 가 겹치면 넘겨받은 항목이 이긴다',
+  '풀이 잠금(4-5) 형식이 틀린 항목은 버린다',
+  // 작업 지시서 3의 4-6: 채점 흔적과 정답 정정 알림(꼭 넣을 테스트).
+  '정답 정정 알림(4-6) 정정 전후로 answers 와 marks 가 한 글자도 바뀌지 않는다',
+  '정답 정정 알림(4-6) 점수가 오르는 정정',
+  '정답 정정 알림(4-6) 점수가 내리는 정정',
+  '정답 정정 알림(4-6) 점수가 그대로인 정정',
+  '정답 정정 알림(4-6) 확인 전에는 기록 화면에 정정 표시가 붙고 확인한 뒤에는 없다',
+  '정답 정정 알림(4-6) 옛 기록: answersRev 가 1이면 조용히 채운다',
+  '정답 정정 알림(4-6) 옛 기록: answersRev 가 2 이상이면 지금 정답으로 채점했다고 알린다',
+  '정답 정정 알림(4-6) 정정 뒤 오답 원인 화면과 계단이 지금 정답 기준으로 나온다',
 ];
+
+// 13번 항목에서 반드시 있어야 하고 통과해야 하는 발행 도구(scripts/exams)의 단위 테스트. 이름은 vitest 결과의 fullName 이다.
+// 작업 지시서 3의 8장이 정한 발행 도구 테스트, 6-1 과 6-4 의 명령이 지켜야 하는 것, 6-5 의 테스트 전용 발행물이다.
+// 테스트가 지워지거나 이름이 바뀌면 13번 항목이 실패한다.
+const FORBIDDEN_CHANGE_NAMES = [
+  '발행했던 시험 id 가 사라짐',
+  '내용이 바뀌었는데 rev 가 그대로이거나 rev 가 내려감',
+  'answerReleased 가 true 에서 false 로 돌아감',
+  '문항의 no, kind, choices 가 바뀜',
+  '채점에 영향을 주는 값이 바뀌었는데 answersRev 를 올리지 않았거나 answersNote 가 없음',
+  'confirmed 가 true 인데 두 값이 다름',
+  '잠금 달력 항목의 형식이 틀림',
+];
+const REQUIRED_TOOL_TESTS = [
+  // 8장: 임시 키로 발행한 것이 verify 를 통과한다. index.json 한 바이트, 시험 파일 한 바이트, 다른 키로 한 서명은 각각 실패한다.
+  '발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4) 임시 키로 발행한 것이 verify 를 통과한다(index.json, index.json.sig, files/<id>.<rev>.json 의 모양과 요약 출력)',
+  '발행 도구 exams:verify(작업 지시서 3의 6-2, 6-4) index.json 한 바이트, 시험 파일 한 바이트, 다른 키로 한 서명은 각각 실패하고 이유가 맞다',
+  // 8장: 6-4 의 거부해야 하는 변경 일곱 가지를 하나씩 만들어 publish 와 check 가 모두 거부한다.
+  ...FORBIDDEN_CHANGE_NAMES.map((n) => `발행 도구 exams:publish 금지된 변경(작업 지시서 3의 6-4) ${n}: publish 가 거부하고 state.json 과 발행 폴더가 그대로다`),
+  ...FORBIDDEN_CHANGE_NAMES.map((n) => `발행 도구 exams:check 금지된 변경(작업 지시서 3의 6-4) ${n}: check 가 거부한다`),
+  // 8장: 이어서 두 번 발행하면 seq 가 커진다. 비밀 키 파일이 저장소 안에 있으면 거부한다. 도구의 출력에 키 내용이 없다.
+  '발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4) 이어서 두 번 발행하면 seq 가 커지고 state.json 이 맞게 바뀌고, 발행 폴더에 그 전 발행의 파일이 남지 않는다',
+  '발행 도구 비밀 키(작업 지시서 3의 6-4) 비밀 키 파일이 저장소 안이면 거부한다(상대 경로, 대소문자, .. 과 연결 지점을 풀어서)',
+  '발행 도구 비밀 키(작업 지시서 3의 6-4) 도구의 출력(stdout, stderr)에 키 내용이 없다(실제 Node 실행, PEM 본문 줄과 JWK 의 d)',
+  // 8장: answers 는 같으면 쓰고 다르면 쓰지 않는다. cuts 는 범위, 한 값, 거부 경우(6-4 의 세 가지).
+  '발행 도구 exams:answers(작업 지시서 3의 6-4) 두 파일이 같으면 정답을 넣고 answerReleased 를 true 로 한다(줄 차례, 빈 줄, # 줄, 쉼표 둘레 빈칸은 상관없음)',
+  '발행 도구 exams:answers(작업 지시서 3의 6-4) 두 파일이 다르면 원본 파일을 바이트 그대로 두고 다른 문항 번호만 보여 준다(답 값은 보여 주지 않음, 실제 Node 실행)',
+  '발행 도구 exams:cuts(작업 지시서 3의 6-4) 기관이 둘 이상이면 등급마다 가장 낮은 값과 가장 높은 값으로 범위를 쓴다(source, asOf, confirmed false)',
+  '발행 도구 exams:cuts(작업 지시서 3의 6-4) 기관이 한 곳이면 한 값([v, v])으로 쓴다',
+  '발행 도구 exams:cuts(작업 지시서 3의 6-4) 거부한다: 값이 0보다 작음(원본 파일은 바이트 그대로)',
+  '발행 도구 exams:cuts(작업 지시서 3의 6-4) 거부한다: 값이 만점보다 큼(원본 파일은 바이트 그대로)',
+  '발행 도구 exams:cuts(작업 지시서 3의 6-4) 거부한다: 높은 등급의 컷이 낮은 등급의 컷보다 낮음(원본 파일은 바이트 그대로)',
+  // 6-1 과 6-4: 자료 폴더의 처음 모양, 검사 규칙은 src/exams/validate.ts 를 그대로 씀, check 와 --dry-run 은 쓰지 않음, issuedAt,
+  // keygen, serve 와 주소 verify(캐시를 쓰지 않고 기기나 사용자를 가리키는 값을 붙이지 않음).
+  '발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4) 자료 폴더 exam-data 의 처음 모양: src(자리 파일), locks.json(검사 통과), state.json(처음 값의 정렬한 JSON), 발행 결과물은 커밋하지 않음',
+  '발행 도구 폴더와 바탕(작업 지시서 3의 6-1, 6-4) 도구가 닿는 TypeScript 파일은 상대 경로를 .ts 까지 적고, 타입만 가져올 때는 import type 문을 쓰고, Node 의 타입 지우기로 읽힌다',
+  '발행 도구 exams:check(작업 지시서 3의 6-4) 시험 파일의 검사는 src/exams/validate.ts 의 규칙을 그대로 쓴다',
+  '발행 도구 exams:check(작업 지시서 3의 6-4) check 는 통과하든 거부하든 아무 파일도 쓰지 않는다(함수와 실제 Node 실행 모두)',
+  '발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4) 쓰지 않고 보여 주기(--dry-run)는 비밀 키가 있든 없든 아무것도 쓰지 않는다(함수와 실제 Node 실행)',
+  '발행 도구 exams:publish(작업 지시서 3의 6-2, 6-4) issuedAt 은 --issued-at 이나 지금의 한국 시각이고, 마지막 발행보다 이르면 거부한다',
+  '발행 도구 exams:keygen(작업 지시서 3의 6-4) 키 쌍을 만들고 만든 키로 서명한 발행물을 verify 가 통과한다(실제 Node 실행, 공개 키는 --data 의 public-key.txt)',
+  '발행 도구 exams:keygen(작업 지시서 3의 6-4) 저장소 안 경로, 자료 폴더 안 경로, 이미 있는 비밀 키 파일과 공개 키 파일을 거부하고 아무것도 쓰지 않는다',
+  '발행 도구 exams:serve(작업 지시서 3의 6-4) 실제 Node 로 띄운 exams:serve 의 주소로 exams:verify 가 통과한다(리허설 안내를 출력)',
+  '발행 도구 exams:serve(작업 지시서 3의 6-4) verify 는 주소에서 캐시를 쓰지 않고, 기기나 사용자를 가리키는 값을 붙이지 않고 받는다',
+  // 6-5: 테스트 전용 발행물(커밋된 exam-data/testdata 와 exams:testdata 명령).
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) 커밋된 정상 발행물(test-only-valid)은 테스트 전용 공개 키로 verify 를 통과하고, 파일 이름과 시험 내용에 테스트 전용이라고 적혀 있다',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) 커밋된 서명이 틀린 발행물(test-only-bad-signature)은 서명 때문에 실패하고, 서명 말고는 모두 맞다',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) 커밋된 시험 파일 한 바이트가 바뀐 발행물(test-only-changed-byte)은 sha256 때문에 실패하고, 서명은 맞고 바뀐 바이트는 하나다',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) 커밋된 seq 가 작은 발행물(test-only-older-seq)은 서명과 sha256 이 맞고 seq 가 정상 발행물보다 작다',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) 명령을 임시 폴더로 다시 돌리면 커밋된 것과 바이트가 같고, 출력에 비밀 키의 내용이 없다(실제 Node 실행)',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) 테스트 전용 키로는 진짜 발행을 하지 못한다: 커밋된 비밀 키는 저장소 안이라 거부하고, 저장소 밖으로 옮겨도 테스트 전용 키라 거부한다',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) testdata 폴더에 이 명령이 만들지 않는 것이 있으면 아무것도 쓰지 않고 거부하고, 바뀐 파일만 다시 쓴다',
+  '발행 도구 테스트 전용 발행물(작업 지시서 3의 6-5) README 에 테스트 전용이고 진짜 발행에 쓰지 않는다는 것과, 폴더마다 무엇이고 받는 쪽이 할 일이 적혀 있다',
+];
+
+/** 단위 테스트 결과의 파일 이름을 저장소 기준의 / 로 나눈 경로로. vitest 는 윈도우에서도 / 로 적고 ROOT 는 역슬래시라 글자로 빼지 않는다. */
+const unitFileName = (name) => rel(name);
 
 // 0. 이전 결과를 지운다. 보고서는 "끝나지 않음"으로 바꿔 둔다(도중에 멈춰도 앞 실행의 "통과"가 남지 않게).
 rmSync(OUT, { recursive: true, force: true });
@@ -109,6 +194,50 @@ writeFileSync(reportPath, failureReport('실행 중이거나 도중에 멈췄어
 
 // 1. 단위 테스트
 const unitRun = run('1. 단위 테스트', npx, ['vitest', 'run', '--reporter=default', '--reporter=json', `--outputFile.json=${join(OUT, 'unit.json')}`]);
+
+// 13. 발행 도구: 커밋된 테스트 전용 발행물(exam-data/testdata, 작업 지시서 3의 6-5)을 실제 Node 로 exams:verify 해 본다.
+// 정상(test-only-valid)은 통과, 서명이 틀린 것은 서명에서 실패, 시험 파일 한 바이트가 바뀐 것은 서명은 맞고 sha256 에서 실패해야 한다.
+// seq 가 작은 것은 서명과 sha256 이 맞아 통과하고 seq 가 정상보다 작아야 한다(exams:verify 는 받는 쪽이 가진 seq 를 모르니 seq 는 여기서 견준다).
+console.log('\n=== 13. 발행 도구: 테스트 전용 발행물을 실제 Node 의 exams:verify 로 확인 ===');
+const TESTDATA_DIR = join(ROOT, 'exam-data', 'testdata');
+const TESTDATA_CASES = [
+  { folder: 'test-only-valid', expect: 'pass', receiver: '받아들임', want: '통과' },
+  { folder: 'test-only-bad-signature', expect: 'signature', receiver: '서명이 맞지 않아 버림', want: '서명에서 실패' },
+  { folder: 'test-only-changed-byte', expect: 'sha256', receiver: 'sha256 이 맞지 않아 버림', want: '서명은 맞고 sha256 에서 실패' },
+  { folder: 'test-only-older-seq', expect: 'older', receiver: '정상을 받은 뒤라면 seq 가 작아 버림', want: '통과하고 seq 가 test-only-valid 보다 작음' },
+];
+const testdataRows = TESTDATA_CASES.map((c) => {
+  const r = spawnSync(
+    process.execPath,
+    [join(ROOT, 'scripts/exams.mjs'), 'verify', join(TESTDATA_DIR, c.folder), '--key', join(TESTDATA_DIR, 'test-only-public-key.txt')],
+    { cwd: ROOT, encoding: 'utf8', env: { ...process.env, INIT_CWD: ROOT }, timeout: 60000 },
+  );
+  const stdout = r.stdout ?? '';
+  const stderr = r.stderr ?? '';
+  const seq = /^seq (\d+), issuedAt /m.exec(stdout);
+  const reasons = /이유 (\d+)개/.exec(stderr);
+  return {
+    ...c,
+    status: r.status,
+    signed: stdout.includes('서명이 맞아요(index.json.sig).'),
+    signatureWrong: stderr.includes('서명이 맞지 않아요(index.json.sig)'),
+    shaWrong: stderr.includes('sha256 이 index.json 에 적힌 값과 달라요'),
+    reasons: reasons ? Number(reasons[1]) : 0,
+    seq: seq ? Number(seq[1]) : null,
+    ok: false,
+  };
+});
+const validSeq = testdataRows.find((r) => r.expect === 'pass')?.seq ?? null;
+for (const row of testdataRows) {
+  if (row.expect === 'pass') row.ok = row.status === 0 && row.signed && !row.shaWrong && row.seq !== null;
+  else if (row.expect === 'signature') row.ok = row.status === 1 && row.signatureWrong && !row.signed && row.reasons === 1;
+  else if (row.expect === 'sha256') row.ok = row.status === 1 && row.signed && row.shaWrong && row.reasons === 1;
+  else row.ok = row.status === 0 && row.signed && !row.shaWrong && row.seq !== null && validSeq !== null && row.seq < validSeq;
+  console.log(`${row.folder}: 종료 코드 ${row.status}, 서명 ${row.signed ? '맞음' : '맞지 않거나 보지 못함'}, seq ${row.seq ?? '읽지 못함'}. 기대(${row.want})${row.ok ? '대로예요' : '와 달라요'}.`);
+}
+// 도구를 돌리지 못한 것(종료 코드가 없음: 제한 시간, 실행 실패)은 실행 단계의 실패로도 적는다.
+const testdataRan = testdataRows.every((r) => r.status === 0 || r.status === 1);
+const testdataOk = testdataRows.length === TESTDATA_CASES.length && testdataRows.every((r) => r.ok);
 
 // 빌드(타입 검사 포함), 단일 HTML, 검증용 변형 빌드, 아티팩트용 파일
 const buildRun = run('빌드', npm, ['run', 'build']);
@@ -214,6 +343,15 @@ const metrics = existsSync(join(OUT, 'metrics.jsonl'))
 
 const unitTests = unit ? unit.testResults.flatMap((f) => f.assertionResults) : [];
 const missingUnit = REQUIRED_UNIT_TESTS.filter((name) => !unitTests.some((t) => t.fullName === name && t.status === 'passed'));
+// 13번: 발행 도구(scripts/exams 아래 파일)의 단위 테스트만 고른다.
+const toolFiles = unit ? unit.testResults.filter((f) => unitFileName(f.name).startsWith('scripts/exams/')) : [];
+const toolTests = toolFiles.flatMap((f) => f.assertionResults);
+const toolPassed = toolTests.filter((t) => t.status === 'passed');
+const toolFailed = toolTests.filter((t) => t.status === 'failed');
+const toolSkipped = toolTests.filter((t) => t.status !== 'passed' && t.status !== 'failed');
+// 통과도 실패도 못 한 파일(읽다가 오류가 난 파일 등)도 실패로 센다.
+const toolBadFiles = toolFiles.filter((f) => f.status !== 'passed');
+const missingTool = REQUIRED_TOOL_TESTS.filter((name) => !toolTests.some((t) => t.fullName === name && t.status === 'passed'));
 // 작업 지시서 1의 5장: 기다리지 않는 좌표 누름 테스트와 3-2 (f)의 뒷부분(화면 테스트가 맡는다, 결정기록 97번).
 // 지워지거나 이름이 바뀌어 빠지면 2번 항목이 실패한다.
 const REQUIRED_E2E_TESTS = [
@@ -288,16 +426,19 @@ const fitAudits = smallAudits.filter((a) => a.mustFit);
 // 화면 검사가 줄거나 빠졌는데도 통과로 적히는 일을 막으려고, 꼭 있어야 하는 양을 따로 정해 둔다.
 // 화면 코스(e2e/tour.ts)나 테스트를 일부러 바꿨다면 이 값도 함께 고친다.
 const REQUIRED = {
-  shots: 69, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
-  auditStates: 334, // 화면 검사를 거친 화면 상태 수의 최소
-  smallStates: 123, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 125, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 202, // 통과한 단위 테스트 수의 최소
-  leakChecks: 48, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
+  shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
+  auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
+  smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
+  e2eTests: 150, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
+  unitTests: 460, // 통과한 단위 테스트 수의 최소
+  toolTests: 104, // 통과한 발행 도구(scripts/exams) 단위 테스트 수의 최소(13번)
+  leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
   leakControls: 4, // 정답을 연 뒤에는 노출을 잡아내는지 보는 대조 검사 횟수의 최소
   fitStates: 68, // 작은 화면에서 스크롤 없이 들어와야 하는 답 입력 상태 수의 최소
   appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
+  appRemoteTests: 21, // 넘겨받기 화면 테스트(e2e/appRemote.spec.ts, 가짜 다리 규격 2, 작업 지시서 3의 8장과 별도 검토) 수
+  appStyleTests: 3, // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
 const AUDIT_LISTS = [
@@ -416,6 +557,7 @@ const manifestOk =
   appCheck.manifest !== null &&
   appCheck.manifest.version === appCheck.pkgVersion &&
   appCheck.manifest.bridge === BRIDGE_VERSION &&
+  appCheck.manifest.bridgeMax === BRIDGE_MAX &&
   appCheck.dirtyFlag === false &&
   appCheck.tracked &&
   appCheck.clean &&
@@ -424,6 +566,13 @@ const manifestOk =
 const appBuildOk = appRowsOk && manifestOk;
 const appTests = byFile('app.spec.ts');
 const appTestsOk = allOk(appTests) && appTests.length === REQUIRED.appTests;
+// 넘겨받기 화면 테스트도 정해 둔 수와 같아야 한다(파일 이름이 app.spec.ts 로 끝나지 않아 위의 수에는 들지 않는다).
+const appRemoteTests = byFile('appRemote.spec.ts');
+const appRemoteOk = allOk(appRemoteTests) && appRemoteTests.length === REQUIRED.appRemoteTests;
+// 배포용 묶음의 모양 비교 화면 테스트도 정해 둔 수와 같아야 한다. 일반 화면이 쓰는 CSS 규칙이 도구 모듈 옆 파일에 들어가
+// 배포용 묶음에서만 빠지는 일(작업 지시서 3의 3부 앞에서 고친 결함)을 화면에서 잡는다.
+const appStyleTests = byFile('appStyle.spec.ts');
+const appStyleOk = allOk(appStyleTests) && appStyleTests.length === REQUIRED.appStyleTests;
 const appMetricsOk =
   appFlows.length === 2 &&
   appFlows.every((m) => m.score === 78 && m.steps === 3) &&
@@ -435,7 +584,17 @@ const appMetricsOk =
 const webkitOk =
   !webkitInstalled ||
   (webkitRun.ok && webkitMetric !== null && webkitMetric.score === 78 && netWebkit.length === 1 && netWebkit.every((n) => Array.isArray(n.external) && n.external.length === 0));
-const appOk = appTestsOk && appMetricsOk && webkitOk;
+const appOk = appTestsOk && appRemoteOk && appStyleOk && appMetricsOk && webkitOk;
+// 13번: 발행 도구의 단위 테스트가 모두 통과하고(건너뛴 것 없음), 꼭 있어야 하는 테스트가 모두 있고, 테스트 전용 발행물 네 가지가 기대대로다.
+const toolOk =
+  unit !== null &&
+  toolFiles.length > 0 &&
+  toolBadFiles.length === 0 &&
+  toolFailed.length === 0 &&
+  toolSkipped.length === 0 &&
+  toolPassed.length >= REQUIRED.toolTests &&
+  missingTool.length === 0 &&
+  testdataOk;
 
 // ---------- 보고서 ----------
 // 실행 자체가 실패로 끝난 단계. 항목이 모두 통과로 보여도 이 가운데 하나라도 있으면 전체는 실패다.
@@ -449,6 +608,7 @@ const failedSteps = [
   ['화면 검사 실행', e2eRun.ok],
   ['앱용 묶음 다시 만들기', appCheck.ran],
   ...(webkitInstalled ? [['WebKit 흐름 실행', webkitRun.ok]] : []),
+  ['테스트 전용 발행물 확인 실행(exams:verify)', testdataRan],
 ]
   .filter(([, ok]) => !ok)
   .map(([name]) => name);
@@ -502,7 +662,7 @@ function buildReport(textOk, textResult) {
       '단위 테스트',
       unitOk,
       unit
-        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개, 건너뛴 것 ${skippedUnit.length}개, 읽지 못했거나 실패한 테스트 파일 ${failedUnitFiles}개. 꼭 있어야 하는 검산 예시와 추가 경우 테스트 ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인${short('통과한 단위 테스트', unit.numPassedTests, REQUIRED.unitTests)}${unitRun.ok ? '' : '. 단위 테스트 실행이 실패로 끝남'}`
+        ? `${unit.numTotalTests}개 가운데 ${unit.numPassedTests}개 통과, 실패 ${unit.numFailedTests}개, 건너뛴 것 ${skippedUnit.length}개, 읽지 못했거나 실패한 테스트 파일 ${failedUnitFiles}개. 꼭 있어야 하는 테스트(검산 예시, 추가 경우, 작업 지시서 1과 3의 꼭 넣을 테스트) ${REQUIRED_UNIT_TESTS.length}개 가운데 ${REQUIRED_UNIT_TESTS.length - missingUnit.length}개 확인${short('통과한 단위 테스트', unit.numPassedTests, REQUIRED.unitTests)}${unitRun.ok ? '' : '. 단위 테스트 실행이 실패로 끝남'}`
         : '결과 파일 없음',
     ],
     [
@@ -563,14 +723,22 @@ function buildReport(textOk, textResult) {
       '앱용 묶음이 지금 코드로 다시 만든 것과 같음',
       appBuildOk,
       appCheck.ran
-        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts ${BRIDGE_VERSION}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
+        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 bridge ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts 의 BRIDGE_VERSION ${BRIDGE_VERSION}), bridgeMax ${appCheck.manifest?.bridgeMax ?? '없음'}(BRIDGE_MAX ${BRIDGE_MAX}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
         : `만들지 못함: ${appCheck.error ?? '알 수 없음'}`,
     ],
     [
       '12',
       '앱용 묶음 검사(가짜 다리)',
       appOk,
-      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${BUNDLES.map((b) => `${b} ${appFonts.filter((m) => m.bundle === b).map((m) => `${m.scale}배`).join(', ')}`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
+      `앱 묶음 화면 테스트 ${appTests.length}개 가운데 ${appTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appTests}개). 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts) ${appRemoteTests.length}개 가운데 ${appRemoteTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appRemoteTests}개). 모양 비교 화면 테스트(배포용 묶음과 시험용 묶음을 같은 기록, 같은 화면 상태로 열어 계산된 모양을 견줌, e2e/appStyle.spec.ts) ${appStyleTests.length}개 가운데 ${appStyleTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.appStyleTests}개). 예시 시험 A 흐름 ${appFlows.length}개(${appFlows.map((m) => `${m.bundle} ${m.score}점, 계단 ${m.steps}개, 저장 ${m.saves}번`).join(', ')}). 글자 크기 ${BUNDLES.map((b) => `${b} ${appFonts.filter((m) => m.bundle === b).map((m) => `${m.scale}배`).join(', ')}`).join(', ')}에서 답 입력 끝까지. 배포용 묶음에서 찾은 시험용 글자 ${appReleaseText ? `${appReleaseText.checked}개 가운데 ${appReleaseText.found}개` : '없음'}. WebKit: ${webkitInstalled ? (webkitRun.ok ? `통과(${webkitMetric?.version ?? '버전 확인 못 함'})` : '실패') : '확인하지 못함(설치돼 있지 않음)'}`,
+    ],
+    [
+      '13',
+      '발행 도구',
+      toolOk,
+      unit
+        ? `발행 도구(scripts/exams)의 단위 테스트 파일 ${toolFiles.length}개, 테스트 ${toolTests.length}개 가운데 ${toolPassed.length}개 통과, 실패 ${toolFailed.length}개, 건너뛴 것 ${toolSkipped.length}개, 읽지 못했거나 실패한 파일 ${toolBadFiles.length}개. 꼭 있어야 하는 테스트(작업 지시서 3의 8장 발행 도구 테스트, 6-1 과 6-4 의 명령, 6-5 테스트 전용 발행물) ${REQUIRED_TOOL_TESTS.length}개 가운데 ${REQUIRED_TOOL_TESTS.length - missingTool.length}개 확인. 테스트 전용 발행물(exam-data/testdata)을 실제 Node 의 exams:verify 로 확인: ${testdataRows.map((r) => `${r.folder} 종료 코드 ${r.status ?? '없음'}, seq ${r.seq ?? '읽지 못함'}(기대 ${r.want}, ${r.ok ? '맞음' : '다름'})`).join(', ')}${short('통과한 발행 도구 단위 테스트', toolPassed.length, REQUIRED.toolTests)}`
+        : '결과 파일 없음',
     ],
   ];
   const failed = items.filter((i) => !i[2]);
@@ -581,7 +749,7 @@ function buildReport(textOk, textResult) {
   const skippedTests = tests.filter((t) => t.skipped);
   say(
     failed.length === 0 && otherFailed.length === 0 && failedSteps.length === 0 && skippedUnit.length === 0
-      ? '결론: 자동 검증 12개 항목(10장의 10개, 작업 지시서 1의 앱용 묶음 2개)이 모두 통과했어요.'
+      ? '결론: 자동 검증 13개 항목(10장의 10개, 작업 지시서 1의 앱용 묶음 2개, 작업 지시서 3의 발행 도구 1개)이 모두 통과했어요.'
       : `결론: 실패한 항목이 있어요. 항목 ${failed.length}개, 화면 테스트 ${otherFailed.length}개(건너뛴 것 ${skippedTests.length}개 포함), 건너뛴 단위 테스트 ${skippedUnit.length}개, 실패로 끝난 실행 단계 ${failedSteps.length}개.`,
   );
   say();
@@ -601,14 +769,16 @@ function buildReport(textOk, textResult) {
   say('| --- | --- | --- | --- |');
   for (const [no, name, ok, detail] of items) say(`| ${no} | ${name} | ${mark(ok)} | ${detail} |`);
   say();
-  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0 || skippedUnit.length > 0 || failedSteps.length > 0) {
+  if (failed.length > 0 || otherFailed.length > 0 || missingUnit.length > 0 || skippedUnit.length > 0 || failedSteps.length > 0 || missingTool.length > 0 || !testdataOk) {
     say('## 실패한 것');
     say();
     for (const [no, name] of failed) say(`- ${no}번 ${name}`);
     for (const t of otherFailed) say(`- 테스트${t.skipped ? '(건너뜀)' : ''}: ${t.title}`);
     for (const name of missingUnit) say(`- 없거나 통과하지 못한 단위 테스트: ${name}`);
     for (const t of skippedUnit) say(`- 건너뛴 단위 테스트: ${t.fullName}`);
-    if (unit) for (const f of unit.testResults.filter((x) => x.status === 'failed' && x.assertionResults.length === 0)) say(`- 읽지 못한 단위 테스트 파일: ${f.name.replace(ROOT, '').replace(/^[\\/]/, '')}`);
+    if (unit) for (const f of unit.testResults.filter((x) => x.status === 'failed' && x.assertionResults.length === 0)) say(`- 읽지 못한 단위 테스트 파일: ${unitFileName(f.name)}`);
+    for (const name of missingTool) say(`- 없거나 통과하지 못한 발행 도구 테스트: ${name}`);
+    for (const r of testdataRows.filter((x) => !x.ok)) say(`- 테스트 전용 발행물 확인이 기대와 다름: ${r.folder}(기대 ${r.want}, 종료 코드 ${r.status ?? '없음'})`);
     for (const name of failedSteps) say(`- 실패로 끝난 실행 단계: ${name}`);
     say();
   }
@@ -619,12 +789,12 @@ function buildReport(textOk, textResult) {
     say('| 파일 | 테스트 수 | 실패 | 건너뜀 |');
     say('| --- | --- | --- | --- |');
     for (const f of unit.testResults) {
-      const name = f.name.replace(ROOT, '').replace(/^[\\/]/, '').split('\\').join('/');
-      say(`| ${name} | ${f.assertionResults.length} | ${f.assertionResults.filter((a) => a.status === 'failed').length} | ${f.assertionResults.filter((a) => a.status !== 'passed' && a.status !== 'failed').length} |`);
+      say(`| ${unitFileName(f.name)} | ${f.assertionResults.length} | ${f.assertionResults.filter((a) => a.status === 'failed').length} | ${f.assertionResults.filter((a) => a.status !== 'passed' && a.status !== 'failed').length} |`);
     }
     say();
     say('7장 검산 예시의 기대값(실제 78점, 맞힌 문항 24개, 추측 표시 정답 7점, 찍음 전체 배점 18점, 찍기 운을 평균으로 본 점수 74.6, 실수 표시 오답 8점, 그 외 오답 14점, 등급별 남은 점수, 계단 3개)과');
     say('추가 경우(표시 없음, 전부 정답, 전부 안 풂, 컷 범위 안, 컷 범위 위, 컷 자료 없음, 확정 컷, 섞인 배열 시험 B)는 src/logic/scoring.test.ts 에 있어요.');
+    say('작업 지시서 3의 꼭 넣을 테스트는 src/logic/scoring.test.ts(4-2 복수 정답과 모두 정답 처리), src/logic/lock.test.ts(4-5 풀이 잠금), src/screens/correction.test.tsx(4-6 정답 정정 알림)에 있어요.');
     say(`이 테스트들이 지워지거나 이름이 바뀌어 빠지면 1번 항목이 실패하도록, 꼭 있어야 하는 테스트 ${REQUIRED_UNIT_TESTS.length}개의 이름을 따로 확인해요.`);
     say();
   }
@@ -742,6 +912,7 @@ function buildReport(textOk, textResult) {
   }
   say();
   say(`대조 검사: "정답 보기"를 눌러 정답을 연 뒤에는 같은 검사기가 노출을 잡아내는지 ${leakControls.length}번 확인했어요(27번 단답형, 15번 5지선다).`);
+  say('"앱 묶음"으로 시작하는 곳은 앱 시험용 묶음에 넘겨받은 테스트 전용 시험의 화면이에요(작업 지시서 3의 5장). 그 시험 파일에서 틀린 문항의 인정하는 답(answer 와 복수 정답 altAnswers)을 모두 찾고, 정답 정정 알림처럼 "정답 보기" 전에 보이는 정정 안내도 함께 봐요. 화면 코스가 "정답 보기"를 누른 뒤에 같은 검사기가 복수 정답을 잡아내는지도 확인해요.');
   say();
 
   say('## 10. 화면 캡처');
@@ -752,10 +923,34 @@ function buildReport(textOk, textResult) {
   say();
   say('만든 쪽이 캡처를 열어 보고 고친 내용과 별도 검토 단계가 찾은 것은 docs/화면검토기록.md 에 적어요.');
   say();
-  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 작은 화면에서 스크롤 없이 들어와야 하는 상태 ${REQUIRED.fitStates}개 이상(이번 ${fitAudits.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장. 검사가 줄거나 빠지거나 검사 기록에 결과 칸이 비어 있으면 해당 항목이 실패로 적혀요.`);
+  say(`판정에 쓰는 최소 기준: 통과한 단위 테스트 ${REQUIRED.unitTests}개 이상(이번 ${unit ? unit.numPassedTests : 0}개, 건너뛴 것은 없어야 함), 화면 상태 ${REQUIRED.auditStates}개 이상(이번 ${audits.length}개), 작은 화면 상태 ${REQUIRED.smallStates}개 이상(이번 ${smallAudits.length}개), 실제로 돈 화면 테스트 ${REQUIRED.e2eTests}개 이상(이번 ${ranTests.length}개), 요청 기록은 실제로 돈 화면 테스트마다 하나(이번 ${net.length}개), 정답 노출은 화면을 읽는 검사 ${REQUIRED.leakChecks}번 이상(이번 ${leaks.length}번)과 두 빌드를 견준 화면 ${REQUIRED.leakCompared}곳 이상(이번 ${leakDiff ? leakDiff.compared : 0}곳)과 대조 검사 ${REQUIRED.leakControls}번 이상(이번 ${leakControls.length}번), 작은 화면에서 스크롤 없이 들어와야 하는 상태 ${REQUIRED.fitStates}개 이상(이번 ${fitAudits.length}개), 앱용 묶음 화면 테스트는 꼭 ${REQUIRED.appTests}개(이번 ${appTests.length}개), 넘겨받기 화면 테스트는 꼭 ${REQUIRED.appRemoteTests}개(이번 ${appRemoteTests.length}개)와 모양 비교 화면 테스트는 꼭 ${REQUIRED.appStyleTests}개(이번 ${appStyleTests.length}개), 캡처는 묶음마다 ${REQUIRED.shots}장, 통과한 발행 도구 단위 테스트 ${REQUIRED.toolTests}개 이상(이번 ${toolPassed.length}개)과 꼭 있어야 하는 발행 도구 테스트 ${REQUIRED_TOOL_TESTS.length}개, 테스트 전용 발행물 ${TESTDATA_CASES.length}가지(이번 기대대로 ${testdataRows.filter((r) => r.ok).length}가지). 검사가 줄거나 빠지거나 검사 기록에 결과 칸이 비어 있으면 해당 항목이 실패로 적혀요.`);
   say();
   say('화면 검사는 실행할 때마다 지금 폴더의 빌드로 서버를 새로 띄워요. 쓰려는 포트(기본 4173, 4174)에 이미 떠 있는 서버가 있으면 그 서버를 다시 쓰지 않고 실패로 끝나요(떠 있는 서버를 다시 쓰는 스위치 SA_REUSE_SERVER 는 verify 에서는 따르지 않아요).');
   if (!e2eRun.ok) say('이번 실행은 화면 검사가 실패로 끝났어요. 포트가 이미 쓰이고 있어서 서버를 띄우지 못한 것일 수 있어요. 콘솔 출력의 오류를 확인해 주세요.');
+  say();
+
+  say('## 13. 발행 도구');
+  say();
+  say('발행 도구(scripts/exams, 작업 지시서 3의 6장)의 단위 테스트와, 커밋된 테스트 전용 발행물(exam-data/testdata, 6-5)을 실제 Node 의 exams:verify 로 확인한 결과예요.');
+  say();
+  if (unit) {
+    say('| 파일 | 테스트 수 | 통과 | 실패 | 건너뜀 |');
+    say('| --- | --- | --- | --- | --- |');
+    for (const f of toolFiles) {
+      const list = f.assertionResults;
+      say(`| ${unitFileName(f.name)} | ${list.length} | ${list.filter((a) => a.status === 'passed').length} | ${list.filter((a) => a.status === 'failed').length} | ${list.filter((a) => a.status !== 'passed' && a.status !== 'failed').length} |`);
+    }
+    say();
+  }
+  say(`꼭 있어야 하는 발행 도구 테스트 ${REQUIRED_TOOL_TESTS.length}개(8장의 발행 도구 테스트, 6-1 과 6-4 의 명령이 지켜야 하는 것, 6-5 의 테스트 전용 발행물)의 이름을 따로 확인해요. 지워지거나 이름이 바뀌어 빠지면 13번 항목이 실패해요. 이번에 확인한 것은 ${REQUIRED_TOOL_TESTS.length - missingTool.length}개예요.`);
+  say();
+  say('| 발행물 | 받는 쪽이 할 일(6-3) | exams:verify 에서 기대한 것 | 종료 코드 | 서명 | seq | 결과 |');
+  say('| --- | --- | --- | --- | --- | --- | --- |');
+  for (const r of testdataRows) {
+    say(`| ${r.folder} | ${r.receiver} | ${r.want} | ${r.status ?? '없음'} | ${r.signed ? '맞음' : r.signatureWrong ? '맞지 않음' : '보지 못함'} | ${r.seq ?? '읽지 못함'} | ${r.ok ? '기대대로' : '기대와 다름'} |`);
+  }
+  say();
+  say('exams:verify 는 받는 쪽이 가진 seq 를 모르니, test-only-older-seq 는 서명과 sha256 이 맞아 통과하는 것과 seq 가 test-only-valid 보다 작은 것을 함께 봐요. 아이폰 껍데기가 이 자료로 받는 쪽 규칙을 지키는지는 작업 지시서 4에서 확인해요.');
   say();
 
   say('## 자동으로 확인하지 못하는 것');
@@ -766,6 +961,7 @@ function buildReport(textOk, textResult) {
   say('- 화면 낭독기(VoiceOver, TalkBack)로 실제로 들었을 때의 흐름.');
   say('- 아티팩트 뷰어 안에서의 동작. 뼈대와 비슷한 틀에 넣어 여는 것까지만 확인했어요.');
   say('- 아이폰 앱 껍데기(WKWebView) 안에서의 동작: 실제 다리, 햅틱의 느낌, 기기 글자 크기 설정, 길게 누르기와 화면 당김이 실제로 막히는지. 앱용 묶음은 가짜 다리를 넣은 Chromium(과 윈도우용 WebKit)에서만 확인했어요(작업 지시서 2에서 맥으로 확인).');
+  say('- 아이폰 껍데기가 정해진 주소에서 시험 자료를 받아 서명과 sha256 을 확인하고 받는 쪽 규칙을 지키는지(작업 지시서 4). 이 검증은 발행 도구의 확인(exams:verify)과 테스트 전용 발행물까지만 봐요.');
   say();
   return {
     text: L.join('\n'),

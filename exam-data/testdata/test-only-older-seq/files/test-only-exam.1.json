@@ -1,0 +1,46 @@
+{
+  "answerReleased": false,
+  "id": "test-only-exam",
+  "isPast": false,
+  "isSample": true,
+  "items": [
+    {
+      "choices": 5,
+      "kind": "mc",
+      "no": 1,
+      "points": 2,
+      "typeId": "t01"
+    },
+    {
+      "choices": 5,
+      "kind": "mc",
+      "no": 2,
+      "points": 3,
+      "typeId": "t02"
+    },
+    {
+      "choices": 5,
+      "kind": "mc",
+      "no": 3,
+      "points": 3,
+      "typeId": "t01"
+    },
+    {
+      "kind": "short",
+      "no": 4,
+      "points": 4,
+      "typeId": "t02"
+    }
+  ],
+  "note": "테스트 전용으로 지은 시험이에요.",
+  "rev": 1,
+  "title": "테스트 전용 시험",
+  "types": {
+    "t01": {
+      "name": "테스트 유형 가"
+    },
+    "t02": {
+      "name": "테스트 유형 나"
+    }
+  }
+}

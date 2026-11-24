@@ -1,8 +1,9 @@
-import { DEFAULT_CHOICES, isValidAnswerNumber } from '../exams/validate';
+import { acceptedAnswers, DEFAULT_CHOICES, isValidAnswerNumber } from '../exams/validate';
 import type { Answers, AnswerValue, Cause, Causes, Exam, ExamItem, ItemKind, Mark, Marks } from '../types';
 
 // 계산 규칙(작업 지시서 7장).
 // 실제 점수는 채점 결과 그대로다. 자동 차감은 없다.
+// 정답은 인정하는 답(answer 와 복수 정답 altAnswers)으로 보고, 모두 정답 처리(allCorrect) 문항은 늘 정답이다(작업 지시서 3의 4-2).
 
 export interface Responses {
   answers: Answers;
@@ -18,8 +19,12 @@ export interface ItemResult {
   response: AnswerValue;
   skipped: boolean;
   correct: boolean;
-  /** 계산에 쓰는 찍음 표시. 답을 넣은 5지선다 문항에만 붙는다. */
+  /**
+   * 계산에 쓰는 찍음 표시. 답을 넣은 5지선다 문항에만 붙는다.
+   * 모두 정답 처리 문항에는 찍음 표시가 있어도 붙지 않는다. 찍기 운과 상관없이 받은 점수라서 표시가 없는 정답으로 다룬다(작업 지시서 3의 4-2).
+   */
   guess: boolean;
+  /** 학생이 붙인 표시. 안 푼 문항의 표시와 문항 종류에 맞지 않는 표시는 뺀다. 모두 정답 처리 문항의 표시는 지우지 않고 그대로 둔다. */
   mark: Mark | null;
   /** 틀린 문항에 학생이 고른 원인. */
   cause: Cause | null;
@@ -60,6 +65,16 @@ export function countEntered(exam: Exam, answers: Answers): number {
 }
 
 /**
+ * 넣은 답이 정답인지(작업 지시서 3의 4-2). 채점과 재풀이의 맞춰 보기가 함께 쓴다.
+ * 모두 정답 처리(allCorrect) 문항은 넣은 답이 무엇이든, 안 풂이어도 정답이다.
+ * 그 밖에는 인정하는 답(answer 와 복수 정답 altAnswers, acceptedAnswers)에 있으면 정답이고, 안 풂은 정답이 아니다.
+ */
+export function isCorrectResponse(item: ExamItem, response: AnswerValue): boolean {
+  if (item.allCorrect === true) return true;
+  return response !== 'skip' && acceptedAnswers(item).includes(response);
+}
+
+/**
  * 채점한다. 미입력이 남아 있으면 채점하지 않는다(몰래 오답 처리 금지).
  * 안 풂은 0점으로 채점하되 미입력과 구분한다.
  */
@@ -70,7 +85,7 @@ export function gradeExam(exam: Exam, r: Responses): Grade {
   const items: ItemResult[] = exam.items.map((it) => {
     const response = r.answers[it.no] as AnswerValue;
     const skipped = response === 'skip';
-    const correct = !skipped && response === it.answer;
+    const correct = isCorrectResponse(it, response);
     const rawMark = r.marks[it.no] ?? null;
     // 5지선다에는 고민과 찍음만, 단답형에는 자신 없음만 인정한다. 안 푼 문항의 표시는 쓰지 않는다.
     const mark: Mark | null = skipped
@@ -90,7 +105,8 @@ export function gradeExam(exam: Exam, r: Responses): Grade {
       response,
       skipped,
       correct,
-      guess: mark === 'guess',
+      // 모두 정답 처리 문항은 찍음 표시가 있어도 추측 표시 정답과 찍기 운 계산, 계단에 넣지 않는다. 표시(mark)는 그대로 둔다.
+      guess: mark === 'guess' && it.allCorrect !== true,
       mark,
       cause: correct ? null : (r.causes[it.no] ?? null),
     };
@@ -114,11 +130,13 @@ export interface Anatomy {
   correctCount: number;
   wrongCount: number;
   wrongPoints: number;
-  /** 고민, 찍음, 자신 없음 가운데 하나라도 있는지. */
+  /** 고민, 찍음, 자신 없음 가운데 하나라도 있는지. 모두 정답 처리 문항에 붙은 표시도 센다(학생이 붙인 표시라서). */
   hasAnyMark: boolean;
-  /** 찍음 표시가 하나라도 있는지. */
+  /** 계산에 쓰는 찍음 표시가 하나라도 있는지. 모두 정답 처리 문항의 찍음 표시는 세지 않는다. */
   hasGuessMark: boolean;
   guessMarkCount: number;
+  /** 모두 정답 처리 문항에 붙은 찍음 표시의 수. 찍기 운과 상관없이 받은 점수라 계산에 넣지 않고, 화면에서 그 사실만 알린다(작업 지시서 3의 4-2). */
+  allCorrectGuessCount: number;
   /** 추측 표시 정답 점수: 찍음 표시가 있고 맞힌 5지선다 문항 배점의 합. */
   guessCorrectPoints: number;
   /** 찍음 전체 배점: 찍음 표시가 있는 5지선다 문항(맞음과 틀림 모두) 배점의 합. */
@@ -156,15 +174,16 @@ export interface LuckFraction {
 
 /**
  * 찍기 운을 평균으로 본 점수를 정수로 계산한다(소수 계산에 기대지 않는다).
- * 찍음 표시 문항마다 1 나누기 보기 수(choices 가 없으면 5)를 맞힐 확률로 본다.
+ * 찍음 표시 문항마다 인정하는 답의 수 나누기 보기 수(choices 가 없으면 5)를 맞힐 확률로 본다.
+ * 인정하는 답은 answer 와 복수 정답 altAnswers 이고(작업 지시서 3의 4-2), accepted 를 적지 않으면 1개로 본다.
  * G = 실제 점수 - 추측 표시 정답 점수, D = 찍음 표시 문항들의 보기 수의 최소공배수,
- * N = 찍음 표시 문항마다 배점 x (D / 보기 수)를 더한 값. 값은 (G x D + N) / D 다.
- * 찍음 표시가 하나도 없으면 D = 1, N = 0 이다.
+ * N = 찍음 표시 문항마다 배점 x 인정하는 답의 수 x (D / 보기 수)를 더한 값. 값은 (G x D + N) / D 다.
+ * 찍음 표시가 하나도 없으면 D = 1, N = 0 이다. 모두 정답 처리 문항은 찍음 표시가 있어도 넣지 않는다(gradeExam 이 guess 를 붙이지 않는다).
  */
-export function luckFraction(actual: number, guessItems: { points: number; choices: number }[], guessCorrectPoints: number): LuckFraction {
+export function luckFraction(actual: number, guessItems: { points: number; choices: number; accepted?: number }[], guessCorrectPoints: number): LuckFraction {
   const g = actual - guessCorrectPoints;
   const d = guessItems.reduce((acc, it) => lcm(acc, it.choices), 1);
-  const n = guessItems.reduce((acc, it) => acc + it.points * (d / it.choices), 0);
+  const n = guessItems.reduce((acc, it) => acc + it.points * (it.accepted ?? 1) * (d / it.choices), 0);
   return { numerator: g * d + n, denominator: d };
 }
 
@@ -178,12 +197,18 @@ export function analyze(exam: Exam, grade: Grade): Anatomy {
   const guessCorrectPoints = guessItems.filter((it) => it.correct).reduce((s, it) => s + it.points, 0);
   const guessTotalPoints = guessItems.reduce((s, it) => s + it.points, 0);
   // 찍기 운을 평균으로 본 점수: 찍음 표시 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균.
-  const choicesByNo = new Map(exam.items.map((it) => [it.no, it.choices ?? DEFAULT_CHOICES]));
+  // 인정하는 답이 여럿이면(복수 정답) 아무거나 골라 맞힐 확률도 그만큼 커진다.
+  const itemByNo = new Map(exam.items.map((it) => [it.no, it]));
   const luck = luckFraction(
     grade.actual,
-    guessItems.map((it) => ({ points: it.points, choices: choicesByNo.get(it.no) ?? DEFAULT_CHOICES })),
+    guessItems.map((it) => {
+      const item = itemByNo.get(it.no);
+      return { points: it.points, choices: item?.choices ?? DEFAULT_CHOICES, accepted: item ? acceptedAnswers(item).length : 1 };
+    }),
     guessCorrectPoints,
   );
+  // 모두 정답 처리 문항에 붙은 찍음 표시(계산에는 넣지 않는다).
+  const allCorrectGuessCount = grade.items.filter((it) => it.mark === 'guess' && itemByNo.get(it.no)?.allCorrect === true).length;
   const luckAverage = luck.numerator / luck.denominator;
   const luckAverageRounded = roundLuck(luck);
   const wrongPoints = grade.wrong.reduce((s, it) => s + it.points, 0);
@@ -198,6 +223,7 @@ export function analyze(exam: Exam, grade: Grade): Anatomy {
     hasAnyMark: grade.items.some((it) => it.mark !== null),
     hasGuessMark: guessItems.length > 0,
     guessMarkCount: guessItems.length,
+    allCorrectGuessCount,
     guessCorrectPoints,
     guessTotalPoints,
     luckAverage,

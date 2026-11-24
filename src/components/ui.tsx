@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { href, navigate } from '../router';
 import { S } from '../strings';
-import { markUiChanged } from '../tapGuard';
+import { markContentShifted, markUiChanged } from '../tapGuard';
 
 // 화면 공통 부품: 화면 틀, 위쪽 줄, 하단 탭, 배지, 바텀시트, 삭제 확인 대화상자.
 
@@ -111,15 +111,34 @@ interface ScreenProps {
    * 값이 바뀌면 바로 앞에 누른 자리를 잠깐 막는다(src/tapGuard.ts).
    */
   guardKey?: string;
+  /**
+   * 학생의 누름 없이 넘겨받은 새 시험 자료로 화면 안 내용의 자리가 바뀔 수 있을 때 그 자료를 나타내는 값(시험 목록, 시험의 판 번호 등).
+   * 처음 그린 뒤 값이 바뀌면 마지막 누름과 상관없이 화면 전체를 0.5초 막는다(src/tapGuard.ts 의 markContentShifted, 작업 지시서 3의 별도 검토 A3).
+   * 값이 undefined 로 바뀔 때는 막지 않는다.
+   */
+  shiftKey?: string;
+  /**
+   * shiftKey 가 바뀐 그 그리기에서 true 면 그 0.5초 동안 단답형 숫자 키(data-tap-safe)도 받지 않는다.
+   * 재풀이의 지금 문항이 다른 문항으로 옮겨 갔을 때 쓴다(옮겨 가기 전 문항에 넣던 숫자가 옮겨 온 문항에 들어가지 않게, 별도 검토 2차 P1).
+   */
+  shiftStrict?: boolean;
 }
 
-export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey }: ScreenProps) {
+export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey, shiftKey, shiftStrict }: ScreenProps) {
   const bodyRef = useRef<HTMLElement>(null);
   const onShown = useContext(ScreenShownContext);
   // 화면이 새로 그려지거나 guardKey가 바뀌면, 같은 자리를 연달아 누른 것이 새 버튼에 닿지 않게 한다.
   useLayoutEffect(() => {
     markUiChanged();
   }, [guardKey]);
+  // 넘겨받은 새 자료로 내용의 자리가 옮겨 가면, 옮겨 가기 전의 자리를 보고 누른 것이 다른 요소에 닿지 않게 한다.
+  const shiftRef = useRef(shiftKey);
+  useLayoutEffect(() => {
+    if (shiftRef.current === shiftKey) return;
+    shiftRef.current = shiftKey;
+    if (shiftKey !== undefined) markContentShifted(shiftStrict === true);
+    // shiftStrict 는 shiftKey 가 바뀐 그 그리기의 값만 쓴다(그래서 의존 목록에 넣지 않는다).
+  }, [shiftKey]);
   useEffect(() => {
     onShown?.();
     // 화면이 바뀌면 맨 위로 올리고, 보조 기기가 새 화면을 읽도록 초점을 옮긴다.
@@ -293,10 +312,11 @@ export function Progress({ value, max, label }: { value: number; max: number; la
  * live 가 false면 늘 붙어 있는 다른 알림 영역(LiveRegion)이 같은 글자를 전하므로, 보이는 안내문은 알림 영역으로 두지 않고
  * 화면 낭독기에서도 뺀다(aria-hidden, 훑어 읽을 때 같은 문장을 두 번 듣지 않게).
  */
-export function Message({ children, plain, live = true }: { children: ReactNode; plain?: boolean; live?: boolean }) {
+export function Message({ children, plain, live = true, testId }: { children: ReactNode; plain?: boolean; live?: boolean; testId?: string }) {
   return (
     <p
       className={`msg${plain ? ' msg--plain' : ''}`}
+      data-testid={testId}
       {...(live ? { role: 'status', 'aria-live': 'polite' as const } : { 'aria-hidden': true as const })}
     >
       {children}

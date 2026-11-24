@@ -68,3 +68,28 @@ export function selectSteps(exam: Exam, grade: Grade): Step[] {
   const includeThird = third.score * 10 >= second.score * 7;
   return ranked.slice(0, includeThird ? 3 : 2);
 }
+
+/** 재풀이 화면에서 지금 볼 문항. */
+export interface RetryTarget {
+  no: number;
+  /** 다시 풀 목록에서의 차례(0부터). */
+  index: number;
+  /** 들고 있던 문항 번호가 목록에서 빠져 다른 문항으로 옮겼는지. */
+  moved: boolean;
+}
+
+/**
+ * 재풀이 화면에서 지금 볼 문항(작업 지시서 3의 별도 검토 A1, B4). nos 는 다시 풀 목록(작은 번호부터), held 는 화면이 들고 있는 문항 번호다.
+ * 화면이 열린 채 넘겨받은 새 판(정답 정정, 유형 재분류)으로 목록이 바뀔 수 있어서, 지금 문항은 차례가 아니라 문항 번호로 든다.
+ * 그 번호가 목록에 있으면 그 문항이고(차례만 바뀐다), 빠졌으면 그 번호보다 뒤의 첫 문항(없으면 마지막 문항)으로 옮긴다.
+ * held 가 null 이면 첫 문항이다. 목록이 비면 null 이다.
+ */
+export function retryTarget(nos: readonly number[], held: number | null): RetryTarget | null {
+  if (nos.length === 0) return null;
+  if (held === null) return { no: nos[0]!, index: 0, moved: false };
+  const at = nos.indexOf(held);
+  if (at >= 0) return { no: held, index: at, moved: false };
+  const after = nos.findIndex((n) => n > held);
+  const index = after >= 0 ? after : nos.length - 1;
+  return { no: nos[index]!, index, moved: true };
+}

@@ -7,6 +7,11 @@ playwright-report/
 verify-out/
 *.log
 .DS_Store
+dist-exams/
+dist-exams.*/
+# 비밀 키 파일(PEM)은 저장소에 넣지 않아요. 커밋한 테스트 전용 키만 예외예요(작업 지시서 3의 별도 검토 C1).
+*.pem
+!exam-data/testdata/test-only-private-key.pem
 
 # iOS 빌드 산출물과 내려받은 도구(커밋하지 않음)
 ios/build/

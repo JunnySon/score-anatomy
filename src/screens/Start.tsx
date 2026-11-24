@@ -1,28 +1,38 @@
 import { useMemo } from 'react';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, Screen } from '../components/ui';
-import { findExam, SAMPLE_EXAM_ID } from '../exams';
+import { findBundledExam, SAMPLE_EXAM_ID } from '../exams';
+import { typesReadyOf } from '../exams/validate';
 import { exampleResponses } from '../logic/example';
 import { analyze, gradeExam } from '../logic/scoring';
 import { selectSteps } from '../logic/steps';
+import { typesPendingText } from '../logic/text';
 import { platform } from '#platform';
 import { navigate } from '../router';
 import { demoStore } from '../state/demo';
 import { S } from '../strings';
+import type { Exam } from '../types';
 
 // (1) 시작 화면.
 
+/**
+ * 결과 미리보기(예시 시험에 검산 예시를 넣은 결과). 그릴 수 없으면 null.
+ * 먼저 고칠 것은 유형 이름으로 적는데, 유형 분류 전(typesReady false)이면 이름 대신 안내를 적는다(작업 지시서 3의 4-3).
+ */
+export function startPreview(exam: Exam | null) {
+  if (!exam || !exam.answerReleased) return null;
+  try {
+    const grade = gradeExam(exam, exampleResponses(exam));
+    const stepsLine = typesReadyOf(exam) ? S.start.previewSteps(selectSteps(exam, grade).map((s) => s.name)) : typesPendingText(exam);
+    return { exam, an: analyze(exam, grade), stepsLine };
+  } catch {
+    return null;
+  }
+}
+
+/** 시작 화면의 미리보기는 묶음 안 예시 시험으로만 그린다(넘겨받은 자료로 검산 예시가 바뀌지 않게, 작업 지시서 3의 5부). */
 function usePreview() {
-  return useMemo(() => {
-    const exam = findExam(SAMPLE_EXAM_ID);
-    if (!exam || !exam.answerReleased) return null;
-    try {
-      const grade = gradeExam(exam, exampleResponses(exam));
-      return { exam, an: analyze(exam, grade), steps: selectSteps(exam, grade) };
-    } catch {
-      return null;
-    }
-  }, []);
+  return useMemo(() => startPreview(findBundledExam(SAMPLE_EXAM_ID)), []);
 }
 
 export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResume?: () => void }) {
@@ -34,6 +44,9 @@ export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResum
   return (
     <Screen
       tabs="current"
+      // 넘겨받은 새 자료로 "이어서 보기"가 생기거나 없어지면 "예시 결과 보기"의 폭과 자리가 바뀐다. 학생이 누르지 않았어도 잠깐 막아
+      // 바뀌기 전 자리를 누른 것이 다른 버튼에 닿지 않게 한다(별도 검토 2차 W7).
+      shiftKey={resumeTo ? 'resume' : 'none'}
       actions={
         <>
           <div className="actions__row">
@@ -76,7 +89,7 @@ export function Start({ resumeTo, onResume }: { resumeTo: string | null; onResum
           <div className="mt3">
             <ScoreBar an={preview.an} mini />
           </div>
-          <p className="sub mt3">{S.start.previewSteps(preview.steps.map((s) => s.name))}</p>
+          <p className="sub mt3">{preview.stepsLine}</p>
         </section>
       ) : null}
       <p className="cap mt4">{platform.appText?.privacy ?? S.start.privacy}</p>

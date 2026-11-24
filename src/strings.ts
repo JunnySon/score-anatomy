@@ -7,7 +7,7 @@
 // - S_ROWS: 5행 방식 답 입력 화면에서만 쓰는 문구.
 // - S_TEST: 테스트 진행자용 화면에서만 쓰는 문구.
 // - S_TOOLS: 진행자용 화면으로 가는 링크, 기록 화면의 "준비 중인 기능" 목록, 테스트 기기 안내.
-// - S_APP: 아이폰 앱 안에서만 바꿔 쓰는 문구.
+// - S_APP: 아이폰 앱 안에서만 쓰거나 바꿔 쓰는 문구. 화면은 platform.appText 로 읽는다.
 // 앱 배포용 묶음은 S_ROWS, S_TEST, S_TOOLS 를 쓰는 화면을 싣지 않으므로 그 글자가 묶음에서 빠진다(src/tools).
 
 import type { Cause, GradedBefore, InputMode, ItemKind, SeenBefore, TimeFeel } from './types';
@@ -43,6 +43,20 @@ export function formatTime(iso: string, withSeconds = false): string {
   if (Number.isNaN(d.getTime())) return '';
   const base = `${d.getHours()}시 ${d.getMinutes()}분`;
   return withSeconds ? `${base} ${d.getSeconds()}초` : base;
+}
+
+/** 날짜("2030년 1월 2일"). 연, 월, 일은 날짜 문자열을 잘라 얻은 값이다(src/logic/dates.ts). 기기의 시간대를 쓰지 않는다. */
+export function dateText(y: number, m: number, d: number): string {
+  return `${y}년 ${m}월 ${d}일`;
+}
+
+/**
+ * 한국 시간의 시각("오후 8시 10분"). 시와 분은 시각 문자열을 잘라 얻은 값이다(src/logic/dates.ts).
+ * 오전과 오후로 나눠 적고, 분이 0이면 분을 빼고 "오후 8시"로 적는다. 0시는 "오전 0시", 12시는 "오후 12시"다.
+ */
+export function clockText(h: number, mi: number): string {
+  const hour = `${h < 12 ? '오전' : '오후'} ${h > 12 ? h - 12 : h}시`;
+  return mi === 0 ? hour : `${hour} ${mi}분`;
 }
 
 export const S = {
@@ -93,7 +107,7 @@ export const S = {
   exams: {
     title: '어떤 시험을 넣을까요?',
     /** 시험 시행일. 날짜 문자열을 연, 월, 일로 잘라 쓴다(src/logic/dates.ts). */
-    held: (y: number, m: number, d: number) => `${y}년 ${m}월 ${d}일 시행`,
+    held: (y: number, m: number, d: number) => `${dateText(y, m, d)} 시행`,
     gradedQ: '채점은 아직인가요?',
     gradedOptions: { not_yet: '아직 안 했어요', already: '이미 했어요' } as Record<GradedBefore, string>,
     seenQ: '이 시험지, 전에 풀어 본 적 있나요?',
@@ -178,6 +192,19 @@ export const S = {
     fix: '입력 고치기',
   },
 
+  // 정답 정정 알림(작업 지시서 3의 4-6). 점수 화면과 점수 해부 화면 위쪽에 두고, 다음 줄에 시험 파일의 정정 안내(answersNote)를 그대로 붙인다.
+  // 사실만 적는다. 점수는 지금 정답으로 다시 계산한 값이다.
+  correction: {
+    changed: (from: number, to: number) => `정답이 정정돼서 다시 채점했어요. ${from}점에서 ${to}점으로 바뀌었어요.`,
+    same: (score: number) => `정답이 정정됐지만 점수는 ${score}점 그대로예요.`,
+    // 채점 흔적이 없는 옛 기록이라 예전 점수를 알 수 없을 때.
+    noPrevious: '정답이 정정돼서 지금 정답으로 채점했어요.',
+    // 정답 판 번호는 오르지 않았는데 지금 시험 자료로 계산한 점수가 채점한 때와 다를 때(같은 판 번호에 다른 정답이 든 판, 예전 판).
+    // 정정 안내(answersNote)는 이 바뀜의 까닭이 아닐 수 있어서 다음 줄에 붙이지 않는다.
+    differs: (from: number, to: number) => `채점한 때와 다른 시험 자료로 다시 채점했어요. ${from}점에서 ${to}점으로 바뀌었어요.`,
+    ack: '확인했어요',
+  },
+
   causes: {
     top: '오답 원인',
     title: '틀린 문항을 살펴봐요',
@@ -189,8 +216,17 @@ export const S = {
     options: { slip: '풀 줄 아는데 틀렸어요', blank: '풀이가 안 떠올랐어요', unknown: '잘 모르겠어요' } as Record<Cause, string>,
     showAnswer: '정답 보기',
     showAnswerOf: (no: number) => `${no}번 정답 보기`,
-    answer: (a: number) => `정답 ${a}`,
+    /** 정답. 복수 정답이면 인정하는 답을 모두 쉼표로 적는다(작업 지시서 3의 4-2). */
+    answer: (answers: readonly number[]) => `정답 ${answers.join(', ')}`,
+    /** 복수 정답일 때 정답 아래에 붙인다. 둘이면 "둘 다", 셋 이상이면 "모두". */
+    acceptedAll: (count: number) => `${allOf(count)}정답으로 인정해요.`,
     viewed: '정답 확인함',
+    // 정답 보기를 누른 뒤 새 판이 와서 그 문항의 정답이 바뀌었을 때(별도 검토 A5). 아래에 "정답 보기" 버튼을 다시 둔다.
+    // 정정이 아닌 바뀜(예전 판이 쓰일 때 등)에도 나와서 까닭을 단정하지 않고 사실만 적는다(별도 검토 2차 Q3).
+    answerChanged: '정답을 확인한 뒤 이 문항의 정답이 바뀌었어요.',
+    // 모두 정답 처리 문항(작업 지시서 3의 4-2). 틀린 문항이 아니라서 틀린 문항 목록 아래에 따로 적는다.
+    allCorrectLabel: '모두 정답으로 처리된 문항',
+    allCorrect: '이 문항은 모두 정답으로 처리됐어요.',
     skip: '건너뛰기',
     go: '점수 해부 보기',
     empty: '틀린 문항이 없어요.',
@@ -198,26 +234,34 @@ export const S = {
 
   anatomy: {
     top: '점수 해부',
-    barLabel: (total: number, plain: number, guess: number, slip: number, other: number) => {
+    barLabel: (total: number, plain: number, guess: number, slip: number, other: number, allCorrectGuess = false) => {
       // 값이 없는 구간은 말하지 않는다(0점이라고 쓰지 않는다).
       const parts: string[] = [];
       if (plain > 0) parts.push(`찍음 표시 없이 맞힌 점수 ${plain}점`);
       if (guess > 0) parts.push(`추측했다고 표시한 정답 ${guess}점`);
       if (slip > 0) parts.push(`실수라고 표시한 오답 ${slip}점`);
       if (other > 0) parts.push(slip > 0 ? `그 외 오답 ${other}점` : `오답 ${other}점`);
-      return `${total}점 막대. ${parts.join(', ')}.`;
+      // 찍음 표시가 붙은 모두 정답 처리 문항이 있으면, 그 점수가 어느 구간에 들어갔는지 덧붙인다(작업 지시서 3의 4-2, 별도 검토 D1).
+      const note = allCorrectGuess ? ' 모두 정답으로 처리된 문항은 찍음 표시가 있어도 찍음 표시 없이 맞힌 점수에 넣었어요.' : '';
+      return `${total}점 막대. ${parts.join(', ')}.${note}`;
     },
     rowGuess: '추측했다고 표시한 정답',
     rowGuessSub: (actual: number) => `${actual}점 안에 들어 있어요`,
     rowGuessNone: '찍었다고 표시한 문항에서 나온 점수는 없어요.',
+    // 찍음 표시가 붙은 모두 정답 처리 문항이 있을 때. 그 문항의 점수는 따로 나누지 않는다(작업 지시서 3의 4-2, 별도 검토 D1).
+    rowGuessNoneAllCorrect: '모두 정답으로 처리된 문항 말고는 찍었다고 표시한 문항에서 나온 점수가 없어요.',
     rowSlip: '실수라고 표시한 오답',
     rowSlipSub: (actual: number) => `${actual}점에는 들어 있지 않아요`,
     rowSlipNone: '실수라고 표시한 오답이 없어요',
     sentenceGuess: (actual: number, guess: number) => `${actual}점 가운데 ${guess}점은 찍었다고 표시한 문항에서 나왔어요.`,
+    // sentenceGuess 뒤에 붙인다. 찍음 표시가 붙은 모두 정답 처리 문항이 있을 때(별도 검토 D1).
+    sentenceGuessAllCorrect: '모두 정답으로 처리된 문항은 찍음 표시가 있어도 이 점수에 넣지 않았어요.',
     sentenceSlip: (wrong: number, slip: number) => `틀린 ${wrong}점 가운데 ${slip}점은 실수라고 표시했어요.`,
     emptyMarks: (actual: number) => `표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
     emptyGuess: (actual: number) => `찍었다고 표시한 문항이 없어서 나눠 볼 것이 없어요. ${actual}점 그대로예요.`,
     emptyGuessOnly: (actual: number) => `찍었다고 표시한 문항이 없어요. ${actual}점 그대로예요.`,
+    // 찍음 표시가 모두 정답 처리 문항에만 있을 때. 그 문항은 표시가 없는 정답으로 다뤄서 나눠 보지 않는다(작업 지시서 3의 4-2).
+    emptyGuessAllCorrect: (actual: number) => `찍었다고 표시한 문항은 모두 정답으로 처리돼서 따로 나누지 않았어요. ${actual}점 그대로예요.`,
     causesUnmarked: '아직 원인을 표시하지 않았어요',
     causesPartly: (n: number) => `원인을 표시하지 않은 문항이 ${n}개 있어요`,
     toCauses: '오답 원인 표시하기',
@@ -230,15 +274,22 @@ export const S = {
     sourceTitle: '등급컷 출처',
     sourceSample: '예시 값이에요',
     source: (s: string) => `출처: ${s}`,
+    // 등급컷 기준. 날짜만 적혀 있으면 적힌 글자 그대로("기준일: 2026-11-22"),
+    // 시각까지 적혀 있으면 시험 목록의 시행일과 같은 날짜 모양에 시각을 붙인다(작업 지시서 3의 4-4).
     asOf: (d: string) => `기준일: ${d}`,
-    sourceConfirmed: '확정된 컷이에요.',
-    sourceEstimate: '추정한 컷이라 범위로 적었어요. 컷이 확정되면 한 숫자로 바뀌어요.',
+    asOfTime: (y: number, m: number, d: number, h: number, mi: number) => `기준: ${dateText(y, m, d)} ${clockText(h, mi)}`,
+    // 출처 시트의 설명(작업 지시서 3의 4-4). "확정"은 주관 기관이 원점수 등급컷을 직접 발표했을 때만 쓴다.
+    sourceConfirmed: '주관 기관이 발표한 컷이에요.',
+    sourceEstimate: '추정한 컷이라 범위로 적었어요. 새 자료가 나오면 고쳐요.',
+    sourceEstimateOne: '추정한 컷이에요. 새 자료가 나오면 고쳐요.',
     actualBelow: (actual: number, from: number, to: number) => [`실제 ${actual}점 기준`, `${rangePoints(from, to)} 남았어요`] as const,
     actualWithinLead: '컷 범위 안이에요.',
-    actualWithinRest: '컷이 확정되면 이 화면이 바뀌어요.',
+    // 추정 컷의 범위 안이거나 컷과 같은 점수일 때 덧붙인다. 컷이 어떻게 바뀔지는 약속하지 않는다(작업 지시서 3의 4-4).
+    actualWithinRest: '컷 자료가 바뀌면 이 화면도 바뀌어요.',
     actualAbove: '컷 범위보다 위예요.',
-    actualEqualConfirmed: '컷과 같은 점수예요.',
-    actualAboveConfirmed: '컷보다 위예요.',
+    // 한 숫자 컷(확정 컷이나 두 값이 같은 추정 컷)일 때.
+    actualEqualSingle: '컷과 같은 점수예요.',
+    actualAboveSingle: '컷보다 위예요.',
     luckBelow: (rounded: number, from: number, to: number) =>
       `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 ${rangePoints(from, to)}이에요`,
     // 첫 줄이 "남았어요"가 아닐 때는 둘째 줄만 읽어도 뜻이 통하게 적는다.
@@ -246,12 +297,14 @@ export const S = {
       `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 ${rangePoints(from, to)} 남았어요`,
     luckWithin: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷 범위 안이에요`,
     luckAbove: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷 범위보다 위예요`,
-    luckEqualConfirmed: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷과 같은 점수예요`,
-    luckAboveConfirmed: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷보다 위예요`,
+    luckEqualSingle: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷과 같은 점수예요`,
+    luckAboveSingle: (rounded: number) => `찍기 운을 평균으로 보면 약 ${rounded}점, 그 기준으로는 컷보다 위예요`,
     luckSummary: (rounded: number) => `약 ${rounded}점 설명 보기`,
-    luckDetail: (actual: number) =>
-      `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요. 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,
+    luckDetail: (actual: number, allCorrectGuess = false) =>
+      `찍었다고 표시한 문항을 보기 가운데 아무거나 골랐다고 보고 다시 계산한 평균이에요.${allCorrectGuess ? ' 모두 정답으로 처리된 문항은 찍음 표시가 있어도 넣지 않았어요.' : ''} 보기를 몇 개 지우고 골랐다면 이보다 높을 수 있고, 운에 따라 몇 점 오르내려요. 실제 점수는 ${actual}점 그대로예요.`,
     noCuts: '등급컷 자료를 기다리고 있어요. 점수와 고칠 것은 지금 볼 수 있어요.',
+    // 유형 분류 전(typesReady false)에는 고칠 것(계단)을 볼 수 없어서 뒷문장을 뺀다(작업 지시서 3의 4-3).
+    noCutsTypesPending: '등급컷 자료를 기다리고 있어요.',
     toSteps: (n: number) => (n > 0 ? `고칠 것 ${n}가지 보기` : '고칠 것 보기'),
     fix: '입력 고치기',
     pickExam: '시험 고르기',
@@ -291,6 +344,12 @@ export const S = {
     howBody: (wrong: number, guess: number, score: number) =>
       `틀린 문항의 배점과, 찍었다고 표시하고 맞힌 문항의 배점을 유형별로 더했어요. 합이 큰 유형부터 보여 드려요. 이 유형은 ${wrong}점과 ${guess}점을 더해 ${score}점이에요. 다른 학생의 자료는 쓰지 않았어요.`,
     empty: '틀린 문항이 없어요. 고칠 계단도 없어요.',
+    // 유형 분류가 끝나지 않았을 때(typesReady false) 계단 화면과 계단으로 가는 길에 계단 대신 보여 준다(작업 지시서 3의 4-3).
+    // 등급컷 자료가 아직 없으면 "등급컷은 지금 볼 수 있어요"가 사실과 달라서 점수만 적는다.
+    typesPending: '유형 분류를 준비하고 있어요. 점수와 등급컷은 지금 볼 수 있어요.',
+    typesPendingNoCuts: '유형 분류를 준비하고 있어요. 점수는 지금 볼 수 있어요.',
+    // 찍음 표시가 붙은 모두 정답 처리 문항이 있을 때 계단 화면에 적는다. 그 문항은 계단에 넣지 않는다(작업 지시서 3의 4-2, 별도 검토 D1).
+    allCorrectGuess: '모두 정답으로 처리된 문항은 찍음 표시가 있어도 계단에 넣지 않았어요.',
     retryStatusTitle: '다시 푼 기록',
     retryStatus: (no: number, label: string) => `${no}번: ${label}`,
   },
@@ -325,6 +384,10 @@ export const S = {
     nextItem: '다음 문항',
     backToSteps: '계단으로 돌아가기',
     nothing: '다시 풀 문항이 없어요.',
+    // 화면이 열린 채 넘겨받은 새 판(정답 정정 등)으로 지금 문항이 다시 풀 목록에서 빠졌을 때(작업 지시서 3의 별도 검토 A1).
+    // 그 문항에 넣던 답(맞춰 보기 전)은 기록하지 않고 목록의 다음 문항으로 옮긴다. dropped 는 넣던 답이 있었는지다.
+    moved: (no: number, dropped: boolean) =>
+      `시험 자료가 바뀌어서 ${no}번은 다시 풀 문항에서 빠졌어요.${dropped ? ' 넣던 답은 기록하지 않았어요.' : ''}`,
   },
 
   history: {
@@ -335,6 +398,12 @@ export const S = {
     remove: '지우기',
     removeOf: (title: string, detail: string) => `${title} 기록 지우기, ${detail}`,
     open: (title: string, detail: string) => `${title} 기록 열기, ${detail}`,
+    // 정답 정정 알림을 아직 확인하지 않은 기록(작업 지시서 3의 4-6). 보이는 표시와 열기 버튼의 이름에 붙인다.
+    corrected: '정답 정정으로 다시 채점됨',
+    openCorrected: (title: string, detail: string) => `${title} 기록 열기, ${detail}, 정답 정정으로 다시 채점됨`,
+    // 정답 판 번호는 그대로인데 다른 시험 자료로 다시 채점해 점수가 바뀐 기록(src/state/session.ts 의 differs).
+    rescored: '다른 시험 자료로 다시 채점됨',
+    openRescored: (title: string, detail: string) => `${title} 기록 열기, ${detail}, 다른 시험 자료로 다시 채점됨`,
     removeAll: '이 기기의 기록 모두 지우기',
     confirmOne: '이 기록을 지울까요?',
     confirmAll: '이 기기의 기록을 모두 지울까요?',
@@ -344,6 +413,21 @@ export const S = {
     confirmNo: '그만두기',
     empty: '아직 넣은 시험이 없어요. 시험을 하나 넣으면 여기에 쌓여요.',
     storageFailed: '이 브라우저에서는 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
+  },
+
+  // 기록이 가리키는 시험을 지금 시험 목록에서 찾지 못했을 때(작업 지시서 3의 5-2). 기록은 지우지 않고 그대로 둔다.
+  // 기록 화면의 그 기록 자리와, 그 기록을 이어 열 때의 작은 화면에 쓴다.
+  missingExam: {
+    body: '시험 자료를 받으면 다시 볼 수 있어요.',
+    back: '처음 화면으로',
+  },
+
+  // 풀이 잠금 안내(작업 지시서 3의 4-5). 풀이 계열 기능이 생기면 잠긴 동안 그 기능 대신 보여 준다(src/components/LockNotice.tsx).
+  // 지금은 풀이 계열 기능이 없어서 학생이 보는 화면에 붙이지 않는다.
+  solutionLock: {
+    /** h, mi 는 풀리는 시각(그 항목의 end, 한국 시간)이다. */
+    notice: (h: number, mi: number) =>
+      `지금은 시험 시간이라 풀이는 잠시 쉬어요. ${clockText(h, mi)}부터 다시 볼 수 있어요. 답 입력은 지금도 할 수 있어요.`,
   },
 } as const;
 
@@ -383,6 +467,9 @@ export const S_TOOLS = {
 export const S_TEST = {
   title: '테스트 진행자용',
   intro: '사용성 테스트를 진행하는 사람이 쓰는 화면이에요. 측정 기록은 이 기기 안에만 남아요.',
+  // 합친 풀이 잠금 달력으로 판정한 지금의 상태(작업 지시서 3의 4-5). h, mi 는 풀리는 시각(한국 시간)이다.
+  lockOpen: '풀이 잠금: 지금 열림',
+  lockClosed: (h: number, mi: number) => `풀이 잠금: 지금 잠김(${clockText(h, mi)}까지)`,
   newTitle: '새 참가자',
   participant: '참가자 코드',
   participantHint: 'P01처럼 적어 주세요. 이름은 넣지 마세요.',
@@ -441,10 +528,25 @@ export const S_TEST = {
   examReselected: (n: number) => `참가자가 측정 중에 다른 시험 기록으로 ${n}번 옮겨 갔어요. 아래 값은 마지막에 넣던 기록에서 잰 것이에요.`,
 } as const;
 
-/** 아이폰 앱 안에서만 바꿔 쓰는 문구(src/platform/app.ts 만 쓴다). */
+/**
+ * 아이폰 앱 안에서만 쓰거나 바꿔 쓰는 문구. src/platform/app.ts 만 가져오고, 화면은 platform.appText 로 읽는다
+ * (브라우저와 일반 웹 빌드에서는 null 이라 그리지 않는다).
+ */
 export const S_APP = {
   privacy: '가입 없이 써요. 기록은 이 기기에 저장하고 서버로 보내지 않아요.',
   historyNote: '앱을 지우면 기록도 함께 지워져요.',
   storageFailed: '이 기기에 기록을 저장하지 못했어요. 화면은 그대로 쓸 수 있어요.',
   archived: '앞서 저장된 기록을 읽지 못해 따로 보관해 뒀어요.',
+  // 시험 선택 화면의 받은 시험 자료 안내(작업 지시서 3의 5-4, src/components/RemoteNotice.tsx).
+  // 다리 규격 2 이상의 껍데기가 시험 자료를 넘겨줬을 때만 보인다.
+  remoteSource: '시험 자료는 정해진 주소 한 곳에서 받아요. 넣은 답과 기록은 보내지 않아요.',
+  /** 받은 자료 기준(넘겨받은 자료의 issuedAt, 한국 시간). 연, 월, 일, 시, 분은 시각 문자열을 잘라 얻은 값이다(src/logic/dates.ts). */
+  remoteIssued: (y: number, m: number, d: number, h: number, mi: number) => `받은 자료 기준: ${dateText(y, m, d)} ${clockText(h, mi)}`,
+  remoteRefresh: '새로 확인',
+  /** "새로 확인"의 결과(src/exams/index.ts 의 RefreshResult). 10초 동안 아무 응답이 없을 때도 failed 다. */
+  remoteResult: {
+    new: '시험 자료를 새로 받았어요.',
+    same: '이미 가장 새 자료예요.',
+    failed: '새 시험 자료를 받지 못했어요. 지금 있는 자료로 쓸 수 있어요.',
+  },
 } as const;

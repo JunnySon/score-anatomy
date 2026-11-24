@@ -6,7 +6,7 @@ name: ScoreAnatomy
 options:
   bundleIdPrefix: com.junnyson
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "18.0"
   developmentLanguage: ko
   createIntermediateGroups: true
   groupSortPosition: top
@@ -33,7 +33,7 @@ targets:
   ScoreAnatomy:
     type: application
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: ScoreAnatomy
         excludes:
@@ -83,7 +83,7 @@ targets:
   ScoreAnatomyTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: ScoreAnatomyTests
     dependencies:
@@ -97,7 +97,7 @@ targets:
   ScoreAnatomyUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "17.0"
+    deploymentTarget: "18.0"
     sources:
       - path: ScoreAnatomyUITests
     dependencies:

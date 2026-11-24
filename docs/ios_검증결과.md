@@ -1,9 +1,9 @@
 # iOS 앱 껍데기 검증 결과
 
-결론: 13개 항목 가운데 통과 12, 실패 0, 확인하지 못함 1. 추가 확인(14번)은 통과. `ios/scripts/verify.sh` 가 2026-11-24 04:52에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.
+결론: 13개 항목 가운데 통과 12, 실패 0, 확인하지 못함 1. 추가 확인(14번)은 통과. `ios/scripts/verify.sh` 가 2026-11-24 11:37에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.
 
 - 맥: macOS 26.6.2 (25G83), Xcode 26.4.1(빌드 17E202), SDK iphonesimulator 26.4 (23E252), XcodeGen 2.47.0
-- 저장소: 브랜치 ios-v1, 커밋 e950fe2
+- 저장소: 브랜치 ios-v1, 커밋 c5329a1
 - 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): iPhone 17, iPhone SE 3세대, iPad (A16) (iOS 26.4.1), iPhone 16 (iOS 18.4, 참고용)
 - 데스크톱 폴더 대응: 테스트 빌드에만 링커 설정 `-Wl,-S`(디버그 맵 빼기)를 덧붙였어요. 테스트 바이너리의 디버그 맵 항목 0개(0이어야 해요). 이유는 docs/ios_결정기록.md 에 있어요. 앱 코드와 프로젝트 설정은 그대로예요.
 
@@ -13,13 +13,13 @@
 | 2 | 단위 테스트 | 통과 | 41개 중 통과 41, 실패 0, 건너뜀 0 | 39개 이상 실행, 실패 0, 건너뜀 0 |
 | 3 | 화면 흐름(예시 시험 A, iPhone 17) | 통과 | 1개 중 통과 1, 실패 0, 건너뜀 0. 흐름 153초, 햅틱 메시지 49번(받아들인 키 누름 49번), 계단 3개 | 1개 통과(78점, 7점, 8점, 3~7점, 약 75점, 6~10점, 3등급 문구, 계단 3개와 카드 표기 확인) |
 | 4 | 다시 켜기 | 통과 | 2개 중 통과 2, 실패 0, 건너뜀 0. 12번째 답 키 누름이 끝난 뒤(XCUITest 가 앱이 쉬는 것을 확인한 뒤) store.json 에 12개가 보이기까지 0.00초 | 2개 통과(12번까지 이어서 보기, 채점 기록 유지) |
-| 5 | 사람 손 박자 | 통과 | 3개 중 통과 3, 실패 0, 건너뜀 0. 표시 두 번 누름: 실제 간격 0.40~0.40초(첫 click 은 손을 뗀 뒤 2ms 에 옴. 참고: 손을 떼고 곧바로 다시 누르는 XCUITest doubleTap 은 '20번, 넣은 답 3, 고민', 이벤트 touchstart:0, touchend:0, touchstart:0, touchend:0, click:2, dblclick:2), 9번 고친 뒤 이어 누름: 실제 간격 0.37~0.39초, 마지막 문항 뒤 이어 누름: 실제 간격 0.38~0.43초. XCUITest 의 좌표 누름은 한 번에 0.35초 넘게 걸려 지시서의 0.15초, 0.2초, 0.3초 간격을 그대로 낼 수 없었어요. 보호 시간(0.5초) 안의 가장 빠른 간격으로 확인했어요. | 3개 통과, 실제 누름 간격이 보호 시간 0.5초보다 짧음 |
+| 5 | 사람 손 박자 | 통과 | 3개 중 통과 3, 실패 0, 건너뜀 0. 표시 두 번 누름: 실제 간격 0.40~0.42초(첫 click 은 손을 뗀 뒤 2ms 에 옴. 참고: 손을 떼고 곧바로 다시 누르는 XCUITest doubleTap 은 '20번, 넣은 답 3, 고민', 이벤트 touchstart:0, touchend:0, touchstart:0, touchend:0, click:2, dblclick:2), 9번 고친 뒤 이어 누름: 실제 간격 0.38~0.40초, 마지막 문항 뒤 이어 누름: 실제 간격 0.38~0.44초. XCUITest 의 좌표 누름은 한 번에 0.35초 넘게 걸려 지시서의 0.15초, 0.2초, 0.3초 간격을 그대로 낼 수 없었어요. 보호 시간(0.5초) 안의 가장 빠른 간격으로 확인했어요. | 3개 통과, 실제 누름 간격이 보호 시간 0.5초보다 짧음 |
 | 6 | 통신과 권한 | 통과 | 2개 중 통과 2, 실패 0, 건너뜀 0. 대조 실행(규칙 없음): 닿은 연결 30건, 요청 내용 30건. 차단 실행: 하위 자원 요청 10가지(fetch 2, XHR, 그림, 스크립트, 스타일, 비컨, 웹소켓, 서버 이벤트, iframe)와 스크립트의 새 창이 수신기에 닿은 연결 0건, 문서 이동까지 모두 닿은 요청 내용 0건, 껍데기가 취소한 이동 7건(iframe, 스크립트의 링크와 새 창 링크와 location 과 form, 사람이 누른 링크와 새 창 링크)과 새 창 만들기 단계에서 거절한 것 0건. 참고: 링크로 가는 이동에서 WebKit 이 내용 없이 미리 맺은 연결 1건(웹 묶음에는 바깥 링크가 없다). 정적 검사: 네트워크 API 0건, 외부 패키지 0개, 권한 문구 0개(Release Info.plist 0개), 알림 API 0건, 추적 API 0건, 권한이 필요한 기기 API 0건, DEBUG 밖 소스의 http(s) 주소 글자 0건, Release 바이너리의 네트워크 기호 0건, 웹 묶음 안의 바깥 링크와 새 창과 미리 연결 표시 0건. PrivacyInfo.xcprivacy 있음(추적 False, 추적 도메인 0개, 수집 자료 0개, 사유 API 선언 0개). 소스에서 찾은 사유 API 이름 0건, Release 바이너리의 사유 API 기호 0건. Info.plist: 암호화 사용 False, 방향 ['UIInterfaceOrientationPortrait'] | 탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 정적 검사 모두 0, 개인정보 매니페스트 있음(추적 없음, 수집 없음), 찾은 사유 API 와 선언이 같음(둘 다 0), 암호화 사용 NO, 세로 고정 |
 | 7 | 글자 크기 | 통과 | 4개 중 통과 4, 실패 0, 건너뜀 0, 켜 둔 채 바꾸기 1개 중 통과 1, 실패 0, 건너뜀 0. 루트 글자: live-accessibility-medium 26.35px, AccessibilityM 26.35px, L 16.00px, AccessibilityXXXL 32.00px, XXXL 21.65px | 4개 통과(기본, 가장 큰 일반 크기, 접근성 크기 둘), 켜 둔 채 바꾸기 1개 통과 |
 | 8 | 작은 화면(iPhone SE 3세대) | 통과 | 흐름 1개 중 통과 1, 실패 0, 건너뜀 0, 작은 화면 1개 중 통과 1, 실패 0, 건너뜀 0. 화면 375.0x667.0pt, 넘친 높이(문서, 본문) 모두 0 이하 | 흐름 1개와 작은 화면 1개 통과 |
 | 9 | iPad(아이폰 앱 호환 방식) | 통과 | iPad (A16), 26.4.1: 1개 중 통과 1, 실패 0, 건너뜀 0 | 시작 화면 테스트 1개 통과 |
-| 10 | 최소 버전(iOS 17) | 확인하지 못함 | iOS 17 런타임이 이 맥에 없다(지시대로 내려받지 않음). 참고: 이 맥에 있던 가장 낮은 런타임 18.4에서 3번 흐름 1개 중 통과 1, 실패 0, 건너뜀 0. | iOS 17 런타임이 있으면 3번 통과 |
-| 11 | 금지 문자 | 통과 | 검사한 파일 40개에서 금지 문자 0건. 보이는 글자(화면을 불러오지 못했어요. 앱을 다시 켜 주세요., 점수 해부) 느낌표 0, 이모지 0. 이 브랜치 커밋 메시지 7개의 금지 문자 0건 | 모두 0 |
+| 10 | 최소 버전(iOS 17) | 확인하지 못함 | iOS 17 런타임이 이 맥에 없다(지시대로 내려받지 않음). 참고: 이 맥에 있던 가장 낮은 런타임 18.4에서 3번 흐름 1개 중 통과 0, 실패 1, 건너뜀 0. | iOS 17 런타임이 있으면 3번 통과 |
+| 11 | 금지 문자 | 통과 | 검사한 파일 40개에서 금지 문자 0건. 보이는 글자(화면을 불러오지 못했어요. 앱을 다시 켜 주세요., 점수 해부) 느낌표 0, 이모지 0. 이 브랜치 커밋 메시지 8개의 금지 문자 0건 | 모두 0 |
 | 12 | 접근성 감사(기록용) | 통과 | 1개 중 통과 1, 실패 0, 건너뜀 0. 감사한 화면 4개, 걸린 것 38건(아래 표) | 네 화면 모두 감사를 돌리고 걸린 것을 기록(통과가 접근성을 보장하지 않음) |
 | 13 | 캡처 | 통과 | 목록 36장 중 36장, 빠진 것 0, 겹친 것 0, 크기 다름 0. 캡처 테스트 4개 중 통과 4, 실패 0, 건너뜀 0 | 9화면 x 2테마 x 2기기 = 36장, 빠진 것과 겹친 것 0 |
 | 14 | 추가: 다리 통합, 글 입력, Release 실행 | 통과 | 다리 통합(보관, 더 높은 version, 저장 실패, 불러오기 실패) 4개 중 통과 4, 실패 0, 건너뜀 0. 시작 화면(iPhone 17) 1개 중 통과 1, 실패 0, 건너뜀 0. 진행자용 화면의 키보드 글 입력 1개 중 통과 1, 실패 0, 건너뜀 0. Release 구성으로 켜기 1개 중 통과 1, 실패 0, 건너뜀 0 | 모두 통과. 13개 항목 밖이지만 판정과 종료 코드에 넣는다 |
@@ -67,42 +67,43 @@
 | 단위 | StoreFileTests.testEmptyFileIsTextNotMissing | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testFileMissingReadsAsNull | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testFirstSaveCreatesFolderAndFile | iphone17 | Passed | 0.0 |
-| 단위 | StoreFileTests.testHundredSavesKeepTheLastOne | iphone17 | Passed | 0.0 |
+| 단위 | StoreFileTests.testHundredSavesKeepTheLastOne | iphone17 | Passed | 0.1 |
 | 단위 | StoreFileTests.testLeftoverTemporaryFilesAreRemoved | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testOrderAcrossArchive | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testRealPermissionFailureKeepsOriginalFile | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testSavesAreAppliedInOrderEvenWhenSentQuickly | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testUnreadableBytesReadAsEmptyText | iphone17 | Passed | 0.0 |
 | 단위 | StoreFileTests.testWriteFailureKeepsOriginalFile | iphone17 | Passed | 0.0 |
-| 화면 | AccessibilityAuditTests.testAuditKeyScreens | iphone17 | Passed | 147.8 |
-| 화면 | BridgeIntegrationTests.testFutureVersionIsArchived | iphone17 | Passed | 5.8 |
-| 화면 | BridgeIntegrationTests.testLoadFailureShowsMessage | iphone17 | Passed | 5.9 |
-| 화면 | BridgeIntegrationTests.testSaveFailureShowsNotice | iphone17 | Passed | 15.6 |
-| 화면 | BridgeIntegrationTests.testUnreadableStoreIsArchivedNotOverwritten | iphone17 | Passed | 6.7 |
-| 화면 | CaptureTests.testCaptureScreens | iphone17 | Passed | 162.4 |
-| 화면 | FlowTests.testExampleAFlow | iphone17 | Passed | 159.1 |
-| 화면 | FontScaleUITests.testAccessibilitySize | iphone17 | Passed | 19.1 |
-| 화면 | FontScaleUITests.testDefaultSize | iphone17 | Passed | 18.4 |
-| 화면 | FontScaleUITests.testLargestAccessibilitySizeIsCappedAtTwo | iphone17 | Passed | 18.7 |
-| 화면 | FontScaleUITests.testLargestStandardSize | iphone17 | Passed | 19.3 |
-| 화면 | KeyboardInputTests.testFacilitatorScreenAcceptsTyping | iphone17 | Passed | 10.1 |
-| 화면 | NetworkProbeTests.testControlRunWithoutRulesWouldReachListener | iphone17 | Passed | 17.6 |
-| 화면 | NetworkProbeTests.testRequestsToOutsideAreBlocked | iphone17 | Passed | 18.3 |
+| 화면 | AccessibilityAuditTests.testAuditKeyScreens | iphone17 | Passed | 142.2 |
+| 화면 | BridgeIntegrationTests.testFutureVersionIsArchived | iphone17 | Passed | 5.1 |
+| 화면 | BridgeIntegrationTests.testLoadFailureShowsMessage | iphone17 | Passed | 6.5 |
+| 화면 | BridgeIntegrationTests.testSaveFailureShowsNotice | iphone17 | Passed | 14.7 |
+| 화면 | BridgeIntegrationTests.testUnreadableStoreIsArchivedNotOverwritten | iphone17 | Passed | 6.3 |
+| 화면 | CaptureTests.testCaptureScreens | iphone17 | Passed | 159.9 |
+| 화면 | FlowTests.testExampleAFlow | iphone17 | Passed | 158.2 |
+| 화면 | FontScaleUITests.testAccessibilitySize | iphone17 | Passed | 19.6 |
+| 화면 | FontScaleUITests.testDefaultSize | iphone17 | Passed | 19.5 |
+| 화면 | FontScaleUITests.testLargestAccessibilitySizeIsCappedAtTwo | iphone17 | Passed | 19.5 |
+| 화면 | FontScaleUITests.testLargestStandardSize | iphone17 | Passed | 20.4 |
+| 화면 | KeyboardInputTests.testFacilitatorScreenAcceptsTyping | iphone17 | Passed | 10.2 |
+| 화면 | NetworkProbeTests.testControlRunWithoutRulesWouldReachListener | iphone17 | Passed | 18.7 |
+| 화면 | NetworkProbeTests.testRequestsToOutsideAreBlocked | iphone17 | Passed | 18.7 |
 | 화면 | RestartTests.testGradedRecordSurvivesRestart | iphone17 | Passed | 124.1 |
-| 화면 | RestartTests.testResumeAfterRestartKeepsTwelveAnswers | iphone17 | Passed | 49.2 |
-| 화면 | RhythmTests.testDoubleTapOnMarkCellMakesGuess | iphone17 | Passed | 121.7 |
-| 화면 | RhythmTests.testKeysAfterFixingNineAreNotEntered | iphone17 | Passed | 46.8 |
-| 화면 | RhythmTests.testTapsAfterLastItemDoNotPressReviewButtons | iphone17 | Passed | 115.6 |
+| 화면 | RestartTests.testResumeAfterRestartKeepsTwelveAnswers | iphone17 | Passed | 48.8 |
+| 화면 | RhythmTests.testDoubleTapOnMarkCellMakesGuess | iphone17 | Passed | 120.8 |
+| 화면 | RhythmTests.testKeysAfterFixingNineAreNotEntered | iphone17 | Passed | 46.9 |
+| 화면 | RhythmTests.testTapsAfterLastItemDoNotPressReviewButtons | iphone17 | Passed | 115.1 |
 | 화면 | StartScreenTests.testStartScreenAppears | iphone17 | Passed | 6.9 |
-| 화면(어두운 화면) | CaptureTests.testCaptureScreens | iphone17 | Passed | 160.3 |
-| 화면 | FontScaleUITests.testLiveChangeIsSentToWeb | iphone17 | Passed | 5.8 |
-| 화면 | CaptureTests.testCaptureScreens | iphonese | Passed | 161.6 |
-| 화면 | FlowTests.testExampleAFlow | iphonese | Passed | 157.5 |
-| 화면 | SmallScreenTests.testInputScreenFitsWithoutScrolling | iphonese | Passed | 102.6 |
-| 화면(어두운 화면) | CaptureTests.testCaptureScreens | iphonese | Passed | 161.0 |
+| 화면(어두운 화면) | CaptureTests.testCaptureScreens | iphone17 | Passed | 160.4 |
+| 화면 | FontScaleUITests.testLiveChangeIsSentToWeb | iphone17 | Passed | 6.0 |
+| 화면 | CaptureTests.testCaptureScreens | iphonese | Passed | 161.4 |
+| 화면 | FlowTests.testExampleAFlow | iphonese | Passed | 156.7 |
+| 화면 | SmallScreenTests.testInputScreenFitsWithoutScrolling | iphonese | Passed | 101.3 |
+| 화면(어두운 화면) | CaptureTests.testCaptureScreens | iphonese | Passed | 160.1 |
 | 화면 | StartScreenTests.testStartScreenAppears | ipad | Passed | 7.4 |
-| 화면(Release) | ReleaseSmokeTests.testReleaseBuildRunsWithoutTesterScreensOrDebugHooks | iphone17 | Passed | 8.6 |
-| 화면(참고) | FlowTests.testExampleAFlow | ios18 | Passed | 156.9 |
+| 화면(Release) | ReleaseSmokeTests.testReleaseBuildRunsWithoutTesterScreensOrDebugHooks | iphone17 | Passed | 18.1 |
+| 화면(참고) | FlowTests.testExampleAFlow | ios18 | Failed | 550.3 |
+|  | 메시지 |  | Failed to tap "21번, 넣은 답 5, 표시 없음" Button: Timed out while synthesizing event. | |
 
 ## 다리와 껍데기 통합 확인(추가)
 
@@ -159,12 +160,11 @@
 
 ## 숫자 기록
 
-- {"device": "iphonese", "haptics": 49, "kind": "flow", "seconds": 152.69555604457855, "steps": 3}
+- {"device": "iphonese", "haptics": 49, "kind": "flow", "seconds": 151.11409902572632, "steps": 3}
 - {"checked": [{"overflow": {"body": 0, "doc": 0, "h": 667, "w": 375}, "screen": "객관식"}, {"overflow": {"body": 0, "doc": 0, "h": 667, "w": 375}, "screen": "잠금"}, {"overflow": {"body": 0, "doc": 0, "h": 667, "w": 375}, "screen": "단답형"}], "device": "iphonese", "kind": "small", "window": "375.0x667.0"}
-- {"device": "ios18", "haptics": 49, "kind": "flow", "seconds": 151.753653049469, "steps": 3}
 - {"category": "live-accessibility-medium", "kind": "font", "rootPx": 26.352942}
 - {"device": "ipad", "kind": "start", "runnerIdiom": "phone", "window": "663.0x1180.0"}
-- {"device": "iphone17", "haptics": 49, "kind": "flow", "seconds": 152.70906400680542, "steps": 3}
+- {"device": "iphone17", "haptics": 49, "kind": "flow", "seconds": 152.87625002861023, "steps": 3}
 - {"category": "UICTContentSizeCategoryAccessibilityM", "fontScale": 1.6470588235294117, "kind": "font", "rootPx": 26.352942}
 - {"category": "UICTContentSizeCategoryL", "fontScale": 1, "kind": "font", "rootPx": 16}
 - {"category": "UICTContentSizeCategoryAccessibilityXXXL", "fontScale": 2, "kind": "font", "rootPx": 32}
@@ -172,10 +172,10 @@
 - {"fieldMaxY": 260, "keyboardMinY": 583, "keyboardShown": true, "kind": "keyboard"}
 - {"blockedNavigations": 7, "connections": 30, "kind": "network", "mode": "control", "requests": 30}
 - {"blockedNavigations": 7, "blockedWindows": 0, "connections": 0, "kind": "network", "mode": "blocked", "outcomes": {"beacon": false, "eventSource": "error", "fetch": "error:Load failed", "fetchHttps": "error:Load failed", "iframe": "timeout", "image": "error", "script": "error", "style": "error", "websocket": "error", "windowOpenReturnedNull": true, "xhr": "error"}, "preconnects": 1, "requests": []}
-- {"case": "resume12", "kind": "restart", "secondsUntilSaved": 0.002238035202026367}
-- {"case": "marks-double", "fastDoubleTapEvents": ["touchstart:0", "touchend:0", "touchstart:0", "touchend:0", "click:2", "dblclick:2"], "fastDoubleTapLabel": "20번, 넣은 답 3, 고민", "firstClickAfterTouchEndMs": 1.999999999985448, "gaps": [0.39721596240997314, 0.39596593379974365], "kind": "rhythm"}
-- {"case": "lock", "gaps": [0.37462806701660156, 0.3882479667663574, 0.39185500144958496, 0.3943309783935547], "kind": "rhythm"}
-- {"case": "last-item", "gaps": [0.3791840076446533, 0.3997519016265869, 0.4070650339126587, 0.4293069839477539, 0.39010298252105713, 0.4013950824737549, 0.3954489231109619, 0.39125001430511475], "kind": "rhythm", "notices": 0}
+- {"case": "resume12", "kind": "restart", "secondsUntilSaved": 0.0021059513092041016}
+- {"case": "marks-double", "fastDoubleTapEvents": ["touchstart:0", "touchend:0", "touchstart:0", "touchend:0", "click:2", "dblclick:2"], "fastDoubleTapLabel": "20번, 넣은 답 3, 고민", "firstClickAfterTouchEndMs": 2, "gaps": [0.40042901039123535, 0.4177500009536743], "kind": "rhythm"}
+- {"case": "lock", "gaps": [0.37783193588256836, 0.39677703380584717, 0.3998500108718872, 0.38359498977661133], "kind": "rhythm"}
+- {"case": "last-item", "gaps": [0.3826190233230591, 0.39675700664520264, 0.43607401847839355, 0.39078497886657715, 0.39857399463653564, 0.3904210329055786, 0.40692996978759766, 0.4014800786972046], "kind": "rhythm", "notices": 0}
 - {"device": "iphone17", "kind": "start", "runnerIdiom": "phone", "window": "402.0x874.0"}
 
 ## 캡처

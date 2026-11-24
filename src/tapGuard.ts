@@ -489,8 +489,15 @@ function fillMissing(e: MouseEvent, target: Element, control: Element, times: nu
 }
 
 function onClick(e: MouseEvent): void {
-  // 키보드나 스크립트로 낸 click(detail 0)은 누른 자리가 없으므로 건드리지 않는다.
-  if (e.detail === 0) return;
+  // 키보드나 스크립트로 낸 click(detail 0)은 누른 자리가 없으므로 채우거나 막지 않는다. 다만 받은 click 이므로 손뗌은 다시 센다
+  // (VoiceOver 의 누르기는 흉내 touch 이벤트 뒤에 detail 0 click 을 보낸다. 그 손뗌이 남아 다음 묶음에 섞이지 않게 한다).
+  if (e.detail === 0) {
+    if (!filling && !redispatching) {
+      lifts.pointer = [];
+      lifts.touch = [];
+    }
+    return;
+  }
   // 빠진 누름 채우기. 만들어 보낸 click 은 이 함수를 다시 지나며(filling) 아래의 보호를 그대로 거친다.
   let lost = false;
   // 지금 click 이 실제로 닿는 요소. 채운 누름으로 화면이 바뀌었으면 진짜 click 이 차례로 다 왔을 때 이 click 이 닿았을 요소

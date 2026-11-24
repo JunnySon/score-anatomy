@@ -839,6 +839,11 @@ a {
   padding: 0 var(--s3);
 }
 
+/* 표시 화면에서 보이기 전의 "채점한 뒤에 표시한 기록이에요" 줄. 자리만 잡고 보이지 않는다(src/screens/Marks.tsx, 별도 검토 C10). */
+.note--ghost {
+  visibility: hidden;
+}
+
 /* 입력 확인과 표시 격자 */
 .grid5 {
   display: grid;

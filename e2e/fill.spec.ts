@@ -346,6 +346,22 @@ const CASES: Case[] = [
     // 채운 click(detail 1)으로 누른 글자 요소가 빠져서, 지금 click(detail 2)을 그 자리의 지금 요소로 다시 보낸다.
     loneFills: [1, 2],
   },
+  {
+    name: '채점한 기록에서 처음 바꾸는 표시 칸의 위쪽(둘 다 "찍음", 안내 줄이 생겨도 칸 격자가 밀리지 않음)',
+    setup: async (page) => {
+      await seedAndOpen(page, all, '/marks', { gradedAt: '2026-11-22T10:05:00.000Z' });
+      await expect(page.getByTestId('after-grading-note')).toHaveCount(0);
+      // 8번 칸의 위 가장자리에서 10px 아래를 누른다. 첫 누름으로 안내 줄이 새로 생겨 격자가 내려가면, 진짜 click 이 다 오는 경우의
+      // 둘째 누름은 윗줄의 3번 칸에 닿고 채운 경우의 지금 click 은 버려진다(별도 검토 C10).
+      const box = (await page.locator('[data-mark-cell="8"]').boundingBox())!;
+      return { x: box.x + box.width / 2, y: box.y + 10 };
+    },
+    check: async (page) => {
+      await expect(page.locator('[data-mark-cell="8"]')).toHaveAttribute('data-mark', 'guess');
+      await expect(page.getByTestId('after-grading-note')).toBeVisible();
+      expect(((await snapshot(page)) as { marks: unknown }).marks).toEqual({ 8: 'guess' });
+    },
+  },
 ];
 
 /** 누름 열을 보내고 막기가 풀릴 때까지 기다린 뒤 끝 상태를 읽는다. */

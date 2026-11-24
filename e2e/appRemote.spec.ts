@@ -630,7 +630,7 @@ test('app-test: 학생이 누르지 않았는데 넘겨받은 새 자료로 목�
   await again.close();
 });
 
-test('app-test: 다시 풀기에서 정정으로 지금 문항이 옮겨 가면 0.5초 동안 숫자 키도 받지 않고, 옮겼다는 알림은 맞춰 보기 전까지 남으며, 맞춰 본 결과가 정정으로 빠진 뒤 새로 고른 답도 기록하지 않았다고 알린다(2차 검토 P1, P3)', async ({
+test('app-test: 다시 풀기에서 정정으로 지금 문항이 옮겨 가면 0.5초 동안 숫자 키도 받지 않고, 옮겼다는 알림은 맞춰 보기 전까지 남되 빠진 문항이 다시 목록에 들어오면 사라지며, 맞춰 본 결과가 정정으로 빠진 뒤 새로 고른 답도 기록하지 않았다고 알린다(2차 검토 P1, P3, 2차 뒤 확인 X4)', async ({
   page,
 }) => {
   const record = sessionRecord('s-retry2', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
@@ -664,17 +664,24 @@ test('app-test: 다시 풀기에서 정정으로 지금 문항이 옮겨 가면 
   await expect(page.locator('.tap-shield')).toHaveCount(0);
   await tapKey(page, 2);
   await expect(page.getByTestId('retry-moved')).toHaveText(S.retry.moved(15, true));
+  // 15번 정답을 처음대로 되돌린 판(정답 판 번호 4)이 오면 15번이 다시 목록에 들어와서, 빠졌다는 알림은 지금 목록과 맞지 않아 사라진다(2차 뒤 확인 X4).
+  await sendRemote(page, remoteData(4, AT_2010, [correctedExam(4, { 7: 4 }, { answersRev: 4 })]));
+  await expect(page.getByTestId('retry-progress')).toHaveText(S.retry.progress(3, 3));
+  await expect(page.getByTestId('retry-no')).toHaveText('29번');
+  await expect(page.getByTestId('retry-moved')).toHaveCount(0);
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('2');
+  await expect(page.locator('.tap-shield')).toHaveCount(0);
   for (const d of [5, 7]) await tapKey(page, d);
   await expect(page.getByTestId('entry').locator('.num')).toHaveText('257');
   await tapKey(page, 'go');
   await expect(page.getByTestId('retry-result')).toHaveAttribute('data-correct', 'true');
   await expect(page.getByTestId('retry-moved')).toHaveCount(0);
   await expectCleanText(page, '다시 풀기(옮긴 뒤 맞춰 봄)');
-  // 기록: 15번은 처음 맞춰 본 기록(정답 판 번호 1) 하나뿐이고 4는 기록하지 않았다. 29번은 정답 판 번호 3의 기록이다.
+  // 기록: 15번은 처음 맞춰 본 기록(정답 판 번호 1) 하나뿐이고 4는 기록하지 않았다. 29번은 정답 판 번호 4의 기록이다.
   const last = (await lastRecord(page, 's-retry2'))!;
   expect(Object.keys(last.retries).sort()).toEqual(['15', '29']);
   expect(last.retries['15']!.answersRev ?? 1).toBe(1);
-  expect(last.retries['29']).toMatchObject({ correct: true, answersRev: 3 });
+  expect(last.retries['29']).toMatchObject({ correct: true, answersRev: 4 });
   expectSameInput(await savedRecords(page, 's-retry2'), record.answers, record.marks);
   expectNoOtherRequests(page);
 });
@@ -717,6 +724,63 @@ test('app-test: 새 자료로 같은 자리 버튼의 뜻이나 자리가 바뀌
   await expectHash(again, '/');
   await again.getByRole('button', { name: S.start.resume }).click();
   await expectHash(again, '/anatomy');
+  expect(errors, '다시 연 앱의 콘솔 오류').toEqual([]);
+  expectNoOtherRequests(page, again);
+  await again.close();
+});
+
+test('app-test: 재풀이에서 새 판으로 화면 전체가 막힌 동안 받은 숫자 키는 막기를 풀지 않고 버린 누름 알림도 닫지 않으며, 맞춰 본 결과가 판이 달라 빠져 키패드가 다시 나온 때는 숫자 키도 받지 않는다(2차 뒤 확인 X2, X3, X5)', async ({
+  page,
+  context,
+}) => {
+  // 단답형 문항(t09 의 첫 문항)에 1을 넣는 중 같은 시험의 새 판(판 번호만 오름, 다시 풀 목록 그대로)이 오면 화면 전체를 0.5초 막는다.
+  const record = sessionRecord('s-retry3', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+  await openBundle(page, 'app-test', { bridge: 2, store: storeOf([record]), remote: remoteData(1, AT_1710, [testExam()]) }, '/retry/t09');
+  await expectHash(page, '/retry/t09');
+  const no = (await page.getByTestId('retry-no').textContent())!;
+  await tapKey(page, 1);
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('1');
+  await sendRemote(page, remoteData(2, AT_2010, [testExam({ rev: 2 })]));
+  await expect(page.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  // 지우기는 버리고(알림), 이어 누른 숫자 4는 받지만 막기를 풀지 않아서 바로 이어 누른 "답 맞춰 보기"도 버린다.
+  await clickCenter(page, page.locator('[data-key="erase"]'));
+  await clickCenter(page, page.locator('[data-key="4"]'));
+  await clickCenter(page, page.locator('[data-key="go"]'));
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('14');
+  await expect(page.getByTestId('retry-result')).toHaveCount(0);
+  // 숫자 키를 받아도 버린 누름 알림은 닫지 않는다(닫으면 그 뒤에 버린 "답 맞춰 보기"가 아무 표시 없이 사라진다).
+  await expect(page.locator('.tap-notice')).toHaveCount(1);
+  // 막기가 끝나면 맞춰 볼 수 있다. 그 문항의 기록은 막기 뒤에 누른 맞춰 보기 하나다.
+  await expect(page.locator('.tap-shield')).toHaveCount(0);
+  await tapKey(page, 'go');
+  await expect(page.getByTestId('retry-result')).toHaveCount(1);
+  expect((await lastRecord(page, 's-retry3'))!.retries[no.replace('번', '')]).toMatchObject({ attempts: 1 });
+
+  // t03 에서 15번과 29번을 맞춰 본 뒤 결과 아래 버튼("계단으로 돌아가기") 자리를 적어 둔다. 7번 정답을 정정한 판이 오면 29번은 목록에 남고
+  // 맞춰 본 결과가 판이 달라 빠져 키패드가 다시 나온다. 그 자리에 온 숫자 키는 받지 않는다(결과 아래 버튼을 보고 누른 것이다).
+  const again = await context.newPage();
+  const errors = errorsOf(again);
+  const other = sessionRecord('s-retry4', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+  await openBundle(again, 'app-test', { bridge: 2, store: storeOf([other]), remote: remoteData(1, AT_1710, [testExam()]) }, '/retry/t03');
+  await expectHash(again, '/retry/t03');
+  await expect(again.getByTestId('retry-no')).toHaveText('15번');
+  await tapKey(again, 3);
+  await tapKey(again, 'go');
+  await again.getByTestId('retry-next').click();
+  await expect(again.getByTestId('retry-no')).toHaveText('29번');
+  for (const d of [2, 7]) await tapKey(again, d);
+  await tapKey(again, 'go');
+  await expect(again.getByTestId('retry-result')).toHaveCount(1);
+  const nextBox = (await again.getByTestId('retry-next').boundingBox())!;
+  const spot = { x: nextBox.x + nextBox.width / 2, y: nextBox.y + nextBox.height / 2 };
+  await sendRemote(again, remoteData(2, AT_2010, [correctedExam(2, { 7: 4 })]));
+  await expect(again.getByTestId('retry-result')).toHaveCount(0);
+  await expect(again.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  expect(await again.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-tap-safe]') !== null, spot)).toBe(true);
+  await again.mouse.click(spot.x, spot.y);
+  await expect(again.getByTestId('entry').locator('.num')).toHaveText('27');
+  await expect(again.locator('.tap-shield')).toHaveCount(0);
+  await expect(again.getByTestId('entry').locator('.num')).toHaveText('27');
   expect(errors, '다시 연 앱의 콘솔 오류').toEqual([]);
   expectNoOtherRequests(page, again);
   await again.close();

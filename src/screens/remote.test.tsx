@@ -269,6 +269,8 @@ describe('넘겨받은 시험 자료와 화면(작업 지시서 3의 5-2, 5-3)',
     const marksKey = (exam: Exam) =>
       shiftOf(treeOf(() => Marks({ h: { isDemo: false, session: open, exam, update: () => {}, path: (p) => p } })));
     expectChanged('표시', marksKey(unreleasedA()), marksKey(releasedA()));
+    // 표시 화면은 정답 공개 여부만 본다. 판 번호만 오른 새 판에는 막지 않는다(찍음 표시의 두 번 누름이 갈리지 않게, 2차 뒤 확인 X1).
+    expect(marksKey(remoteExam({ rev: 3 }))).toBe(marksKey(releasedA()));
     // 채점한 기록의 화면 다섯: 같은 시험의 새 판(판 번호와 정답 판 번호를 올리고 15번 정답을 고친 테스트 전용 판)이 오면 값이 바뀐다.
     const before = releasedA();
     const after = remoteExam({

@@ -8,6 +8,9 @@
   captures <원본 폴더> <docs/screens-ios> <출력.json>  캡처 모으기와 빠진 것, 겹친 것 검사
   extras <runs 폴더> <docs/screens-ios/extra>    목록 밖 참고 캡처 모으기
   render <결과 폴더> <문서 경로>             docs/ios_검증결과.md 쓰기
+
+작업 지시서 4(2부)에서 더한 것: 받는 쪽(ios/ScoreAnatomy/Remote) 검사. 껍데기가 통신하는 곳은 ReleaseFetcher.swift 한 파일뿐이어야 하고,
+Release 앱에 테스트 전용 키와 App Transport Security 예외가 없어야 한다(17~22번).
 """
 import hashlib
 import json
@@ -18,6 +21,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import unicodedata
 
 # 금지 문자는 글자 대신 코드 번호로 적는다(이 파일 자신이 검사에 걸리지 않게).
 FORBIDDEN = {chr(c): f"U+{c:04X}" for c in (0x2014, 0x2013, 0x00B7, 0x318D, 0x30FB, 0x2027)}
@@ -47,7 +51,12 @@ BINARY_SYMBOLS = {
     "notification": ["_OBJC_CLASS_$_UNUserNotificationCenter"],
     "requiredReason": ["_OBJC_CLASS_$_NSUserDefaults", "_$s10Foundation12UserDefaultsC", "_stat", "_fstat", "_lstat", "_fstatat", "_getattrlist", "_fgetattrlist", "_getattrlistbulk", "_getattrlistat", "_mach_absolute_time", "_statfs", "_fstatfs", "_statvfs", "_fstatvfs"],
 }
-DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "-SAEventLog", "__saEventLog", "shell-stats.json", "probe-network.json", "setInspectable:"]
+DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "-SAEventLog", "__saEventLog", "shell-stats.json", "probe-network.json", "setInspectable:",
+                 "-SAExamURL", "-SAExamKeyFile", "-SAExamInterval"]
+# 껍데기가 통신하는 곳(작업 지시서 4의 3-3). 네트워크 API 는 이 파일에서만 쓴다.
+NETWORK_ALLOWED_FILE = os.path.join("ios", "ScoreAnatomy", "Remote", "ReleaseFetcher.swift")
+# Release 바이너리에서 받아들이는 네트워크 기호(URLSession). 소켓, Network 프레임워크 같은 다른 길은 여전히 0 이어야 한다.
+ALLOWED_NETWORK_SYMBOLS = ("_OBJC_CLASS_$_NSURLSession", "_$s10Foundation10URLSessionC")
 
 
 def load(path, default=None):
@@ -115,7 +124,7 @@ def text_files(root, exts):
 
 def cmd_scan(ios_dir, repo_dir, out):
     shell_dir = os.path.join(ios_dir, "ScoreAnatomy")
-    report = {"forbidden": [], "network": [], "notification": [], "tracking": [], "permissionApis": [], "requiredReason": {}, "httpLiterals": [], "visibleText": {}, "packages": [], "scanned": 0}
+    report = {"forbidden": [], "network": [], "networkAllowed": [], "notification": [], "tracking": [], "permissionApis": [], "requiredReason": {}, "httpLiterals": [], "visibleText": {}, "packages": [], "scanned": 0}
 
     # 금지 문자: 껍데기 소스와 리소스, 테스트, 스크립트, 설정, iOS 문서.
     targets = list(text_files(ios_dir, {".swift", ".plist", ".xcprivacy", ".json", ".yml", ".xcconfig", ".sh", ".py", ".md", ".pbxproj", ".xcscheme", ".strings"}))
@@ -140,7 +149,11 @@ def cmd_scan(ios_dir, repo_dir, out):
         for key, patterns in (("network", NETWORK_APIS), ("notification", NOTIFICATION_APIS), ("tracking", TRACKING_APIS), ("permissionApis", PERMISSION_APIS)):
             for pattern in patterns:
                 for m in re.finditer(pattern, code):
-                    report[key].append({"file": rel, "api": m.group(0), "debugOnly": debug_only})
+                    entry = {"file": rel, "api": m.group(0), "debugOnly": debug_only}
+                    if key == "network" and unicodedata.normalize("NFC", rel) == NETWORK_ALLOWED_FILE:
+                        report["networkAllowed"].append(entry)
+                    else:
+                        report[key].append(entry)
         for category, patterns in REQUIRED_REASON.items():
             for pattern in patterns:
                 for m in re.finditer(pattern, code):
@@ -161,7 +174,7 @@ def cmd_scan(ios_dir, repo_dir, out):
         "forbidden": sum(t.count(ch) for t in visible for ch in FORBIDDEN),
     }
     report["permissionKeys"] = sorted(k for k in info if re.match(r"^NS.*UsageDescription$", k))
-    report["infoPlist"] = {k: info.get(k) for k in ("CFBundleDisplayName", "ITSAppUsesNonExemptEncryption", "UISupportedInterfaceOrientations", "LSRequiresIPhoneOS")}
+    report["infoPlist"] = {k: info.get(k) for k in ("CFBundleDisplayName", "ITSAppUsesNonExemptEncryption", "UISupportedInterfaceOrientations", "LSRequiresIPhoneOS", "NSAppTransportSecurity", "SAExamBaseURL")}
 
     # 외부 패키지: Swift Package, CocoaPods, Carthage.
     pbx = open(os.path.join(ios_dir, "ScoreAnatomy.xcodeproj", "project.pbxproj"), encoding="utf-8").read()
@@ -269,6 +282,13 @@ def cmd_app(app, manifest_path, kind, out):
     report["info"] = {k: info.get(k) for k in ("CFBundleDisplayName", "CFBundleShortVersionString", "CFBundleVersion", "CFBundleIdentifier", "MinimumOSVersion", "UIDeviceFamily", "DTSDKName", "DTXcode", "DTXcodeBuild", "DTPlatformVersion", "ITSAppUsesNonExemptEncryption")}
     report["permissionKeys"] = sorted(k for k in info if re.match(r"^NS.*UsageDescription$", k))
     report["versionMatchesManifest"] = info.get("CFBundleShortVersionString") == manifest.get("version")
+    # 작업 지시서 4의 3-3: App Transport Security 예외, 받는 주소, 넣은 공개 키, 앱 안 모든 파일의 테스트 전용 키.
+    report["ats"] = info.get("NSAppTransportSecurity")
+    report["examBaseURL"] = info.get("SAExamBaseURL")
+    key_file = os.path.join(app, "exam-public-key.txt")
+    report["examKeyFileBytes"] = os.path.getsize(key_file) if os.path.isfile(key_file) else None
+    scan = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "exam_key.py"), "selftest", app], capture_output=True, text=True)
+    report["testKeyScan"] = {"exit": scan.returncode, "lines": scan.stdout.strip().splitlines()[-6:]}
     libs = []
     symbols = {}
     for binary in macho_binaries(app):
@@ -417,8 +437,9 @@ def cmd_render(out_dir, doc_path):
     live = load(os.path.join(out_dir, "ui-live.json"), {})
     se_ui = load(os.path.join(out_dir, "ui-se.json"), {})
     ipad_ui = load(os.path.join(out_dir, "ui-ipad.json"), {})
-    old_ui = load(os.path.join(out_dir, "ui-old.json"), {})
     ios18_ui = load(os.path.join(out_dir, "ui-ios18.json"), {})
+    held18_ui = load(os.path.join(out_dir, "ui-held18.json"), {})
+    held26_ui = load(os.path.join(out_dir, "ui-held26.json"), {})
     caps = load(os.path.join(out_dir, "captures.json"), {})
     rows = metrics(out_dir)
     audit = load(os.path.join(out_dir, "runs", "main", "accessibility-audit-iphone17.json"), [])
@@ -440,7 +461,7 @@ def cmd_render(out_dir, doc_path):
 
     # 2 단위
     unit_tests = tests_of(unit)
-    add(2, "단위 테스트", "통과" if all_passed(unit_tests, 39) else "실패", fmt_tests(unit_tests), "39개 이상 실행, 실패 0, 건너뜀 0")
+    add(2, "단위 테스트", "통과" if all_passed(unit_tests, 92) else "실패", fmt_tests(unit_tests), "92개 이상 실행, 실패 0, 건너뜀 0(받는 쪽 50개 포함, 17번)")
 
     main_tests = tests_of(main_ui)
 
@@ -462,15 +483,18 @@ def cmd_render(out_dir, doc_path):
     release_reason_symbols = release_app.get("symbols", {}).get("requiredReason", [])
     info = scan.get("infoPlist", {})
     http_release = [h for h in scan.get("httpLiterals", []) if not h.get("debugOnly")]
-    static_ok = bool(scan) and bool(release_app) and not scan.get("network") and not scan.get("notification") and not scan.get("tracking") and not scan.get("permissionApis") \
+    net_symbols = release_app.get("symbols", {}).get("network", [])
+    other_net_symbols = [s for s in net_symbols if not any(s.split(": ")[-1].startswith(a) for a in ALLOWED_NETWORK_SYMBOLS)]
+    static_ok = bool(scan) and bool(release_app) and not scan.get("network") and bool(scan.get("networkAllowed")) and not scan.get("notification") and not scan.get("tracking") and not scan.get("permissionApis") \
         and not scan.get("packages") and not scan.get("permissionKeys") and not release_app.get("permissionKeys") and release_app.get("privacyManifest") \
         and pm.get("tracking") is False and not pm.get("trackingDomains") and not pm.get("collected") and len(pm.get("accessedCategories", [])) == found_reason == 0 \
-        and not release_reason_symbols and not release_app.get("symbols", {}).get("network") and not release_app.get("symbols", {}).get("notification") \
+        and not release_reason_symbols and not other_net_symbols and not release_app.get("symbols", {}).get("notification") \
         and info.get("ITSAppUsesNonExemptEncryption") is False and info.get("UISupportedInterfaceOrientations") == ["UIInterfaceOrientationPortrait"] and not http_release \
+        and info.get("NSAppTransportSecurity") is None and release_app.get("ats") is None \
         and all(sum(v.values()) == 0 for v in scan.get("bundleLinks", {"x": {"missing": 1}}).values())
     add(6, "통신과 권한", "통과" if all_passed(net, 2) and static_ok else "실패",
-        fmt_tests(net) + network_numbers(rows) + (" 소스 검사 결과가 없다." if not scan else f" 정적 검사: 네트워크 API {len(scan.get('network', []))}건, 외부 패키지 {len(scan.get('packages', []))}개, 권한 문구 {len(scan.get('permissionKeys', []))}개(Release Info.plist {len(release_app.get('permissionKeys', []))}개), 알림 API {len(scan.get('notification', []))}건, 추적 API {len(scan.get('tracking', []))}건, 권한이 필요한 기기 API {len(scan.get('permissionApis', []))}건, DEBUG 밖 소스의 http(s) 주소 글자 {len(http_release)}건, Release 바이너리의 네트워크 기호 {len(release_app.get('symbols', {}).get('network', []))}건, 웹 묶음 안의 바깥 링크와 새 창과 미리 연결 표시 {sum(sum(v.values()) for v in scan.get('bundleLinks', {}).values())}건. PrivacyInfo.xcprivacy {'있음' if release_app.get('privacyManifest') else '없음'}(추적 {pm.get('tracking')}, 추적 도메인 {len(pm.get('trackingDomains', []))}개, 수집 자료 {len(pm.get('collected', []))}개, 사유 API 선언 {len(pm.get('accessedCategories', []))}개). 소스에서 찾은 사유 API 이름 {found_reason}건, Release 바이너리의 사유 API 기호 {len(release_reason_symbols)}건. Info.plist: 암호화 사용 {info.get('ITSAppUsesNonExemptEncryption')}, 방향 {info.get('UISupportedInterfaceOrientations')}"),
-        "탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 정적 검사 모두 0, 개인정보 매니페스트 있음(추적 없음, 수집 없음), 찾은 사유 API 와 선언이 같음(둘 다 0), 암호화 사용 NO, 세로 고정")
+        fmt_tests(net) + network_numbers(rows) + (" 소스 검사 결과가 없다." if not scan else f" 정적 검사: 네트워크 API 가 ReleaseFetcher.swift 밖에 {len(scan.get('network', []))}건(안에 {len(scan.get('networkAllowed', []))}건: {', '.join(sorted({n['api'] for n in scan.get('networkAllowed', [])}))}), 외부 패키지 {len(scan.get('packages', []))}개, 권한 문구 {len(scan.get('permissionKeys', []))}개(Release Info.plist {len(release_app.get('permissionKeys', []))}개), 알림 API {len(scan.get('notification', []))}건, 추적 API {len(scan.get('tracking', []))}건, 권한이 필요한 기기 API {len(scan.get('permissionApis', []))}건, DEBUG 밖 소스의 http(s) 주소 글자 {len(http_release)}건, Release 바이너리의 네트워크 기호 {len(net_symbols)}건(URLSession 말고 {len(other_net_symbols)}건), App Transport Security 예외(소스 Info.plist, Release 앱) {'없음' if info.get('NSAppTransportSecurity') is None and release_app.get('ats') is None else '있음'}, 웹 묶음 안의 바깥 링크와 새 창과 미리 연결 표시 {sum(sum(v.values()) for v in scan.get('bundleLinks', {}).values())}건. PrivacyInfo.xcprivacy {'있음' if release_app.get('privacyManifest') else '없음'}(추적 {pm.get('tracking')}, 추적 도메인 {len(pm.get('trackingDomains', []))}개, 수집 자료 {len(pm.get('collected', []))}개, 사유 API 선언 {len(pm.get('accessedCategories', []))}개). 소스에서 찾은 사유 API 이름 {found_reason}건, Release 바이너리의 사유 API 기호 {len(release_reason_symbols)}건. Info.plist: 암호화 사용 {info.get('ITSAppUsesNonExemptEncryption')}, 방향 {info.get('UISupportedInterfaceOrientations')}"),
+        "웹뷰 탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 네트워크 API 는 ReleaseFetcher.swift 에서만(작업 지시서 4), 그 밖의 정적 검사 모두 0, Release 바이너리의 네트워크 기호는 URLSession 뿐, ATS 예외 없음, 개인정보 매니페스트 있음(추적 없음, 수집 없음), 찾은 사유 API 와 선언이 같음(둘 다 0), 암호화 사용 NO, 세로 고정")
 
     font = suite("FontScaleUITests")
     live_tests = tests_of(live)
@@ -491,16 +515,15 @@ def cmd_render(out_dir, doc_path):
     else:
         add(9, "iPad(아이폰 앱 호환 방식)", "통과" if all_passed(ipad, 1) else "실패", f"{env.get('ipadName', '')}: " + fmt_tests(ipad) + ipad_numbers(rows), "시작 화면 테스트 1개 통과")
 
+    # 10 최소 버전: 작업 지시서 4의 3-1 에서 최소 버전을 iOS 18.0 으로 올렸다. 이 맥의 iOS 18 런타임(18.4)으로 돌려 판정에 넣는다.
     ref = tests_of(ios18_ui)
-    ref_note = (f" 참고(iOS {env.get('ios18Runtime')}, 잠듦 여부는 docs/ios_진행기록.md): 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름(3-4의 1번, 6번, 7번) {fmt_tests(suite('FastTapTests', ref))}."
-                if env.get("ios18Runtime") else "")
-    if env.get("ios17Runtime"):
-        old = tests_of(old_ui)
-        old_ok = all_passed(suite("FlowTests", old), 1) and all_passed(suite("RestartTests", old), 2) and all_passed(suite("FastTapTests", old), 15)
-        add(10, "최소 버전(iOS 17)", "통과" if old_ok else "실패", f"iOS {env.get('ios17Runtime')}: 흐름 {fmt_tests(suite('FlowTests', old))}, 다시 켜기 {fmt_tests(suite('RestartTests', old))}, 빠른 누름 {fmt_tests(suite('FastTapTests', old))}." + ref_note,
-            "iOS 17 에서 흐름, 다시 켜기, 빠른 누름 통과")
+    if env.get("ios18Runtime"):
+        min_ok = all_passed(suite("FlowTests", ref), 1) and all_passed(suite("RestartTests", ref), 2) and all_passed(suite("FastTapTests", ref), 16) and all_passed(suite("RemoteFetchTests", ref), 5)
+        add(10, "최소 버전(iOS 18)", "통과" if min_ok else "실패",
+            f"iOS {env.get('ios18Runtime')}(iPhone 16): 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름 {fmt_tests(suite('FastTapTests', ref))}, 받기 화면 {fmt_tests(suite('RemoteFetchTests', ref))}. iOS 18.0~18.3: 이 맥에 런타임이 없어 확인하지 못함",
+            "이 맥의 iOS 18 런타임에서 흐름 1, 다시 켜기 2, 빠른 누름 16, 받기 화면 5개 통과(18.0~18.3 은 확인하지 못함으로 적음)")
     else:
-        add(10, "최소 버전(iOS 17)", "확인하지 못함", "iOS 17 런타임이 이 맥에 없다(이 Xcode 의 xcodebuild 로는 받을 수 없었음, docs/ios_진행기록.md 3-5)." + ref_note, "iOS 17 런타임이 있으면 흐름, 다시 켜기, 빠른 누름 통과")
+        add(10, "최소 버전(iOS 18)", "확인하지 못함", "iOS 18 런타임이 이 맥에 없다.", "이 맥의 iOS 18 런타임에서 흐름, 다시 켜기, 빠른 누름, 받기 화면 통과")
 
     vis = scan.get("visibleText", {})
     commits = scan.get("commitMessages", {})
@@ -512,7 +535,7 @@ def cmd_render(out_dir, doc_path):
     issues = sum(len(a.get("issues", [])) for a in audit)
     per_screen = ", ".join(f"{a.get('screen')} {len(a.get('issues', []))}" for a in audit)
     add(12, "접근성 감사(기록용)", "통과" if all_passed(audit_tests, 1) and len(ran) == 4 else "실패",
-        f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건({per_screen}). 지난번(웹 묶음 0.2.0, 2026-11-24) 38건(시작 7, 답 입력 4, 점수 해부 7, 계단 20)",
+        f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건({per_screen}). 지난번(웹 묶음 0.3.1, 2026-11-24) 30건(시작 7, 답 입력 4, 점수 해부 7, 계단 12)",
         "네 화면 모두 감사를 돌리고 걸린 것을 기록(통과가 접근성을 보장하지 않음)")
 
     main_dark = tests_of(load(os.path.join(out_dir, "ui-main-dark.json"), {}))
@@ -557,6 +580,62 @@ def cmd_render(out_dir, doc_path):
         + ("" if env.get("seSimulator") == "ok" else f"(SE 시뮬레이터를 만들지 못함: {env.get('seSimulator')})") + ". 간격별 결과와 웹이 받은 이벤트는 아래 절",
         "모두 통과(SE 포함). 0.1초와 0.2초 간격은 만들 수 없어 확인하지 못함으로 적음. 진행 막대 끝의 틈과 아래 단서의 모양은 테스트가 찍기만 하고 사람이 확대 캡처로 판단함(docs/ios_화면비교.md)")
 
+    # 17 받는 쪽 단위 테스트(작업 지시서 4의 3-3)
+    remote_suites = ["StrictJSONTests", "ReleaseKeyTests", "ReleaseRunTests", "RemoteMergeTests", "RemoteStoreTests", "RemoteBridgeTests", "ReleaseNetworkTests"]
+    remote_unit = [x for x in unit_tests if x["suite"] in remote_suites]
+    per_suite = ", ".join(f"{s} {sum(1 for x in remote_unit if x['suite'] == s)}" for s in remote_suites)
+    unit_headers = load(os.path.join(out_dir, "runs", "unit", "request-headers.json"), {})
+    header_text = ", ".join(f"{h[0]}: {h[1]}" for h in unit_headers.get("headers", [])) or "기록 없음"
+    add(17, "추가: 받는 쪽 단위 테스트(3-3)", "통과" if all_passed(remote_unit, 50) else "실패",
+        f"{fmt_tests(remote_unit)}({per_suite}). 시험 서버가 받은 요청 머리글(iOS 26.4): {header_text}",
+        "50개 이상 실행(테스트 전용 발행물 네 가지, 받는 쪽 시험 순서 1~7, CryptoKit 이 문서의 키와 서명을 받음, 틀린 모양, 통신 경우, 보관 파일 깨짐), 실패 0, 건너뜀 0")
+
+    # 18 받는 쪽 화면 테스트
+    remote_ui = suite("RemoteFetchTests")
+    remote_ui18 = suite("RemoteFetchTests", ref)
+    fetches = pick(rows, "remoteFetch")
+    fetch_text = ", ".join(f"{r.get('device')} {r.get('ms')}ms(요청 {r.get('requests')}개)" for r in fetches) or "기록 없음"
+    add(18, "추가: 받는 쪽 화면 테스트(3-3)", "통과" if all_passed(remote_ui, 5) and all_passed(release_smoke, 1) else "실패",
+        f"iPhone 17(iOS 26.4) {fmt_tests(remote_ui)}. iOS 18.4 {fmt_tests(remote_ui18)}(10번에서 판정). Release 가 실행 인자의 시험 서버 주소를 무시하고 받지 않으며 시험 선택 화면이 지금과 같음: {fmt_tests(release_smoke)}. 한 번 받는 데 걸린 시간(시험 서버, 받기와 확인과 보관): {fetch_text}",
+        "처음 받기, 새로 확인의 두 응답과 틀린 발행물 두 가지, 통신 없이 다시 켜기, 넘기는 응답, 앞으로 돌아왔을 때 5개 통과와 Release 확인 통과")
+
+    # 19 Release 앱에 테스트 전용 키와 ATS 예외가 없음
+    key_scan = release_app.get("testKeyScan", {})
+    key_lines = " ".join(key_scan.get("lines", []))
+    negatives = {"keytestEmbedded": "앱 안 파일에 테스트 공개 키", "keytestUnknownFile": "검사 목록 밖의 파일", "keytestInstall": "exam-data/public-key.txt 가 테스트 키"}
+    neg_ok = all(env.get(k) == "빌드 실패(기대대로)" for k in negatives)
+    key_ok = key_scan.get("exit") == 0 and "찾은 것 0개" in key_lines and str(env.get("releaseKeyScan", "")).startswith("테스트 키 검사: 배포용 앱의 파일") \
+        and neg_ok and release_app.get("ats") is None and info.get("NSAppTransportSecurity") is None and debug_app.get("ats") is None
+    add(19, "추가: Release 앱에 테스트 키와 ATS 예외 없음(3-3)", "통과" if key_ok else "실패",
+        f"빌드 단계 검사: {env.get('releaseKeyScan', '기록 없음')}. 기기용 빌드: {env.get('deviceKeyScan', '기록 없음')}. 빌드 밖에서 Release 앱 전체를 다시 훑음: {key_lines or '기록 없음'}. "
+        f"일부러 넣은 빌드(저장소 밖 복사본): " + ", ".join(f"{v} {env.get(k, '확인하지 못함')}" for k, v in negatives.items()) +
+        f". ATS 예외: 소스 Info.plist {'없음' if info.get('NSAppTransportSecurity') is None else '있음'}, Release 앱 {'없음' if release_app.get('ats') is None else '있음'}, Debug 앱 {'없음' if debug_app.get('ats') is None else '있음'}(시뮬레이터에서 예외 없이 http://127.0.0.1 에 붙어서 Debug 에도 넣지 않음). 앱에 넣은 공개 키 파일 {release_app.get('examKeyFileBytes')}바이트(0 이면 진짜 공개 키 없음)",
+        "Release 빌드 단계 검사가 돌았고 0건, 테스트 키를 넣은 빌드 세 가지가 모두 실패, Release 앱 전체에서 테스트 키 0건, ATS 예외 없음")
+
+    # 20 껍데기의 요청이 정해진 주소 밖으로 나가지 않음
+    net_unit = {x["name"]: x for x in unit_tests if x["suite"] in ("ReleaseNetworkTests", "RemoteBridgeTests")}
+    need = ["testFullRunRequestsOnlyThePublicationFiles", "testRedirectIsNotFollowed", "testRedirectOnExamFileFailsTheWholeRun", "testLocationRules"]
+    need_ok = all(net_unit.get(n, {}).get("result") == "Passed" for n in need)
+    ui_need = [x for x in remote_ui if x["name"] in ("testFirstFetchShowsNoticeRefreshAndTestExam", "testRedirectIsNotFollowed")]
+    paths_ok = bool(fetches) and all(r.get("paths") == ["index.json", "index.json.sig", "files/test-only-exam.2.json"] for r in fetches)
+    out_ok = need_ok and all_passed(ui_need, 2) and paths_ok and not scan.get("network") and all_passed(net, 2)
+    add(20, "추가: 껍데기 요청이 정해진 주소 밖으로 나가지 않음(3-3)", "통과" if out_ok else "실패",
+        f"단위: " + ", ".join(f"{n} {net_unit.get(n, {}).get('result', '없음')}" for n in need) + f". 화면: {fmt_tests(ui_need)}, 앱이 시험 서버에 보낸 요청 경로 {', '.join(fetches[-1].get('paths', [])) if fetches else '기록 없음'}. "
+        f"네트워크 API 는 ReleaseFetcher.swift 에만 있음(밖 {len(scan.get('network', []))}건). 웹뷰의 바깥 통신 차단은 그대로(6번 탐침 {fmt_tests(net)})",
+        "요청은 정해진 주소의 index.json, index.json.sig, 시험 파일뿐, 넘기는 응답을 따라가지 않음, 주소 밖 경로를 만들지 않음, 웹뷰 차단 그대로")
+
+    # 21 출시 준비(기록용)
+    add(21, "기록: 출시 준비", "기록", f"아직 없는 것: {env.get('releaseMissing', '?')}", "없는 것을 적기만 하고 실패로 보지 않음")
+
+    # 22 3-2: 누르는 동안 온 dblclick 규칙 되풀이 재기(기록용, 두 번을 넘겨 들어간 경우만 실패)
+    held = pick(rows, "held")
+    held_over = sum(r.get("over", 0) for r in held)
+    held_tests = suite("HeldDoubleTapTests", tests_of(held18_ui)) + suite("HeldDoubleTapTests", tests_of(held26_ui))
+    held_text = "; ".join(f"iOS {r.get('os')} {r.get('target')}: {r.get('trials')}번, 사라짐 {r.get('lost')}, 채움 {r.get('filled')}(누르는 동안 온 dblclick 으로 {r.get('heldFilled')}), 사라졌는데 채우지 않음 {r.get('lostNotFilled')}, 누른 수보다 많이 들어감 {r.get('over')}" for r in held)
+    add(22, "기록: 3-2 되풀이 재기(iOS 18.4, 26.4)", "실패" if held_over > 0 else ("기록" if held else "확인하지 못함"),
+        f"{held_text or '기록 없음'}. 테스트 {fmt_tests(held_tests)}. 경우마다의 이벤트 기록은 docs/ios_누름기록",
+        "기록용(판정에 넣지 않음). 두 번을 넘겨 들어간 경우가 하나라도 있으면 실패")
+
     lines = []
     lines.append("# iOS 앱 껍데기 검증 결과")
     lines.append("")
@@ -594,7 +673,7 @@ def cmd_render(out_dir, doc_path):
     main_dark_ui = load(os.path.join(out_dir, "ui-main-dark.json"), {})
     se_dark_ui = load(os.path.join(out_dir, "ui-se-dark.json"), {})
     release_look_ui = load(os.path.join(out_dir, "ui-release-look.json"), {})
-    for label, res in (("단위", unit), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release 모양)", release_look_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
+    for label, res in (("단위", unit), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면(iOS 18)", ios18_ui), ("화면(Release 모양)", release_look_ui), ("화면(Release)", release_ui), ("화면(3-2 기록, iOS 18)", held18_ui), ("화면(3-2 기록, iOS 26)", held26_ui)):
         for t in tests_of(res):
             dur = t.get("duration")
             lines.append(f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | {dur:.1f} |" if isinstance(dur, (int, float)) else f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | |")
@@ -647,6 +726,26 @@ def cmd_render(out_dir, doc_path):
         lines.append(f"- 측정 카드({r.get('device')}, iOS {r.get('os')}): '채운 누름' {r.get('filledShown')}(기록 파일 {r.get('filledStored')})")
     for r in pick(rows, "webfix"):
         lines.append(f"- {r.get('case')}({r.get('device')}, iOS {r.get('os')}): {esc(json.dumps({k: v for k, v in r.items() if k not in ('kind', 'case', 'device', 'os')}, ensure_ascii=False, sort_keys=True))[:900]}")
+    lines.append("")
+    lines.append("## 받기와 서명 확인(작업 지시서 4의 3-3)")
+    lines.append("")
+    lines.append("앱이 시험 서버(ios/scripts/exam_server.py, 이 맥의 127.0.0.1)에서 받을 때 실제로 나간 요청과 걸린 시간이에요. 진짜 주소와 진짜 공개 키는 아직 없어서(21번) Debug 의 실행 인자로 시험 서버 주소와 테스트 전용 공개 키를 줬어요.")
+    lines.append("")
+    for r in fetches:
+        lines.append(f"- {r.get('device')}: 받기와 확인과 보관 {r.get('ms')}ms, 요청 {r.get('requests')}개({', '.join(r.get('paths', []))}), 머리글 " + ", ".join(f"{h[0]}: {h[1]}" for h in r.get("headers", [])))
+    if unit_headers:
+        lines.append(f"- 단위 테스트(URLSession 만으로 받은 것): {unit_headers.get('version')} {unit_headers.get('path')}, 머리글 {header_text}")
+    lines.append(f"- 출시 준비에서 아직 없는 것: {env.get('releaseMissing', '?')}")
+    lines.append("")
+    lines.append("## 3-2: 누르는 동안 온 dblclick 규칙을 잰 것(기록용)")
+    lines.append("")
+    lines.append("TouchSynth 로 따로 보낸 누름의 가장 짧은 간격(누름 시작 사이 0.28~0.30초)으로 같은 자리를 두 번 눌렀어요. 사라짐은 둘째 누름의 손가락 click 이 오지 않은 것, 채움은 웹이 click 을 만들어 보낸 것(누르는 동안 온 dblclick 규칙과 손뗌 수 규칙), 늦은 click 버림은 채운 뒤 그 누름의 진짜 click 이 늦게 와서 웹이 버린 것이에요. 사라진 경우와 채운 경우의 이벤트 기록(시각 차례, 결정기록 7.8 의 형식)은 docs/ios_누름기록 에 있어요.")
+    lines.append("")
+    lines.append("| iOS | 경우 | 되풀이 | 사라짐(그 가운데 누르는 동안 dblclick) | 채움(누르는 동안 온 dblclick 으로) | 사라졌는데 채우지 않음 | 늦은 click 버림 | 누른 수보다 많이 들어감 | 누름 시작 사이(ms) | 손뗌에서 click 까지 가장 긴 것(ms, 20ms 넘은 수) | 끝 상태 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for r in held:
+        ends = "; ".join(f"{k} {v}번" for k, v in sorted((r.get("endStates") or {}).items()))
+        lines.append(f"| {r.get('os')} | {esc(r.get('target'))} | {r.get('trials')} | {r.get('lost')}({r.get('dblclickWhileHeld')}) | {r.get('filled')}({r.get('heldFilled')}) | {r.get('lostNotFilled')} | {r.get('lateDropped')} | {r.get('over')} | {r.get('gapMin')}~{r.get('gapMax')} | {r.get('liftToClickMax')}({r.get('liftToClickOver20')}) | {esc(ends)[:400]} |")
     lines.append("")
     lines.append("## Release 와 Debug 의 화면 모양(3-3)")
     lines.append("")

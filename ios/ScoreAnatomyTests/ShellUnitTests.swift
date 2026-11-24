@@ -63,8 +63,11 @@ final class ManifestTests: XCTestCase {
         }
         let version: String
         let bridge: Int
+        /// 웹이 아는 가장 높은 다리 규격(docs/앱_다리_규격.md 7-2, 웹 묶음 0.3.0 부터 생긴 칸). 없는 옛 묶음도 읽히게 비워 둘 수 있다.
+        let bridgeMax: Int?
         let dirty: Bool
         let files: [String: File]
+        let commit: String?
     }
 
     private func manifest() throws -> Manifest {
@@ -85,9 +88,24 @@ final class ManifestTests: XCTestCase {
 
     func testBridgeVersionAndAppVersionMatchManifest() throws {
         let manifest = try manifest()
-        XCTAssertEqual(manifest.bridge, BridgeSpec.version, "묶음의 다리 규격 번호와 껍데기의 번호가 같아야 한다")
+        // 규격 2부터는 껍데기의 규격 번호가 bridge(묶음이 돌아가는 가장 낮은 규격) 이상, bridgeMax(웹이 아는 가장 높은 규격)
+        // 이하이면 실을 수 있다(docs/앱_다리_규격.md 7-2). 이 껍데기는 규격 1이다.
+        XCTAssertLessThanOrEqual(manifest.bridge, BridgeSpec.version, "묶음이 돌아가는 가장 낮은 규격이 껍데기의 규격보다 높으면 안 된다")
+        XCTAssertGreaterThanOrEqual(manifest.bridgeMax ?? manifest.bridge, BridgeSpec.version, "웹이 아는 가장 높은 규격이 껍데기의 규격보다 낮으면 안 된다")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, manifest.version, "앱 버전은 manifest 의 버전과 같다")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String, "1")
+        print("SA_MANIFEST version=\(manifest.version) bridge=\(manifest.bridge) bridgeMax=\(manifest.bridgeMax.map(String.init) ?? "없음") commit=\(manifest.commit ?? "없음")")
+    }
+
+    /// 새로 생긴 칸(bridgeMax)이나 모르는 칸이 있어도 읽기가 실패하지 않는다. 지금 묶음의 manifest 에는 bridgeMax 가 있다.
+    func testManifestWithNewFieldsDecodes() throws {
+        let manifest = try manifest()
+        XCTAssertNotNil(manifest.bridgeMax, "지금 묶음의 manifest.json 에는 bridgeMax 칸이 있다")
+        let future = Data(#"{"version":"9.9.9","bridge":1,"bridgeMax":7,"dirty":false,"files":{},"생길지 모를 칸":{"a":[1,2]}}"#.utf8)
+        let decoded = try JSONDecoder().decode(Manifest.self, from: future)
+        XCTAssertEqual(decoded.bridgeMax, 7)
+        let old = Data(#"{"version":"0.2.0","bridge":1,"dirty":false,"files":{}}"#.utf8)
+        XCTAssertNil(try JSONDecoder().decode(Manifest.self, from: old).bridgeMax, "bridgeMax 가 없던 옛 묶음도 읽힌다")
     }
 
     func testOnlyOneBundleIsShipped() {

@@ -15,7 +15,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.3.1"
     CURRENT_PROJECT_VERSION: "1"
     # 서명 팀(DEVELOPMENT_TEAM)과 번들 ID(SA_BUNDLE_ID)는 Config/Shared.xcconfig 에 둔다.
     # 여기에 적으면 xcconfig 보다 앞서서 Config/Signing.local.xcconfig 로 덮어쓸 수 없게 된다(README 참고).

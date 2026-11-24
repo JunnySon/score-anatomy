@@ -109,6 +109,13 @@ run_ui() {
   log "화면 테스트 $label 끝(종료 코드 $code)"
 }
 
+# 앱 버전(project.yml)과 웹 묶음 버전(manifest.json)이 같은지 먼저 본다. 다르면 아무것도 돌리지 않고 멈춘다
+# (지난 결과 폴더도 지우지 않는다). 맞추는 법: ios/scripts/sync_version.py
+if ! python3 "$IOS_DIR/scripts/sync_version.py" --check; then
+  log "앱 버전이 웹 묶음 버전과 달라서 검증을 시작하지 않고 멈춘다. ios/scripts/sync_version.py 로 맞춘 뒤 다시 돌려 주세요."
+  exit 2
+fi
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 log "결과 폴더: $OUT"
@@ -153,6 +160,15 @@ for f in app-test app-release; do
   [ "$want" = "$got" ] || manifest_ok=no
 done
 meta manifestSha "$manifest_ok"
+# 버전은 같은 채로 내용이 바뀔 수 있어서(0.3.1 은 웹 PR 두 개에서 내용이 달랐다) 묶음은 manifest 의 커밋과 SHA-256 으로 가려낸다.
+meta manifestInfo "$(python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1], encoding="utf-8"))
+f = m.get("files", {})
+print("version {}, 커밋 {}, dirty {}, bridge {}, bridgeMax {}, app-test {}, app-release {}".format(
+    m.get("version"), str(m.get("commit", ""))[:7], m.get("dirty"), m.get("bridge"), m.get("bridgeMax", "없음"),
+    f.get("app-test/index.html", {}).get("sha256", "?")[:12], f.get("app-release/index.html", {}).get("sha256", "?")[:12]))
+' "$IOS_DIR/ScoreAnatomy/Web/manifest.json")"
 
 # ---------------------------------------------------------------- 시뮬레이터
 LATEST=$(runtime_for latest)

@@ -133,8 +133,8 @@ function onClick(e: MouseEvent): void {
     }
     if (guard.area === 'screen') {
       // 화면 전체를 막는 동안 받은 숫자 키는 막기를 풀지 않는다(별도 검토 2차 P1). 남은 시간 동안 다른 키는 그대로 버린다.
+      // 버린 누름 알림도 닫지 않는다. 닫으면 같은 보호 구간에서 이어 버린 누름이 알림 없이 사라진다(별도 검토 2차 뒤 확인 X3).
       lastClick = { x: e.clientX, y: e.clientY, at: now };
-      for (const l of acceptListeners) l();
       return;
     }
   }

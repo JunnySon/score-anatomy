@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { DigitPad, EntryBox, McPad } from '../components/pads';
 import { Badge, IconCross, IconRing, LiveRegion, Message, Option, Screen, TopBar } from '../components/ui';
 import { examShiftKey } from '../exams/merge';
@@ -48,10 +48,19 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   // 지금 문항은 차례가 아니라 문항 번호로 든다. 화면이 열린 채 넘겨받은 새 판(정답 정정, 유형 재분류)으로 다시 풀 목록이 바뀌어도
   // 고른 답이 다른 문항의 기록으로 들어가지 않게 한다(작업 지시서 3의 별도 검토 A1, B4).
   const [held, setHeld] = useState<Held>(() => ({ no: nos[0] ?? null, pick: null, entry: EMPTY_ENTRY, checked: false, msg: null, movedFrom: null }));
+  // 화면에 그린 앞 그리기에 키패드가 있었는지(padSeen)와 이번 그리기에 있는지(padHere). 새 판으로 키패드가 새로 나타난 그리기
+  // (맞춰 본 결과가 판이 달라 빠짐, 스스로 확인하던 문항이 틀린 문항이 됨)에서는 숫자 키도 막는다. 그 자리의 결과 아래 버튼이나
+  // 선택지를 보고 누른 것이 새로 온 숫자 키로 들어가지 않게 한다(별도 검토 2차 뒤 확인 X2). 그린 뒤에 앞 그리기 값을 바꾼다.
+  const padSeen = useRef(false);
+  const padHere = useRef(false);
+  useLayoutEffect(() => {
+    padSeen.current = padHere.current;
+  });
   const stepsPath = h.path('/steps');
   const target = retryTarget(nos, held.no);
 
   if (!step || !target) {
+    padHere.current = false;
     return (
       <Screen top={<TopBar back={stepsPath} title={S.steps.top} />} tabs="current">
         <p>{S.retry.nothing}</p>
@@ -66,6 +75,8 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
   // 들고 있던 문항이 목록에서 빠져 다른 문항으로 옮겼으면, 그 문항에 넣던 답과 맞춰 본 상태는 쓰지 않고 옮겼다는 알림을 둔다.
   // 맞춰 본 결과가 정답 판 번호가 바뀌어 화면에서 빠졌으면(currentRetry 가 null, 작업 지시서 3의 4-6) 그 문항은 다시 맞춰 보기 전으로
   // 다룬다. 그 뒤 새로 넣은 답을 맞춰 보기 전에 문항이 빠지면 기록하지 않았다고 알리기 위해서다(별도 검토 2차 P3).
+  // 옮겨 왔다는 알림의 문항이 그 뒤의 새 판으로 다시 목록에 들어오면 그 알림은 지금 목록과 맞지 않아서 뺀다(별도 검토 2차 뒤 확인 X4).
+  const kept: Held = held.movedFrom !== null && nos.includes(held.movedFrom.no) ? { ...held, movedFrom: null } : held;
   const input: Held = moved
     ? {
         no,
@@ -75,9 +86,9 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
         msg: null,
         movedFrom: held.no === null ? held.movedFrom : { no: held.no, dropped: !held.checked && (held.pick !== null || held.entry.text !== '') },
       }
-    : held.checked && !selfMode && currentRetry(session, no, exam) === null
-      ? { ...held, checked: false }
-      : held;
+    : kept.checked && !selfMode && currentRetry(session, no, exam) === null
+      ? { ...kept, checked: false }
+      : kept;
   const { pick, entry, checked, msg, movedFrom } = input;
   /** 지금 문항의 넣는 중인 것을 바꾼다. 늘 지금 문항 번호와 함께 적어서, 옮겨 온 문항이면 그때부터 그 문항의 것이 된다. */
   const put = (patch: Partial<Held>) => setHeld({ ...input, ...patch, no });
@@ -161,6 +172,9 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
     );
   }
 
+  // 새 판으로 키패드가 새로 나타났는지(앞 그리기에는 키패드가 없었음). 그때 화면 전체를 막는 동안은 숫자 키도 받지 않는다(X2).
+  const padAppeared = pad !== null && !padSeen.current;
+  padHere.current = pad !== null;
   const shown = item.kind === 'mc' ? (pick === null ? '' : String(pick)) : entry.text;
   const done = selfMode ? self !== null : result !== null;
 
@@ -172,8 +186,9 @@ export function Retry({ h, grade, typeId }: { h: SessionHandle; grade: Grade; ty
       guardKey={`${no}-${done ? 'result' : 'entry'}`}
       // 넘겨받은 새 판으로 다시 풀 목록이나 지금 문항이 바뀌면 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
       // 지금 문항이 다른 문항으로 옮겨 갔으면 그동안 숫자 키도 받지 않는다(옮겨 가기 전 문항에 넣던 숫자, 별도 검토 2차 P1).
+      // 새 판으로 키패드가 새로 나타난 때도 같다(그 자리의 결과 아래 버튼이나 선택지를 보고 누른 것, 2차 뒤 확인 X2).
       shiftKey={`${examShiftKey(exam)}/${nos.join(',')}`}
-      shiftStrict={moved}
+      shiftStrict={moved || padAppeared}
       footer={
         pad ? (
           <>

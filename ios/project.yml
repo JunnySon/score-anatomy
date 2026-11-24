@@ -1,0 +1,132 @@
+# 점수 해부 iOS 앱 껍데기의 XcodeGen 설정.
+# 프로젝트 파일(ScoreAnatomy.xcodeproj)은 이 파일로 만들고 둘 다 커밋한다. 손으로 고치지 않는다.
+# 다시 만드는 법과 주의할 점(서명 팀이 지워지지 않게 하는 법)은 ios/README.md 에 있다.
+name: ScoreAnatomy
+
+options:
+  bundleIdPrefix: com.junnyson
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: ko
+  createIntermediateGroups: true
+  groupSortPosition: top
+  transitivelyLinkDependencies: false
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # 서명 팀(DEVELOPMENT_TEAM)과 번들 ID(SA_BUNDLE_ID)는 Config/Shared.xcconfig 에 둔다.
+    # 여기에 적으면 xcconfig 보다 앞서서 Config/Signing.local.xcconfig 로 덮어쓸 수 없게 된다(README 참고).
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ENABLE_MODULE_VERIFIER: NO
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+
+configFiles:
+  Debug: Config/Shared.xcconfig
+  Release: Config/Shared.xcconfig
+
+targets:
+  ScoreAnatomy:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ScoreAnatomy
+        excludes:
+          - "Web/**"
+          - "Info.plist"
+      # 웹 묶음은 폴더째 싣는다. 어느 쪽을 실을지는 아래 EXCLUDED_SOURCE_FILE_NAMES 로 고른다.
+      - path: ScoreAnatomy/Web/app-test
+        type: folder
+        buildPhase: resources
+      - path: ScoreAnatomy/Web/app-release
+        type: folder
+        buildPhase: resources
+      - path: ScoreAnatomy/Web/manifest.json
+        buildPhase: resources
+    info:
+      path: ScoreAnatomy/Info.plist
+      properties:
+        CFBundleDisplayName: 점수 해부
+        CFBundleDevelopmentRegion: $(DEVELOPMENT_LANGUAGE)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_NAME: ScoreAnatomy
+        PRODUCT_BUNDLE_IDENTIFIER: $(SA_BUNDLE_ID)
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: ScoreAnatomy/Info.plist
+        SUPPORTS_MACCATALYST: NO
+      configs:
+        # Debug 는 시험용 묶음(app-test)만, Release 는 배포용 묶음(app-release)만 싣는다.
+        # Release 에서는 DEBUG 전용 코드 파일(Debug 폴더의 Debug*.swift)도 빌드에서 뺀다.
+        Debug:
+          EXCLUDED_SOURCE_FILE_NAMES: "app-release"
+        Release:
+          EXCLUDED_SOURCE_FILE_NAMES: "app-test Debug*.swift"
+
+  ScoreAnatomyTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ScoreAnatomyTests
+    dependencies:
+      - target: ScoreAnatomy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SA_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+
+  ScoreAnatomyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: ScoreAnatomyUITests
+    dependencies:
+      - target: ScoreAnatomy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SA_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: ScoreAnatomy
+
+schemes:
+  ScoreAnatomy:
+    build:
+      targets:
+        ScoreAnatomy: all
+        ScoreAnatomyTests: [test]
+        ScoreAnatomyUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: ScoreAnatomyTests
+        - name: ScoreAnatomyUITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

@@ -48,6 +48,14 @@ cleanup() {
   remove_prefixed_sims
   log "검증용 시뮬레이터를 지웠다(남은 것: $(xcrun simctl list devices | grep -c "$PREFIX-"))"
 }
+# 앱 버전(project.yml)과 웹 묶음 버전(manifest.json)이 같은지 먼저 본다. 다르면 아무것도 돌리지 않고 멈춘다
+# (시뮬레이터를 지우는 정리 trap 을 걸기 전이라 다른 검증의 시뮬레이터도, 지난 결과 폴더도 건드리지 않는다).
+# 맞추는 법: ios/scripts/sync_version.py
+if ! python3 "$IOS_DIR/scripts/sync_version.py" --check; then
+  log "앱 버전이 웹 묶음 버전과 달라서 검증을 시작하지 않고 멈춘다. ios/scripts/sync_version.py 로 맞춘 뒤 다시 돌려 주세요."
+  exit 2
+fi
+
 trap cleanup EXIT
 
 meta() {
@@ -109,13 +117,6 @@ run_ui() {
   log "화면 테스트 $label 끝(종료 코드 $code)"
 }
 
-# 앱 버전(project.yml)과 웹 묶음 버전(manifest.json)이 같은지 먼저 본다. 다르면 아무것도 돌리지 않고 멈춘다
-# (지난 결과 폴더도 지우지 않는다). 맞추는 법: ios/scripts/sync_version.py
-if ! python3 "$IOS_DIR/scripts/sync_version.py" --check; then
-  log "앱 버전이 웹 묶음 버전과 달라서 검증을 시작하지 않고 멈춘다. ios/scripts/sync_version.py 로 맞춘 뒤 다시 돌려 주세요."
-  exit 2
-fi
-
 rm -rf "$OUT"
 mkdir -p "$OUT"
 log "결과 폴더: $OUT"
@@ -123,7 +124,22 @@ log "결과 폴더: $OUT"
 # ---------------------------------------------------------------- 0. 환경
 meta date "$(date '+%Y-%m-%d %H:%M')"
 meta startedAt "$(date '+%Y-%m-%d %H:%M:%S')"
-meta power "$(pmset -g batt | head -1 | sed "s/Now drawing from //; s/'//g"), $(pmset -g batt | sed -n 2p | sed 's/^ *-InternalBattery-0 ([^)]*)[[:space:]]*//'), 덮개 $(ioreg -r -k AppleClamshellState | grep -q '"AppleClamshellState" = No' && echo 열림 || echo 닫힘)"
+power_state() {
+  # 출력을 모두 받아 둔 뒤 고른다(grep -q 나 head 가 파이프를 일찍 닫으면 pipefail 때문에 값이 틀어진다).
+  local batt lid
+  batt=$(pmset -g batt 2>/dev/null || true)
+  lid=$(ioreg -r -k AppleClamshellState 2>/dev/null || true)
+  local source level
+  source=$(printf '%s\n' "$batt" | sed -n 1p | sed "s/Now drawing from //; s/'//g")
+  level=$(printf '%s\n' "$batt" | sed -n 2p | sed 's/^ *-InternalBattery-0 ([^)]*)[[:space:]]*//')
+  case "$lid" in
+    *'"AppleClamshellState" = No'*) lid=열림 ;;
+    *'"AppleClamshellState" = Yes'*) lid=닫힘 ;;
+    *) lid="알 수 없음" ;;
+  esac
+  echo "$source, $level, 덮개 $lid"
+}
+meta power "$(power_state)"
 meta macos "$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
 meta xcodeVersion "$(xcodebuild -version | head -1 | sed 's/Xcode //')"
 meta xcodeBuild "$(xcodebuild -version | tail -1 | sed 's/Build version //')"
@@ -131,7 +147,14 @@ meta sdk "iphonesimulator $(xcodebuild -version -sdk iphonesimulator SDKVersion 
 meta xcodegen "$(xcodegen --version 2>/dev/null | sed 's/Version: //' || echo 없음)"
 meta branch "$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
 meta commit "$(git -C "$REPO" rev-parse --short HEAD)"
-if [ -n "$(git -C "$REPO" status --porcelain -- ios docs/앱_다리_규격.md)" ]; then meta dirty yes; else meta dirty no; fi
+dirty_state() {
+  # 이 검증이 읽는 곳(ios, docs/ios_*.md, 다리 규격)에 커밋하지 않은 바뀜이나 추적하지 않는 파일이 있는지. 만들어지는 결과물은 뺀다.
+  local changed
+  changed=$(git -C "$REPO" status --porcelain --untracked-files=all -- ios 'docs/ios_*.md' docs/앱_다리_규격.md 2>/dev/null \
+    | grep -v -e 'docs/ios_검증결과.md' -e 'docs/screens-ios/' || true)
+  if [ -n "$changed" ]; then echo yes; else echo no; fi
+}
+meta dirty "$(dirty_state)"
 
 # 앞서 멈춘 실행이 남긴 검증용 시뮬레이터를 지운다(이름이 SA검증- 으로 시작하는 것만).
 remove_prefixed_sims
@@ -331,6 +354,7 @@ done
 
 # ---------------------------------------------------------------- 문서
 meta finishedAt "$(date '+%Y-%m-%d %H:%M:%S')"
+meta dirtyAtEnd "$(dirty_state)"
 log "docs/ios_검증결과.md 쓰기"
 "${REPORT[@]}" render "$OUT" "$REPO/docs/ios_검증결과.md"
 status=$?

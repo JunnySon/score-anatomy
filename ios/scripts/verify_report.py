@@ -492,7 +492,7 @@ def cmd_render(out_dir, doc_path):
         add(9, "iPad(아이폰 앱 호환 방식)", "통과" if all_passed(ipad, 1) else "실패", f"{env.get('ipadName', '')}: " + fmt_tests(ipad) + ipad_numbers(rows), "시작 화면 테스트 1개 통과")
 
     ref = tests_of(ios18_ui)
-    ref_note = (f" 참고(iOS {env.get('ios18Runtime')}, 맥이 깨어 있는 상태): 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름(3-4의 1번, 6번, 7번) {fmt_tests(suite('FastTapTests', ref))}."
+    ref_note = (f" 참고(iOS {env.get('ios18Runtime')}, 잠듦 여부는 docs/ios_진행기록.md): 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름(3-4의 1번, 6번, 7번) {fmt_tests(suite('FastTapTests', ref))}."
                 if env.get("ios18Runtime") else "")
     if env.get("ios17Runtime"):
         old = tests_of(old_ui)
@@ -535,22 +535,27 @@ def cmd_render(out_dir, doc_path):
     look_release = suite("LookTests", tests_of(load(os.path.join(out_dir, "ui-release-look.json"), {})))
     compare = load(os.path.join(out_dir, "look", "compare.json"), {})
     look_screens = compare.get("screens", [])
-    look_ok = all_passed(look_debug, 1) and all_passed(look_release, 1) and len(look_screens) == 8 and not compare.get("problems")
+    look_ok = all_passed(look_debug, 1) and all_passed(look_release, 1) and len(look_screens) == 9 and not compare.get("problems")
     only_debug = sorted({x for sc in look_screens for x in sc.get("onlyDebug", [])})
     add(15, "추가: Release 와 Debug 의 화면 모양(3-3)", "통과" if look_ok else "실패",
-        f"Debug {fmt_tests(look_debug)}, Release {fmt_tests(look_release)}. 견준 화면 {len(look_screens)}개, 화소를 견준 요소 {sum(sc.get('pixelCompared', 0) for sc in look_screens)}개, "
+        f"Debug {fmt_tests(look_debug)}, Release {fmt_tests(look_release)}. 견준 화면 {len(look_screens)}개, 화면 전체(기록 화면은 Debug 전용 목록의 12pt 위까지) 화소 차이(채널 8 넘음) {sum(sc.get('fullDiffPixels', 0) for sc in look_screens)}화소, 자리가 다른 요소 {sum(len(sc.get('positionDiffs', [])) for sc in look_screens)}개, 화소를 견준 요소 {sum(sc.get('pixelCompared', 0) for sc in look_screens)}개, "
         f"크기가 다른 요소 {sum(len(sc.get('sizeDiffs', [])) for sc in look_screens)}개, 모양이 다른 요소 {sum(len(sc.get('pixelDiffs', [])) for sc in look_screens)}개, Release 에만 있는 요소 {sum(len(sc.get('onlyRelease', [])) for sc in look_screens)}개. "
         f"Debug 에만 있는 요소: {', '.join(only_debug) if only_debug else '없음'}. 문제: {'; '.join(compare.get('problems', [])) or '없음'}",
-        "8화면 모두 같은 누름으로 가서 찍고, 달라도 되는 곳(기록 화면의 준비 중인 기능 목록과 진행자용 링크)만 다름")
+        "8화면(기록 화면은 맨 위와 맨 아래 둘)을 같은 누름으로 가서 찍고, 달라도 되는 곳(기록 화면의 준비 중인 기능 목록과 진행자용 링크)만 다름")
 
     # 16 웹에서 고친 것(결정기록 7.6, 작업 지시서 3-2의 3-4)
     fast = suite("FastTapTests")
     fix = suite("WebFixScreenTests")
     se_fix = suite("WebFixScreenTests", se_tests)
-    fast_ok = all_passed(fast, 15) and all_passed(fix, 6) and (env.get("seSimulator") != "ok" or all_passed(se_fix, 1))
-    add(16, "추가: 웹에서 고친 것(결정기록 7.6)", "통과" if fast_ok else "실패",
-        f"빠른 누름(iPhone 17) {fmt_tests(fast)}. 화면 쪽(iPhone 17) {fmt_tests(fix)}. 키패드 판 아래 끝(iPhone SE) {fmt_tests(se_fix)}. 간격별 결과와 웹이 받은 이벤트는 아래 절",
-        "모두 통과. 0.1초와 0.2초 간격은 만들 수 없어 확인하지 못함으로 적음")
+    fast_ok = all_passed(fast, 16) and all_passed(fix, 6) and all_passed(se_fix, 1)
+    if env.get("seSimulator") != "ok":
+        fast_status = "확인하지 못함"
+    else:
+        fast_status = "통과" if fast_ok else "실패"
+    add(16, "추가: 웹에서 고친 것(결정기록 7.6)", fast_status,
+        f"빠른 누름(iPhone 17) {fmt_tests(fast)}. 화면 쪽(iPhone 17) {fmt_tests(fix)}. 키패드 판 아래 끝(iPhone SE) {fmt_tests(se_fix)}"
+        + ("" if env.get("seSimulator") == "ok" else f"(SE 시뮬레이터를 만들지 못함: {env.get('seSimulator')})") + ". 간격별 결과와 웹이 받은 이벤트는 아래 절",
+        "모두 통과(SE 포함). 0.1초와 0.2초 간격은 만들 수 없어 확인하지 못함으로 적음. 진행 막대 끝의 틈과 아래 단서의 모양은 테스트가 찍기만 하고 사람이 확대 캡처로 판단함(docs/ios_화면비교.md)")
 
     lines = []
     lines.append("# iOS 앱 껍데기 검증 결과")
@@ -562,7 +567,10 @@ def cmd_render(out_dir, doc_path):
     lines.append(f"결론: 13개 항목 가운데 통과 {sum(1 for i in core if i['status'] == '통과')}, 실패 {sum(1 for i in core if i['status'] == '실패')}, 확인하지 못함 {sum(1 for i in core if i['status'] == '확인하지 못함')}. 추가 확인은 {extras_status}. `ios/scripts/verify.sh` 가 {env.get('date', '?')}에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.")
     lines.append("")
     lines.append(f"- 맥: macOS {env.get('macos', '?')}, Xcode {env.get('xcodeVersion', '?')}(빌드 {env.get('xcodeBuild', '?')}), SDK {env.get('sdk', '?')}, XcodeGen {env.get('xcodegen', '?')}")
-    lines.append(f"- 저장소: 브랜치 {env.get('branch', '?')}, 커밋 {env.get('commit', '?')}{' (커밋하지 않은 바뀜 있음)' if env.get('dirty') == 'yes' else ''}")
+    dirty_note = ""
+    if env.get("dirty") == "yes" or env.get("dirtyAtEnd") == "yes":
+        dirty_note = f" (커밋하지 않은 바뀜이나 추적하지 않는 파일: 시작 {'있음' if env.get('dirty') == 'yes' else '없음'}, 끝 {'있음' if env.get('dirtyAtEnd') == 'yes' else '없음'}. 11번 소스 검사는 그때의 작업 트리를 읽어요)"
+    lines.append(f"- 저장소: 브랜치 {env.get('branch', '?')}, 커밋 {env.get('commit', '?')}{dirty_note}")
     lines.append(f"- 웹 묶음: {env.get('manifestInfo', '?')}")
     lines.append(f"- 실행 시각: {env.get('startedAt', '?')} ~ {env.get('finishedAt', '?')}. 시작할 때 전원: {env.get('power', '?')}. 잠듦 확인은 docs/ios_진행기록.md 에 적어요(pmset 기록).")
     lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {env.get('simulators', '?')}")
@@ -628,11 +636,11 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("웹이 받은 이벤트는 껍데기의 DEBUG 기록(-SAEventLog)이 문서가 열리기 전부터 window 의 capture 단계에서 적은 것이에요. '(채움)'은 웹의 빠진 누름 채우기가 만들어 보낸 click(trusted 가 false)이에요. 이 기록은 웹 코드보다 먼저 불려서, 손가락에서 온 click 이 먼저 적히고 그 처리 안에서 웹이 보낸 click 이 뒤에 적혀요(웹은 채운 click 을 먼저 처리해요). 간격은 웹의 이벤트 시각(timeStamp)으로 잰 ms 예요.")
     lines.append("")
-    lines.append("| 기기 | iOS | 경우 | 결과 | 웹이 받은 이벤트 | pointer 누름/뗌 | touch 시작/끝 | 손가락 click(detail) | 채운 click | 누름 시작 사이 | 손뗌에서 다음 누름 | 채운 누름 늘어난 수 |")
-    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| 기기 | iOS | 경우 | 결과 | 웹이 받은 이벤트 | pointer 누름/뗌 | touch 시작/끝 | 누른 자리(pt) | 손가락 click(detail) | 채운 click | 누름 시작 사이 | 손뗌에서 다음 누름 | 채운 누름 늘어난 수 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for r in pick(rows, "fasttap"):
         lines.append(f"| {r.get('device', '')} | {r.get('os', '')} | {esc(r.get('case', ''))} | {esc(r.get('result', ''))} | {esc(r.get('sequence', r.get('reason', '')))} | "
-                     f"{r.get('pointerdown', '')}/{r.get('pointerup', '')} | {r.get('touchstart', '')}/{r.get('touchend', '')} | {r.get('realClicks', '')} | {r.get('madeClicks', '')} | "
+                     f"{r.get('pointerdown', '')}/{r.get('pointerup', '')} | {r.get('touchstart', '')}/{r.get('touchend', '')} | {esc(', '.join(r.get('points') or []))} | {r.get('realClicks', '')} | {r.get('madeClicks', '')} | "
                      f"{r.get('pressToPressMs', '')} | {r.get('releaseToPressMs', '')} | {r.get('filledDelta', '')} |")
     for r in pick(rows, "fasttap-card"):
         lines.append("")
@@ -642,12 +650,13 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("## Release 와 Debug 의 화면 모양(3-3)")
     lines.append("")
-    lines.append("같은 테스트(LookTests)를 Debug 와 Release 로 돌려 같은 누름으로 같은 화면까지 가서 찍었어요(Release 에는 상태를 심는 장치가 없어요). 캡처는 docs/screens-ios/release/debug 와 release 에 있어요. 이름이 있는 접근성 요소를 짝지어 크기와 화소(각자의 자리에서 잘라 견줌, 채널 차이 32 넘는 화소가 1% 넘으면 다름)를 견줬어요.")
+    lines.append("같은 테스트(LookTests)를 Debug 와 Release 로 돌려 같은 누름으로 같은 화면까지 가서 찍었어요(Release 에는 상태를 심는 장치가 없어요). 캡처는 docs/screens-ios/release/debug 와 release 에 있어요. 세 가지로 견줬어요. 화면 전체의 화소(채널 차이 8 넘는 화소가 30개 넘으면 다름, 기록 화면은 Debug 전용 목록의 위 끝에서 12pt 위까지), 이름이 있는 접근성 요소의 있고 없음과 자리와 크기(1pt 넘게 다르면 다름, 기록 화면의 Debug 전용 목록 아래는 크기만), 요소마다 각자의 자리에서 잘라 견준 화소(채널 차이 8 넘는 화소가 0.5% 넘으면 다름)예요. 기록 화면은 맨 위에서 찍고(08-기록), 맨 아래까지 내린 것(08b-기록-아래)은 요소의 있고 없음만 견줘요.")
     lines.append("")
-    lines.append("| 화면 | 요소(Debug/Release) | Debug 에만 | Release 에만 | 크기 다름 | 화소를 견준 요소 | 모양 다름 |")
-    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+    lines.append("| 화면 | 요소(Debug/Release) | Debug 에만 | Release 에만 | 화면 전체 화소 차이(견준 높이) | 자리 다름 | 크기 다름 | 화소를 견준 요소 | 모양 다름 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for sc in load(os.path.join(out_dir, "look", "compare.json"), {}).get("screens", []):
         lines.append(f"| {sc.get('screen')} | {sc.get('debugElements')}/{sc.get('releaseElements')} | {esc(', '.join(sc.get('onlyDebug', [])) or '없음')} | {esc(', '.join(sc.get('onlyRelease', [])) or '없음')} | "
+                     f"{sc.get('fullDiffPixels', '?')}화소({sc.get('fullComparedHeight', '?')}pt) | {esc(', '.join(sc.get('positionDiffs', [])) or '없음')} | "
                      f"{esc(', '.join(sc.get('sizeDiffs', [])) or '없음')} | {sc.get('pixelCompared')} | {esc(', '.join(sc.get('pixelDiffs', [])) or '없음')} |")
     lines.append("")
     lines.append("## 숫자 기록")

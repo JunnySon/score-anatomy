@@ -89,8 +89,9 @@ final class RhythmTests: XCTestCase {
         }
         return true;
         """)
-        // 화면이 막 바뀐 직후의 보호가 끝난 뒤에 시작한다.
+        // 화면이 막 바뀐 직후의 보호가 끝난 뒤에 시작한다. 박자 누름의 이벤트만 보려고 앞의 기록을 비운다.
         Thread.sleep(forTimeInterval: 0.7)
+        _ = handle.takeEvents()
         var allGaps: [TimeInterval] = []
         for no in [9, 14] {
             let cell = handle.markCell(no)

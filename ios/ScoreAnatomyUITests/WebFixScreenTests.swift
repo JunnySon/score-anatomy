@@ -163,9 +163,13 @@ final class WebFixScreenTests: XCTestCase {
         """) as? [String: Any] ?? [:]
         other.capture("입력확인-시트-아래", theme: "light")
         let reviewSafe = dock["safe"] as? Double ?? 0
-        XCTAssertGreaterThanOrEqual(dock["dockPaddingBottom"] as? Double ?? -1, reviewSafe - 0.5, "키패드가 없는 화면의 아래 띠는 안전 영역만큼 띄운다: \(dock)")
-        XCTAssertLessThanOrEqual(sheet["lastControlBottom"] as? Double ?? 999, (sheet["innerHeight"] as? Double ?? 0) - reviewSafe + 0.5, "시트의 버튼이 안전 영역 위에 있다: \(sheet)")
         record("키패드 판 아래 끝", ["padColor": padColor, "pageColor": pageColor, "bottomRow": bottomRow, "safeRow": safeRow, "worstDistance": worst, "pad": info, "reviewDock": dock, "sheet": sheet])
+        // 키패드가 없는 화면의 아래 띠와 바텀시트의 아래 여백은 그대로 안전 영역 값이다(고치기 전과 같음, 웹 결정기록 7.3).
+        XCTAssertEqual(dock["dockPaddingBottom"] as? Double ?? -1, reviewSafe, accuracy: 0.5, "키패드가 없는 화면의 아래 띠 여백은 안전 영역 값 그대로: \(dock)")
+        XCTAssertEqual(other.modalCount(), 1, "입력 확인의 칸을 눌러 시트가 열렸다")
+        XCTAssertGreaterThan(sheet["sheetBottom"] as? Double ?? -1, 0, "시트를 읽었다: \(sheet)")
+        XCTAssertEqual(sheet["sheetPaddingBottom"] as? Double ?? -1, reviewSafe, accuracy: 0.5, "시트의 아래 여백은 안전 영역 값 그대로: \(sheet)")
+        XCTAssertLessThanOrEqual(sheet["lastControlBottom"] as? Double ?? 999, (sheet["innerHeight"] as? Double ?? 0) - reviewSafe + 0.5, "시트의 버튼이 안전 영역 위에 있다: \(sheet)")
     }
 
     // MARK: 4. 점수 해부에서 목표 등급을 고른 뒤 첫 줄이 화면 안에
@@ -224,25 +228,9 @@ final class WebFixScreenTests: XCTestCase {
         let stay = anatomyGeometry(handle)
         XCTAssertEqual(stay["scrollTop"] ?? -1, after["scrollTop"] ?? -2, accuracy: 1, "첫 줄이 이미 보이면 움직이지 않는다")
 
-        // 고른 자리를 곧바로 다시 누른 것은 옮겨 온 요소에 들어가지 않는다(보호 0.5초).
-        _ = handle.evaluate("const b = document.querySelector('main.body') || document.querySelector('.body'); b.scrollTop = \(before["scrollTop"] ?? 0); return true;")
-        Thread.sleep(forTimeInterval: 0.8)
-        // 예시 시험 A 의 목표 등급 칩은 1~3등급이다. 아직 고르지 않은 1등급을 쓴다.
-        let chip1 = handle.any("1등급")
-        XCTAssertTrue(chip1.waitForExistence(timeout: 5))
-        let point = center(chip1)
-        let g0 = anatomyGeometry(handle)
-        let underBefore = handle.evaluate("const e = document.elementFromPoint(\(point.x), \(point.y)); const t = e && e.closest('button, a, [role]'); return t ? (t.getAttribute('aria-label') || t.textContent.trim()).slice(0, 40) : '';") as? String ?? ""
-        try TouchSynth.spacedTaps(at: point, interval: 0)
-        Thread.sleep(forTimeInterval: 1.2)
-        let g1 = anatomyGeometry(handle)
-        let underAfter = handle.evaluate("const e = document.elementFromPoint(\(point.x), \(point.y)); const t = e && e.closest('button, a, [role]'); return t ? (t.getAttribute('aria-label') || t.textContent.trim()).slice(0, 40) : '';") as? String ?? ""
-        let checked = handle.evaluate("return Array.from(document.querySelectorAll('[data-testid^=\"grade-\"]')).filter((e) => e.getAttribute('aria-checked') === 'true' || e.getAttribute('aria-pressed') === 'true').map((e) => e.getAttribute('data-testid'));") as? [String] ?? []
-        XCTAssertEqual(handle.route(), "/anatomy", "다른 화면으로 가지 않았다")
-        XCTAssertEqual(checked, ["grade-1"], "1등급만 골라져 있다(둘째 누름이 옮겨 온 요소를 고르지 않았다)")
-        XCTAssertNotEqual(g0["scrollTop"] ?? -1, g1["scrollTop"] ?? -1, "첫 누름으로 스크롤이 옮겨 갔다(이 확인이 보려는 상황)")
-        record("점수 해부 목표 등급", ["before": before, "early": early, "after": after, "stay": stay, "guardScroll": [g0["scrollTop"] ?? -1, g1["scrollTop"] ?? -1],
-                                   "underBefore": underBefore, "underAfter": underAfter, "checked": checked, "notices": handle.noticeCount()])
+        // 고른 자리를 곧바로 다시 누른 것이 막히는지는 FastTapTests.testAnatomyRepeatTapAfterScrollIsDiscarded 가 측정 중에 본다
+        // (측정의 받지 않은 누름으로 막힘을 셀 수 있어서).
+        record("점수 해부 목표 등급", ["before": before, "early": early, "after": after, "stay": stay])
     }
 
     // MARK: 5. 시험 선택의 예시 시험 C 설명이 "22~30번"과 "단답형" 사이에서 끊기지 않는다

@@ -33,7 +33,7 @@ PBXPROJ = os.path.join(PROJECT_DIR, "project.pbxproj")
 INFO_PLIST = os.path.join(IOS_DIR, "ScoreAnatomy", "Info.plist")
 # CFBundleShortVersionString 에 쓸 수 있는 모양: 마침표로 나눈 정수 1~3개.
 VERSION_RE = re.compile(r"^[0-9]+(\.[0-9]+){0,2}$")
-YML_RE = re.compile(r'^(\s*MARKETING_VERSION:\s*)("?)([^"\s#]+)("?)(\s*(#.*)?)$')
+YML_RE = re.compile(r'^(\s*MARKETING_VERSION:\s*)(["\']?)([^"\'\s#]+)(["\']?)(\s*(#.*)?)$')
 PBX_RE = re.compile(r"MARKETING_VERSION = ([^;]+);")
 
 
@@ -67,8 +67,11 @@ def pbx_versions(text):
 
 
 def read(path):
-    with open(path, encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError as error:
+        stop(2, f"{os.path.relpath(path, IOS_DIR)} 을 읽지 못했어요: {error}")
 
 
 def xcodegen_version():

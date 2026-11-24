@@ -60,6 +60,7 @@ struct TapEvents {
             "realClicks": realClicks, "madeClicks": madeClicks, "dblclick": count("dblclick"),
             "pressToPressMs": pressToPress, "releaseToPressMs": releaseToPress, "holdMs": holds,
             "targets": Array(Set(raw.compactMap { $0["target"] as? String })).sorted(),
+            "points": raw.filter { kind($0) == "touchstart" }.map { "\($0["x"] as? Int ?? -1),\($0["y"] as? Int ?? -1)" },
         ]
     }
 }

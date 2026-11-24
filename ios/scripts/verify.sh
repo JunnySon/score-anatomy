@@ -420,10 +420,11 @@ for config in Debug Release; do
 done
 
 # 22. 3-2 되풀이 재기의 이벤트 기록(사라진 경우, 채운 경우, 세 번 누름)을 docs 아래 글자 파일로.
-rm -rf "$REPO/docs/ios_누름기록"
-mkdir -p "$REPO/docs/ios_누름기록"
-for run in held18 held26; do
-  cp "$OUT/runs/$run/held"/*.txt "$REPO/docs/ios_누름기록/" 2>/dev/null || true
+# 개발 중에 남긴 기록(docs/ios_누름기록/개발용-*)은 두고 verify 의 기록만 바꾼다.
+rm -rf "$REPO/docs/ios_누름기록/verify"
+mkdir -p "$REPO/docs/ios_누름기록/verify"
+for run in held18 held26 main ios18; do
+  cp "$OUT/runs/$run/held"/*.txt "$REPO/docs/ios_누름기록/verify/" 2>/dev/null || true
 done
 
 # ---------------------------------------------------------------- 문서

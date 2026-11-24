@@ -633,7 +633,7 @@ def cmd_render(out_dir, doc_path):
     held_tests = suite("HeldDoubleTapTests", tests_of(held18_ui)) + suite("HeldDoubleTapTests", tests_of(held26_ui))
     held_text = "; ".join(f"iOS {r.get('os')} {r.get('target')}: {r.get('trials')}번, 사라짐 {r.get('lost')}, 채움 {r.get('filled')}(누르는 동안 온 dblclick 으로 {r.get('heldFilled')}), 사라졌는데 채우지 않음 {r.get('lostNotFilled')}, 누른 수보다 많이 들어감 {r.get('over')}" for r in held)
     add(22, "기록: 3-2 되풀이 재기(iOS 18.4, 26.4)", "실패" if held_over > 0 else ("기록" if held else "확인하지 못함"),
-        f"{held_text or '기록 없음'}. 테스트 {fmt_tests(held_tests)}. 경우마다의 이벤트 기록은 docs/ios_누름기록",
+        f"{held_text or '기록 없음'}. 테스트 {fmt_tests(held_tests)}. 경우마다의 이벤트 기록은 docs/ios_누름기록/verify",
         "기록용(판정에 넣지 않음). 두 번을 넘겨 들어간 경우가 하나라도 있으면 실패")
 
     lines = []
@@ -739,7 +739,7 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("## 3-2: 누르는 동안 온 dblclick 규칙을 잰 것(기록용)")
     lines.append("")
-    lines.append("TouchSynth 로 따로 보낸 누름의 가장 짧은 간격(누름 시작 사이 0.28~0.30초)으로 같은 자리를 두 번 눌렀어요. 사라짐은 둘째 누름의 손가락 click 이 오지 않은 것, 채움은 웹이 click 을 만들어 보낸 것(누르는 동안 온 dblclick 규칙과 손뗌 수 규칙), 늦은 click 버림은 채운 뒤 그 누름의 진짜 click 이 늦게 와서 웹이 버린 것이에요. 사라진 경우와 채운 경우의 이벤트 기록(시각 차례, 결정기록 7.8 의 형식)은 docs/ios_누름기록 에 있어요.")
+    lines.append("TouchSynth 로 따로 보낸 누름의 가장 짧은 간격(누름 시작 사이 0.28~0.30초)으로 같은 자리를 두 번 눌렀어요. 사라짐은 둘째 누름의 손가락 click 이 오지 않은 것, 채움은 웹이 click 을 만들어 보낸 것(누르는 동안 온 dblclick 규칙과 손뗌 수 규칙), 늦은 click 버림은 채운 뒤 그 누름의 진짜 click 이 늦게 와서 웹이 버린 것이에요. 사라진 경우와 채운 경우의 이벤트 기록(시각 차례, 결정기록 7.8 의 형식)은 docs/ios_누름기록/verify 에 있어요.")
     lines.append("")
     lines.append("| iOS | 경우 | 되풀이 | 사라짐(그 가운데 누르는 동안 dblclick) | 채움(누르는 동안 온 dblclick 으로) | 사라졌는데 채우지 않음 | 늦은 click 버림 | 누른 수보다 많이 들어감 | 누름 시작 사이(ms) | 손뗌에서 click 까지 가장 긴 것(ms, 20ms 넘은 수) | 끝 상태 |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")

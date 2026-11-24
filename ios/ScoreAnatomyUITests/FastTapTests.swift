@@ -166,9 +166,15 @@ final class FastTapTests: XCTestCase {
         let handle = start("fast-triple", answers: ExampleA.answers, path: "/marks", route: "/marks")
         let cell = handle.markCell(3)
         XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        TapTimeline.clearLogs(handle)
         cell.tap(withNumberOfTaps: 3, numberOfTouches: 1)
         Thread.sleep(forTimeInterval: 0.9)
-        let events = handle.takeEvents()
+        let (raw, trace) = TapTimeline.takeLogs(handle)
+        let events = TapEvents(raw)
+        // 판정보다 먼저 시각과 웹 판단이 든 기록을 남긴다(결정기록 7.8 의 세 번 누름 건, iOS 18.4 에서 끝 상태가 갈린 적이 있다).
+        let end = "3번 칸 data-mark \(handle.markOf(3) ?? "?"), 버린 누름 알림 \(handle.noticeCount())"
+        TapTimeline.write(TapTimeline.classify(index: 1, events: raw, trace: trace, endState: end),
+                          title: "빠른 누름 테스트의 표시 칸 세 번 빠르게(앱을 켜고 표시 화면을 연 뒤 첫 누름)", name: "fasttap-triple")
         record("세 번 빠르게 누름(표시 칸)", events, result: cell.label)
         // 끝 상태(표시 없음)는 누르기 전과 같아서, 누름 셋이 실제로 처리됐는지(손가락 click 과 채운 click 이 모두 셋)도 본다.
         XCTAssertEqual(events.count("touchend"), 3, "손뗌 셋이 웹에 왔다: \(events.sequence)")

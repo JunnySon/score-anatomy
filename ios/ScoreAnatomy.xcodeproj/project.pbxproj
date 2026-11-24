@@ -21,6 +21,7 @@
 		5B6EC28CFA1C9A1859113590 /* RestartAndRhythmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE518120FE496F55AAF7CB4B /* RestartAndRhythmTests.swift */; };
 		623F6E671B269B9012D384D6 /* RemoteFetchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDF4191C98462F1E5F8EA593 /* RemoteFetchTests.swift */; };
 		634EC4AA5E93450850F6509A /* WebFixScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE45458CD0CF423BB29FE2EF /* WebFixScreenTests.swift */; };
+		6EBB37D6430DA31FF1EF7DFA /* TapTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE531FC7B7A570DAB477EDF /* TapTimeline.swift */; };
 		73C846C499F2D107F9DAB6EB /* NetworkGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE91C4FC20ECD63C5394FB13 /* NetworkGuard.swift */; };
 		78D72884DC3B7D717C6D58D5 /* Driving.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84029485CE0604559D00A41B /* Driving.swift */; };
 		7D04E0985B7892C929B0CFFA /* BridgeSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22372A060D5FA57EBB85A7A /* BridgeSpec.swift */; };
@@ -107,6 +108,7 @@
 		E8F509345C9252C0E21A3C81 /* BackgroundTasks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTasks.swift; sourceTree = "<group>"; };
 		F21DB317EC6899DCA8051A65 /* FlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowTests.swift; sourceTree = "<group>"; };
 		FE91C4FC20ECD63C5394FB13 /* NetworkGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkGuard.swift; sourceTree = "<group>"; };
+		FEE531FC7B7A570DAB477EDF /* TapTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TapTimeline.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -185,6 +187,7 @@
 				C6EFDACFF4EC02443BEDB247 /* AppHandle.swift */,
 				84029485CE0604559D00A41B /* Driving.swift */,
 				B090FA3274AAF99FB270310F /* Seeding.swift */,
+				FEE531FC7B7A570DAB477EDF /* TapTimeline.swift */,
 				2175BE0BF8D05BDB8CD48B25 /* TouchSynth.swift */,
 			);
 			path = Support;
@@ -502,6 +505,7 @@
 				5B6EC28CFA1C9A1859113590 /* RestartAndRhythmTests.swift in Sources */,
 				295BE8E3DF90654D93FC9049 /* ScreenTests.swift in Sources */,
 				F35585256B4206A63A1C40AA /* Seeding.swift in Sources */,
+				6EBB37D6430DA31FF1EF7DFA /* TapTimeline.swift in Sources */,
 				DEA151F41696DC7193573800 /* TouchSynth.swift in Sources */,
 				634EC4AA5E93450850F6509A /* WebFixScreenTests.swift in Sources */,
 			);

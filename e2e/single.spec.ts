@@ -23,7 +23,8 @@ test('단일 HTML: 파일 하나로 열리고 외부 요청이 없다', async ({
   await page.goto(pathToFileURL(SINGLE).href);
   await page.locator('.app').first().waitFor();
   await settle(page);
-  await expect(page.getByRole('heading', { name: '점수 해부' })).toBeVisible();
+  // 시작 화면의 제목은 앱 이름이다(작업 지시서 4: 모고칸).
+  await expect(page.getByRole('heading', { name: '모고칸' })).toBeVisible();
   // 시스템 글꼴만 쓴다.
   const family = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
   expect(family).toBe('-apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif');

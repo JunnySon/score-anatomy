@@ -32,7 +32,7 @@ test('아티팩트용 파일: 뼈대 안에서 열리고, 주소를 건드리지
   expect(existsSync(FILE), 'node scripts/make-artifact.mjs 를 먼저 실행해야 해요').toBe(true);
   const content = readFileSync(FILE, 'utf8');
   // 문서 뼈대 태그 없이 내용만 있고, 제목이 맨 위에 있다.
-  expect(content.startsWith('<title>점수 해부</title>')).toBe(true);
+  expect(content.startsWith('<title>모고칸</title>')).toBe(true);
   expect(content).not.toMatch(/<!doctype|<html|<head|<body/i);
   expect(content).not.toMatch(/<script[^>]+src=/);
   expect(content).not.toMatch(/<link[^>]+href=/);
@@ -44,7 +44,8 @@ test('아티팩트용 파일: 뼈대 안에서 열리고, 주소를 건드리지
   await page.goto(url);
   await page.locator('.app').first().waitFor();
   await settle(page);
-  await expect(page.getByRole('heading', { name: '점수 해부' })).toBeVisible();
+  // 시작 화면의 제목은 앱 이름이다(작업 지시서 4: 모고칸).
+  await expect(page.getByRole('heading', { name: '모고칸' })).toBeVisible();
   // 한 화면 앱이라 문서 자체는 스크롤되지 않는다.
   const fits = await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1);
   expect(fits).toBe(true);

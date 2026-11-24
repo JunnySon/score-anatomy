@@ -60,7 +60,8 @@ export function clockText(h: number, mi: number): string {
 }
 
 export const S = {
-  appName: '점수 해부',
+  // 앱 이름(작업 지시서 4, 2026-11-24 사람이 정함). "점수 해부"는 앱 안의 화면 이름으로 남는다(anatomy.top).
+  appName: '모고칸',
 
   common: {
     back: '뒤로',

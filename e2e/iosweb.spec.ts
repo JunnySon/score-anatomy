@@ -473,14 +473,14 @@ test.describe('3-5 보기 문제', () => {
     await openApp(page, '/marks');
     const dock = page.locator('.dock');
     await expect(dock).toHaveAttribute('data-more', 'false');
-    // 화면 안에 나중에 내용이 생긴 것(채점한 뒤의 안내 같은)을 흉내 낸다: 맨 아래 묶음 안에 높은 요소를 넣는다(별도 검토 F6).
+    // 화면 안에 나중에 내용이 생긴 것(채점한 뒤의 안내 같은)을 흉내 낸다: main.body 의 새 직계 자식으로 높은 요소를 넣는다(별도 검토 F6, N8).
+    // 본문의 높이와 처음 있던 자식들의 크기는 그대로라, 크기만 지켜보면 알아채지 못한다.
     await page.evaluate(() => {
-      const sections = document.querySelectorAll('main.body section');
-      const last = sections[sections.length - 1]!;
+      const body = document.querySelector('main.body')!;
       const tall = document.createElement('div');
       tall.dataset.testid = 'late-content';
       tall.style.height = '1200px';
-      last.appendChild(tall);
+      body.appendChild(tall);
     });
     await expect(dock).toHaveAttribute('data-more', 'true');
     expect(await page.locator('main.body').evaluate((el) => el.scrollTop)).toBe(0);

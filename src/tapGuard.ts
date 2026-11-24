@@ -22,22 +22,26 @@
 //
 // 빠진 누름 채우기(작업 지시서 3-1의 3-1):
 // 아이폰의 웹뷰는 손을 떼고 몇 ms 안에 같은 자리를 다시 누르면 첫 누름의 click(detail 1)을 보내지 않고
-// 손뗌 두 번(touchend, pointerup) 뒤에 click(detail 2) 하나와 dblclick 만 보낸다. 그래서 detail 이 d(2 이상)인 click 이 오면,
-// 마지막으로 받은 click 뒤에 이 자리(가로세로 24px 안)에서 1초 안에 손을 뗀 횟수를 센다. 손뗌은 click 마다 하나씩이라
-// 손뗌이 click 보다 많으면 그만큼 click 이 빠진 것이다. 빠진 수(손뗌 수 - 1, 많아도 d-1)만큼의 click 을
-// 같은 요소, 같은 좌표로 먼저 만들어 보낸 뒤에 지금 click 을 평소대로 처리한다.
+// 손뗌 두 번(touchend, pointerup) 뒤에 click(detail 2) 하나와 dblclick 만 보낸다. 0.4초 간격이면 click 이 두 번 다 온다.
+// 그래서 detail 이 d(2 이상)인 click 이 오면, 마지막으로 받은 click 뒤의 손뗌 가운데 이 click 의 자리(가로세로 24px 안)에서
+// 0.4초 안의 간격으로 이어진 손뗌을 센다. 손뗌은 click 마다 하나씩이라 손뗌이 click 보다 많으면 그만큼 click 이 빠진 것이다.
+// 빠진 수(손뗌 수 - 1, 많아도 d-1)만큼의 click 을 같은 요소, 같은 좌표로 먼저 만들어 보낸 뒤에 지금 click 을 평소대로 처리한다.
+// - 애매하면 채우지 않는다. 누름 하나가 빠지는 것보다 없는 누름이 들어가는 쪽이 더 나쁘다. 그래서 이어진 손뗌 가운데
+//   끌기(누른 동안 16px 넘게 움직임, 돌아와서 떼도 같음), 취소, 길게 누름(0.4초 넘게, 또는 contextmenu 가 옴), 두 손가락이 겹친 누름,
+//   스크롤이 움직이던 중에 시작한 누름(관성을 멈춘 누름은 click 이 없음), 누르기 시작을 못 본 손뗌, 다른 자리나 다른 요소의 손뗌이
+//   하나라도 있으면 채우지 않고, pointer 와 touch 가 다르게 세면 적은 쪽을 쓴다.
 // - detail 의 이어짐만으로 짐작하지 않는다. 안드로이드 크롬은 다른 키를 빠르게 이어 눌러도 detail 을 올리고,
 //   윈도우의 Chromium 은 detail 을 3까지만 올려서, 그것만 보면 진짜 click 이 다 오는데도 누름을 더 넣게 된다(별도 검토 F1, F2).
 //   click 마다 손뗌이 하나씩 오는 브라우저(마우스, 안드로이드, 보통 빠르기의 아이폰 누름)에서는 채우지 않는다.
-// - 입력은 그대로 click 으로만 받는다. 손뗌은 세기만 한다. 끌기와 스크롤(누른 자리에서 16px 넘게 움직인 손뗌, 취소된 누름)은 세지 않는다.
+// - 입력은 그대로 click 으로만 받는다. 손뗌과 누름의 움직임은 세기만 한다.
 // - 만들어 보낸 click 도 진짜 click 과 똑같이 이 보호를 거친다(막고 있는 곳이면 버려진다). 보호를 볼 때의 시각은
-//   그 누름의 손뗌 시각이다(진짜 click 이 왔을 시각, 별도 검토 F5).
+//   그 누름의 손뗌 시각이고(진짜 click 이 왔을 시각, 별도 검토 F5), 그 시각에 걸려 있던 막기로 본다(막기 기록, 별도 검토 N3, N6).
 // - 보호가 버린 click 도 "받은 것"으로 센다(손뗌 수를 거기서 다시 센다). 버려진 누름을 다시 채워 넣지 않는다.
 // - 만들어 보낸 click 의 처리(화면 그리기와 그 뒤의 효과)는 지금 click 보다 먼저 끝낸다(flushSync).
 //   그래야 지금 click 이 첫 누름이 바꾼 화면과 상태를 보고 처리된다. 진짜 click 이 차례로 다 온 것과 같다.
 // - 누른 요소는 가장 가까운 누를 수 있는 요소(버튼 등)로 본다. 만들어 보낸 click 으로 그 요소가 화면에서 사라졌거나
 //   쓸 수 없게 됐거나 그 자리를 다른 요소가 덮었으면 지금 click 은 (보호에 버려지지 않았더라도) 어디에도 들어가지 않게 한다.
-//   바뀐 화면의 다른 요소가 대신 눌리지 않게 한다. 요소는 그대로인데 그 안의 글자 요소만 바뀌었으면(예: "찍음" 글자가 지워짐)
+//   바뀐 화면의 다른 요소가 대신 눌리지 않게 한다. 요소는 그대로인데 그 안의 글자 요소만 바뀌었으면(예: "자신 없음" 글자가 지워짐)
 //   지금 click 을 그 자리의 지금 요소로 다시 보낸다(별도 검토 F3).
 // - 키보드나 스크립트로 낸 click(detail 0)과 dblclick 은 건드리지 않는다. 보호의 시간, 거리, 대상은 그대로다.
 // - 측정 중이면 채운 누름을 센다(src/App.tsx, filled_taps).
@@ -49,16 +53,19 @@ export const TAP_GUARD_MS = 500;
 export const TAP_GUARD_PX = 24;
 
 /**
- * 빠진 누름 채우기: click 앞의 손뗌을 이 click 의 누름 묶음으로 세는 가장 긴 사이(ms). 아이폰에서 빠지는 첫 누름은
- * 손을 떼고 몇 ms 안에 다시 누른 것이라 넉넉하다. 오래전의 손뗌(끌기 끝 등)을 세지 않으려고 둔다.
+ * 빠진 누름 채우기: 한 묶음으로 세는 이어진 손뗌 사이(와 이 click 자신의 손뗌과 click 사이)의 가장 긴 간격(ms).
+ * 아이폰 시뮬레이터에서 0.4초 간격으로 두 번 누르면 click 이 두 번 다 와서, 그보다 오래된 손뗌은 빠진 누름일 수 없다.
  */
-export const FILL_WINDOW_MS = 1000;
+export const FILL_GAP_MS = 400;
 
 /** 빠진 누름 채우기: click 의 자리에서 가로세로 이만큼 안의 손뗌만 센다(px). 연달아 누르기 보호와 같은 거리다. */
 export const FILL_SPOT_PX = TAP_GUARD_PX;
 
-/** 빠진 누름 채우기: 누른 자리에서 이만큼 넘게 움직인 손뗌은 누름이 아니라 끌기나 스크롤로 보고 세지 않는다(px). */
+/** 빠진 누름 채우기: 누른 동안 누른 자리에서 이만큼 넘게 움직인 누름은 끌기나 스크롤로 보고 세지 않는다(px). */
 export const FILL_MOVE_PX = 16;
+
+/** 빠진 누름 채우기: 이보다 오래 누른 누름(길게 누름)은 세지 않는다(ms). */
+export const FILL_PRESS_MS = 400;
 
 interface Spot {
   x: number;
@@ -68,20 +75,44 @@ interface Spot {
 /** 막는 넓이. spot 은 누른 자리만, screen 은 화면 전체. */
 export type GuardArea = 'spot' | 'screen';
 
+/** 막기 하나. since 부터 until 전까지 막는다. strict 면 단답형 숫자 키(data-tap-safe)도 버린다. */
+interface GuardRecord extends Spot {
+  area: GuardArea;
+  since: number;
+  until: number;
+  strict: boolean;
+}
+
 /** 마지막으로 받아들인 누름. */
 let lastClick: (Spot & { at: number }) | null = null;
-/** 손을 뗀 자리와 시각(받은 때의 performance.now()). */
-interface Release extends Spot {
-  t: number;
+/** 누름 하나(누르기 시작부터 뗄 때까지). 시각은 받은 때의 performance.now() 다(보호와 같은 시계). */
+interface Press {
+  x0: number;
+  y0: number;
+  t0: number;
+  /** 누른 자리에서 FILL_MOVE_PX 넘게 움직인 적이 있는지(끌기, 스크롤). 돌아와서 떼도 그대로다. */
+  moved: boolean;
+  /** 다른 손가락과 겹친 누름인지. */
+  multi: boolean;
+  /** 셀 수 없는 누름인지: 길게 누름으로 알려졌거나(contextmenu), 스크롤이 움직이던 중에 눌렀다(관성을 멈춘 누름은 click 이 없다). */
+  bad: boolean;
+  /** 누른 요소(가장 가까운 누를 수 있는 요소). 빠진 누름은 지금 click 과 같은 요소를 누른 것이어야 한다. */
+  control: Element | null;
 }
-/**
- * 마지막으로 받은 click(보호가 버린 것도 센다) 뒤의 손뗌. pointerup 과 touchend 를 따로 모아 많은 쪽을 쓴다
- * (한 번 뗀 것이 둘 다로 오므로 더하지 않는다. 둘 가운데 하나만 오는 브라우저도 센다).
- */
-const releases: { pointer: Release[]; touch: Release[] } = { pointer: [], touch: [] };
-/** 누르기 시작한 자리(pointerId 와 touch identifier 별). 손뗌이 끌기였는지 볼 때 쓴다. */
-const pointerDowns = new Map<number, Spot>();
-const touchDowns = new Map<number, Spot>();
+/** 손뗌. ok 가 false 면 빠진 누름으로 세지 않는 손뗌(끌기, 취소, 길게 누름, 두 손가락, 누르기 시작을 못 본 것)이다. */
+interface Lift extends Spot {
+  t: number;
+  ok: boolean;
+  control: Element | null;
+}
+/** 마지막으로 받은 click(보호가 버린 것도 센다) 뒤의 손뗌. pointer 와 touch 를 따로 모은다. */
+const lifts: { pointer: Lift[]; touch: Lift[] } = { pointer: [], touch: [] };
+/** pointer 이벤트, touch 이벤트를 한 번이라도 받았는지. 받은 쪽만 견준다. */
+let pointerSeen = false;
+let touchSeen = false;
+/** 지금 눌려 있는 누름(pointerId 와 touch identifier 별). */
+const pointerPresses = new Map<number, Press>();
+const touchPresses = new Map<number, Press>();
 /** 빠진 누름을 만들어 보내는 중인지. 만들어 보낸 click 에서는 다시 채우지 않는다. */
 let filling = false;
 /** 만들어 보내는 click 의 보호를 볼 시각(그 누름의 손뗌 시각). 없으면 지금 시각. */
@@ -91,7 +122,12 @@ let redispatching = false;
 /** 만들어 보낸 click 을 처리할 때 감싸는 함수. 화면 그리기를 지금 끝내게 한다(src/main.tsx 가 React 의 flushSync 를 넣는다). */
 let flushRunner: (fn: () => void) => void = (fn) => fn();
 /** 지금 막고 있는 자리. strict 면 단답형 숫자 키(data-tap-safe)도 버린다. */
-let guard: (Spot & { area: GuardArea; until: number; strict: boolean }) | null = null;
+let guard: GuardRecord | null = null;
+/**
+ * 지금까지 건 막기의 기록(짧게 남김). 막기 타이머가 지금 막기(guard)를 지운 뒤에도, 채운 click 을 그 손뗌 시각에 걸려 있던
+ * 막기로 판정하려고 둔다(별도 검토 N3, N6). 그 손뗌 뒤에 걸린 막기는 그 손뗌의 click 을 막지 않았을 것이므로 보지 않는다.
+ */
+let guardLog: GuardRecord[] = [];
 /** 막고 있는 자리에 두는 표시. 누름을 받지 않는다. 화면 테스트와 화면 검사가 막는 시간이 끝났는지 볼 때 쓴다. */
 let marker: HTMLDivElement | null = null;
 let timer = 0;
@@ -154,7 +190,13 @@ function clearGuard(): void {
 }
 
 function holdGuard(spot: Spot, area: GuardArea, ms: number, strict = false): void {
-  guard = { x: spot.x, y: spot.y, area, until: performance.now() + ms, strict };
+  const now = performance.now();
+  // 채우는 동안 건 막기는 그 채움의 손뗌 시각(진짜 click 이 왔을 시각)부터 걸린 것으로 적는다. 그래야 같은 묶음의 다음 손뗌이
+  // 진짜 누름처럼 그 막기에 걸린다. 끝은 지금부터 센다(조금 더 오래 막는다).
+  const since = filling && fillClock !== null ? Math.min(fillClock, now) : now;
+  guard = { x: spot.x, y: spot.y, area, since, until: now + ms, strict };
+  guardLog = guardLog.filter((g) => now - g.until < FILL_GAP_MS * 4);
+  guardLog.push(guard);
   if (!marker) {
     marker = document.createElement('div');
     marker.className = 'tap-shield';
@@ -177,11 +219,20 @@ function holdGuard(spot: Spot, area: GuardArea, ms: number, strict = false): voi
   timer = window.setTimeout(clearGuard, ms);
 }
 
-/** 그 누름이 지금 막고 있는 곳에 왔는지. */
-function isGuarded(e: MouseEvent, now: number): boolean {
-  if (!guard || now >= guard.until) return false;
-  if (guard.area === 'screen') return true;
-  return Math.abs(e.clientX - guard.x) <= TAP_GUARD_PX && Math.abs(e.clientY - guard.y) <= TAP_GUARD_PX;
+/** 그 누름이 그 시각 t 에 막기 g 가 막는 곳에 왔는지. g 를 건 때(since)보다 앞이거나 끝난 뒤(until)면 막지 않는다. */
+function coveredBy(g: GuardRecord | null, e: MouseEvent, t: number): boolean {
+  if (!g || t < g.since || t >= g.until) return false;
+  if (g.area === 'screen') return true;
+  return Math.abs(e.clientX - g.x) <= TAP_GUARD_PX && Math.abs(e.clientY - g.y) <= TAP_GUARD_PX;
+}
+
+/** 그 시각 t 에 걸려 있던 막기(가장 늦게 건 것). 채운 click 을 그 손뗌 시각으로 판정할 때 쓴다. */
+function guardAt(t: number): GuardRecord | null {
+  for (let i = guardLog.length - 1; i >= 0; i -= 1) {
+    const g = guardLog[i]!;
+    if (g.since <= t && t < g.until) return g;
+  }
+  return null;
 }
 
 /** 누른 요소(가장 가까운 누를 수 있는 요소, 없으면 누른 요소 자체). */
@@ -189,71 +240,169 @@ function controlOf(target: Element): Element {
   return target.closest(INTERACTIVE_SELECTOR) ?? target;
 }
 
-/** 손뗌을 모은다. 오래된 것은 버리고 많아도 8개만 둔다. */
-function remember(list: Release[], r: Release): void {
-  list.push(r);
-  while (list.length > 0 && r.t - list[0]!.t > FILL_WINDOW_MS) list.shift();
-  if (list.length > 8) list.splice(0, list.length - 8);
+/** 손뗌을 모은다. 이어진 묶음만 보면 되므로 오래된 것과 너무 많은 것은 버린다. */
+function remember(list: Lift[], lift: Lift): void {
+  list.push(lift);
+  while (list.length > 0 && lift.t - list[0]!.t > FILL_GAP_MS * 8) list.shift();
+  if (list.length > 16) list.splice(0, list.length - 16);
 }
 
-function moved(from: Spot | undefined, x: number, y: number): boolean {
-  return from !== undefined && Math.hypot(x - from.x, y - from.y) > FILL_MOVE_PX;
+function farFrom(p: Press, x: number, y: number): boolean {
+  return Math.hypot(x - p.x0, y - p.y0) > FILL_MOVE_PX;
+}
+
+/** 누름이 끝났을 때 빠진 누름으로 셀 수 있는 손뗌인지. 누르기 시작을 못 본 손뗌도 세지 않는다. */
+function liftOk(p: Press | undefined, x: number, y: number, now: number): boolean {
+  return p !== undefined && !p.moved && !p.multi && !p.bad && !farFrom(p, x, y) && now - p.t0 <= FILL_PRESS_MS;
+}
+
+/** 마지막으로 스크롤이 움직인 시각. 스크롤이 움직이던 중에 시작한 누름은 세지 않는다(별도 검토 N2). */
+let lastScrollAt = -Infinity;
+
+function onScroll(): void {
+  lastScrollAt = performance.now();
+}
+
+/** 길게 누름이 알려지면(contextmenu) 지금 눌려 있는 누름은 모두 세지 않는다(별도 검토 N1). */
+function onContextMenu(): void {
+  for (const p of pointerPresses.values()) p.bad = true;
+  for (const p of touchPresses.values()) p.bad = true;
+}
+
+/** 새 누름. 스크롤이 움직이던 중(0.1초 안)이면 셀 수 없는 누름이다. */
+function newPress(x: number, y: number, now: number, target: EventTarget | null, multi: boolean): Press {
+  return {
+    x0: x,
+    y0: y,
+    t0: now,
+    moved: false,
+    multi,
+    bad: now - lastScrollAt < 100,
+    control: target instanceof Element ? controlOf(target) : null,
+  };
+}
+
+/** 오래 남은 누름(손뗌을 받지 못한 것)은 버린다. 남아 있으면 다음 누름이 두 손가락으로 잘못 세진다. */
+function dropStale(presses: Map<number, Press>, now: number): void {
+  for (const [id, p] of presses) if (now - p.t0 > 10_000) presses.delete(id);
 }
 
 function onPointerDown(e: PointerEvent): void {
-  if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  pointerDowns.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  pointerSeen = true;
+  const now = performance.now();
+  dropStale(pointerPresses, now);
+  const press = newPress(e.clientX, e.clientY, now, e.target, !e.isPrimary);
+  if (e.pointerType !== 'mouse' && pointerPresses.size > 0) {
+    // 다른 손가락이 눌려 있는 동안 또 눌렀다. 겹친 누름은 모두 세지 않는다.
+    press.multi = true;
+    for (const other of pointerPresses.values()) other.multi = true;
+  }
+  pointerPresses.set(e.pointerId, press);
+}
+
+function onPointerMove(e: PointerEvent): void {
+  const press = pointerPresses.get(e.pointerId);
+  if (press && !press.moved && farFrom(press, e.clientX, e.clientY)) press.moved = true;
 }
 
 function onPointerUp(e: PointerEvent): void {
-  if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
-  const from = pointerDowns.get(e.pointerId);
-  pointerDowns.delete(e.pointerId);
-  if (moved(from, e.clientX, e.clientY)) return;
-  remember(releases.pointer, { x: e.clientX, y: e.clientY, t: performance.now() });
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  pointerSeen = true;
+  const press = pointerPresses.get(e.pointerId);
+  pointerPresses.delete(e.pointerId);
+  const now = performance.now();
+  remember(lifts.pointer, {
+    x: e.clientX,
+    y: e.clientY,
+    t: now,
+    ok: e.isPrimary && liftOk(press, e.clientX, e.clientY, now),
+    control: press?.control ?? null,
+  });
 }
 
 function onPointerCancel(e: PointerEvent): void {
-  pointerDowns.delete(e.pointerId);
+  const press = pointerPresses.get(e.pointerId);
+  pointerPresses.delete(e.pointerId);
+  remember(lifts.pointer, { x: press?.x0 ?? e.clientX, y: press?.y0 ?? e.clientY, t: performance.now(), ok: false, control: null });
 }
 
 function onTouchStart(e: TouchEvent): void {
-  for (const t of Array.from(e.changedTouches)) touchDowns.set(t.identifier, { x: t.clientX, y: t.clientY });
+  touchSeen = true;
+  const now = performance.now();
+  dropStale(touchPresses, now);
+  for (const t of Array.from(e.changedTouches)) touchPresses.set(t.identifier, newPress(t.clientX, t.clientY, now, t.target, false));
+  // 손가락이 둘 이상 눌려 있다. 겹친 누름은 모두 세지 않는다.
+  if (e.touches.length > 1 || touchPresses.size > 1) for (const p of touchPresses.values()) p.multi = true;
+}
+
+function onTouchMove(e: TouchEvent): void {
+  for (const t of Array.from(e.changedTouches)) {
+    const press = touchPresses.get(t.identifier);
+    if (press && !press.moved && farFrom(press, t.clientX, t.clientY)) press.moved = true;
+  }
 }
 
 function onTouchEnd(e: TouchEvent): void {
+  touchSeen = true;
   const now = performance.now();
   for (const t of Array.from(e.changedTouches)) {
-    const from = touchDowns.get(t.identifier);
-    touchDowns.delete(t.identifier);
-    if (moved(from, t.clientX, t.clientY)) continue;
-    remember(releases.touch, { x: t.clientX, y: t.clientY, t: now });
+    const press = touchPresses.get(t.identifier);
+    touchPresses.delete(t.identifier);
+    remember(lifts.touch, { x: t.clientX, y: t.clientY, t: now, ok: liftOk(press, t.clientX, t.clientY, now), control: press?.control ?? null });
   }
 }
 
 function onTouchCancel(e: TouchEvent): void {
-  for (const t of Array.from(e.changedTouches)) touchDowns.delete(t.identifier);
+  const now = performance.now();
+  for (const t of Array.from(e.changedTouches)) {
+    touchPresses.delete(t.identifier);
+    remember(lifts.touch, { x: t.clientX, y: t.clientY, t: now, ok: false, control: null });
+  }
 }
 
 /**
- * 이 click 앞에 빠진 누름의 손뗌 시각들(오래된 것부터). detail 이 d(2 이상)이면, 마지막으로 받은 click 뒤에
- * 이 click 의 자리에서 FILL_WINDOW_MS 안에 뗀 손뗌 가운데 이 click 자신의 것(가장 늦은 것)을 뺀 나머지가 빠진 누름이다.
- * 많아도 d-1 개다. 손뗌이 click 마다 하나씩이면 빈 목록이다.
+ * 이 click 앞에 빠진 누름의 손뗌 시각들(오래된 것부터). detail 이 d(2 이상)일 때만 본다. 애매하면 빈 목록이다(채우지 않는다).
+ * - 가장 늦은 손뗌이 이 click 자신의 것이어야 한다: 셀 수 있는 손뗌이고, 이 click 의 자리(24px 안)이고, FILL_GAP_MS 안이다.
+ * - 거기서 거꾸로, 앞 손뗌과의 사이가 FILL_GAP_MS 안인 손뗌을 한 묶음으로 센다. 사이가 그보다 길면 묶음은 거기서 끝난다
+ *   (아이폰도 0.4초 간격이면 click 이 두 번 다 오므로, 그보다 오래된 손뗌은 빠진 누름일 수 없다).
+ * - 묶음 안에 셀 수 없는 손뗌(끌기, 취소, 길게 누름, 두 손가락, 스크롤 중의 누름, 누르기 시작을 못 본 것)이나
+ *   다른 자리, 다른 요소의 손뗌이 있으면 채우지 않는다.
+ * - pointer 와 touch 를 둘 다 받는 브라우저에서는 둘 가운데 적게 센 쪽을 쓴다. 많아도 d-1 개다.
  */
-function missingReleases(e: MouseEvent): number[] {
+function missingLifts(e: MouseEvent): number[] {
   const d = e.detail;
   if (d < 2) return [];
-  // 시각은 이벤트의 timeStamp 가 아니라 받은 때의 performance.now() 로 견준다. timeStamp 의 기준점이 엔진과 이벤트 종류마다
-  // 다를 수 있어서다(보호를 볼 때도 같은 시계를 쓴다).
   const now = performance.now();
-  const near = (r: Release) =>
-    Math.abs(r.x - e.clientX) <= FILL_SPOT_PX && Math.abs(r.y - e.clientY) <= FILL_SPOT_PX && now - r.t <= FILL_WINDOW_MS;
-  const fromPointer = releases.pointer.filter(near);
-  const fromTouch = releases.touch.filter(near);
-  const list = fromPointer.length >= fromTouch.length ? fromPointer : fromTouch;
-  const count = Math.min(list.length - 1, d - 1);
+  // 같은 자리(24px 안)이고 같은 요소를 누른 손뗌만 이 click 의 누름 묶음이다(옆 키 가장자리의 손뗌은 다른 누름이다, 별도 검토 N4).
+  const control = e.target instanceof Element ? controlOf(e.target) : null;
+  const near = (l: Lift) =>
+    control !== null &&
+    l.control === control &&
+    Math.abs(l.x - e.clientX) <= FILL_SPOT_PX &&
+    Math.abs(l.y - e.clientY) <= FILL_SPOT_PX;
+  const lostIn = (list: Lift[]): number[] => {
+    const own = list[list.length - 1];
+    if (!own || !own.ok || !near(own) || now - own.t > FILL_GAP_MS) return [];
+    const lost: number[] = [];
+    let after = own;
+    for (let i = list.length - 2; i >= 0; i -= 1) {
+      const lift = list[i]!;
+      if (after.t - lift.t > FILL_GAP_MS) break;
+      if (!lift.ok || !near(lift)) return [];
+      lost.unshift(lift.t);
+      after = lift;
+    }
+    return lost;
+  };
+  const sources: number[][] = [];
+  if (pointerSeen) sources.push(lostIn(lifts.pointer));
+  if (touchSeen) sources.push(lostIn(lifts.touch));
+  if (sources.length === 0) return [];
+  const count = Math.min(d - 1, ...sources.map((s) => s.length));
   if (count <= 0) return [];
-  return list.slice(list.length - 1 - count, list.length - 1).map((r) => r.t);
+  const base = sources[0]!;
+  return base.slice(base.length - count);
 }
 
 /** 누른 요소를 지금 그 자리에서 누를 수 있는지를 몇 가지로 나눠 본다. 채우기 전과 뒤를 견준다. */
@@ -315,7 +464,7 @@ function fillMissing(e: MouseEvent, target: Element, control: Element, times: nu
     const now = usableOf(control, e.clientX, e.clientY);
     if (becameUnusable(before, now)) {
       const at = Math.min(times[i]!, performance.now());
-      if (!guard || !isGuarded(e, at)) return;
+      if (!coveredBy(guardAt(at), e, at)) return;
       to = now.hit ?? (target.isConnected ? target : null);
     } else if (target.isConnected) {
       to = target;
@@ -352,10 +501,10 @@ function onClick(e: MouseEvent): void {
     hitTarget = document.elementFromPoint(e.clientX, e.clientY) ?? e.target;
   }
   if (!filling && !redispatching) {
-    const times = e.target instanceof Element ? missingReleases(e) : [];
+    const times = e.target instanceof Element ? missingLifts(e) : [];
     // 받은 click 이므로 손뗌은 여기서 다시 센다(보호가 버리는 click 도 같다).
-    releases.pointer = [];
-    releases.touch = [];
+    lifts.pointer = [];
+    lifts.touch = [];
     if (times.length > 0 && e.target instanceof Element) {
       const target = e.target;
       const control = controlOf(target);
@@ -381,13 +530,15 @@ function onClick(e: MouseEvent): void {
   }
   // 만들어 보낸 click 은 그 누름의 손뗌 시각으로 보호를 본다(진짜 click 이 왔을 시각, 별도 검토 F5).
   const now = filling && fillClock !== null ? Math.min(fillClock, performance.now()) : performance.now();
-  if (guard && isGuarded(e, now)) {
-    const safe = !guard.strict && hitTarget instanceof Element && hitTarget.closest('[data-tap-safe]') !== null;
+  // 채운 click 은 그 손뗌 시각에 걸려 있던 막기로 판정한다(막기 타이머가 지금 막기를 지웠어도, 그 뒤에 새로 걸린 막기는 보지 않음).
+  const active = filling && fillClock !== null ? guardAt(now) : guard;
+  if (active && coveredBy(active, e, now)) {
+    const safe = !active.strict && hitTarget instanceof Element && hitTarget.closest('[data-tap-safe]') !== null;
     if (!safe) {
       // 막고 있는 곳에 온 누름은 버리고, 그때부터 다시 센다.
       e.preventDefault();
       e.stopImmediatePropagation();
-      holdGuard(guard, guard.area, TAP_GUARD_MS, guard.strict);
+      holdGuard(active, active.area, TAP_GUARD_MS, active.strict);
       const interactive = hitTarget instanceof Element && hitTarget.closest(INTERACTIVE_SELECTOR) !== null;
       for (const l of discardListeners) l({ interactive, guardId });
       return;
@@ -400,8 +551,8 @@ function onClick(e: MouseEvent): void {
     e.stopImmediatePropagation();
     return;
   }
-  if (guard && isGuarded(e, now)) {
-    if (guard.area === 'screen') {
+  if (active && coveredBy(active, e, now)) {
+    if (active.area === 'screen') {
       // 화면 전체를 막는 동안 받은 숫자 키는 막기를 풀지 않는다(별도 검토 2차 P1). 남은 시간 동안 다른 키는 그대로 버린다.
       // 버린 누름 알림도 닫지 않는다. 닫으면 같은 보호 구간에서 이어 버린 누름이 알림 없이 사라진다(별도 검토 2차 뒤 확인 X3).
       lastClick = { x: e.clientX, y: e.clientY, at: now };
@@ -418,13 +569,17 @@ export function installTapGuard(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('click', onClick, true);
-  // 빠진 누름 채우기가 손뗌을 센다. 누름을 받거나 막지 않고 세기만 한다.
+  // 빠진 누름 채우기가 누름과 손뗌을 센다. 누름을 받거나 막지 않고 세기만 한다.
   window.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true });
+  window.addEventListener('pointermove', onPointerMove, { capture: true, passive: true });
   window.addEventListener('pointerup', onPointerUp, { capture: true, passive: true });
   window.addEventListener('pointercancel', onPointerCancel, { capture: true, passive: true });
   window.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+  window.addEventListener('touchmove', onTouchMove, { capture: true, passive: true });
   window.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
   window.addEventListener('touchcancel', onTouchCancel, { capture: true, passive: true });
+  window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+  window.addEventListener('contextmenu', onContextMenu, { capture: true, passive: true });
 }
 
 /**

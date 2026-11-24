@@ -430,7 +430,7 @@ const REQUIRED = {
   shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 198, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 48개 늘었다(fill 26, iosweb 22).
+  e2eTests: 206, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22).
   unitTests: 461, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기).
   toolTests: 104, // 통과한 발행 도구(scripts/exams) 단위 테스트 수의 최소(13번)
   leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
@@ -440,7 +440,7 @@ const REQUIRED = {
   appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
   appRemoteTests: 21, // 넘겨받기 화면 테스트(e2e/appRemote.spec.ts, 가짜 다리 규격 2, 작업 지시서 3의 8장과 별도 검토) 수
   appStyleTests: 3, // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts) 수
-  fillTests: 26, // 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts, 작업 지시서 3-1의 3-1) 수
+  fillTests: 34, // 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts, 작업 지시서 3-1의 3-1) 수
   iosWebTests: 22, // 아이폰에서 찾은 보기 문제 화면 테스트(e2e/iosweb.spec.ts, 작업 지시서 3-1의 3-2 ~ 3-5) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).

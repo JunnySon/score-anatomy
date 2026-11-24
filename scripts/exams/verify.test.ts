@@ -414,6 +414,8 @@ describe('발행 도구 exams:verify(작업 지시서 3의 6-2, 6-4)', () => {
       };
       const url = await at(out);
       expect((await verifyWith(url, key.publicFile, dir)).code).toBe(0);
+      // 견주지 못했으면 결과 줄이 다르다고 단정하지 않는다(2차 뒤 확인 Y3). 다를 때의 결과 줄은 잠금 달력 경우에서 본다.
+      const unknownHead = '결과: 주소의 발행물을 자료 폴더의 마지막 발행과 견주지 못했어요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:';
       const head = '결과: 주소의 발행물이 자료 폴더의 마지막 발행과 달라요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:';
       // state.json 에 git 충돌 표시가 남음, 파일이 없음, format 이 틀림: 견주지 못해서 주소 확인은 실패다. 폴더 확인은 알리기만 한다.
       const broken: [string, (d: string) => void, string][] = [
@@ -427,12 +429,12 @@ describe('발행 도구 exams:verify(작업 지시서 3의 6-2, 6-4)', () => {
         breakIt(copy);
         const r = await verifyWith(url, key.publicFile, copy);
         expect(r.code, name).toBe(1);
-        expect(r.err[0], name).toBe(head);
-        expect(r.err[1], name).toContain('  - 자료 폴더의 state.json 를 읽지 못해 마지막 발행과 견주지 못했어요(');
+        expect(r.err[0], name).toBe(unknownHead);
+        expect(r.err[1], name).toContain('  - 자료 폴더의 state.json 을 읽지 못해 마지막 발행과 견주지 못했어요(');
         expect(r.err[1], name).toContain(why);
         const folder = await verifyWith(out, key.publicFile, copy);
         expect(folder.code, name).toBe(0);
-        expect(folder.out.join(' '), name).toContain('자료 폴더의 state.json 를 읽지 못해 마지막 발행과 견주지 못했어요(');
+        expect(folder.out.join(' '), name).toContain('자료 폴더의 state.json 을 읽지 못해 마지막 발행과 견주지 못했어요(');
       }
       // 같은 시험, 같은 issuedAt 으로 잠금 달력만 다르게 발행한 두 자료 폴더(둘 다 seq 1): 한쪽 발행물을 다른 쪽 자료 폴더로 확인하면 실패다.
       const one = dataDir();
@@ -446,6 +448,7 @@ describe('발행 도구 exams:verify(작업 지시서 3의 6-2, 6-4)', () => {
       expect(publishTo(two, outDir(), key.keyFile).code).toBe(0);
       const lockDiff = await verifyWith(await at(outOne), key.publicFile, two);
       expect(lockDiff.code).toBe(1);
+      expect(lockDiff.err[0]).toBe(head);
       expect(lockDiff.err[1]).toBe(
         '  - 주소의 발행물(seq 1, issuedAt 2030-01-02T17:10)은 seq, issuedAt, 시험이 자료 폴더의 마지막 발행(seq 1, issuedAt 2030-01-02T17:10)과 같은데 잠금 달력이 state.json 과 달라요. 다른 자료 폴더에서 같은 seq 로 발행했을 수 있어요.',
       );

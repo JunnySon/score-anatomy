@@ -355,6 +355,8 @@ interface StateCompare {
   lines: string[];
   warnings: string[];
   differs: string | null;
+  /** state.json 을 읽지 못해 견주지 못했는지. 그때는 다르다고 단정하지 않는 결과 줄을 쓴다(별도 검토 2차 뒤 확인 Y3). */
+  unknown?: boolean;
 }
 
 /**
@@ -373,11 +375,12 @@ function compareWithState(dataDir: string, result: VerifyResult, testOnlyKey: bo
   const parsed = file.error === null ? parseState(file.value) : null;
   if (parsed === null || parsed.state === null) {
     const why = file.error ?? (parsed !== null && parsed.errors.length > 0 ? parsed.errors.join(' ') : '모양이 틀려요.');
-    const text = `자료 폴더의 ${STATE_FILE} 를 읽지 못해 마지막 발행과 견주지 못했어요(${why}).`;
+    const text = `자료 폴더의 ${STATE_FILE} 을 읽지 못해 마지막 발행과 견주지 못했어요(${why}).`;
     return {
       lines: [],
       warnings: [text],
       differs: `${text} git pull 로 자료 폴더를 받고(충돌이 있으면 풀고) --data 가 맞는지 본 뒤 다시 확인하고, 그 전에는 발행하지 않아요.`,
+      unknown: true,
     };
   }
   const state = parsed.state;
@@ -469,7 +472,11 @@ export async function runVerify(opts: VerifyOptions, io: Io): Promise<number> {
     for (const w of warnings) io.out(`  - ${w}`);
   }
   if (urlDiffers !== null) {
-    return fail(['결과: 주소의 발행물이 자료 폴더의 마지막 발행과 달라요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:', `  - ${urlDiffers}`]);
+    // 견주지 못했으면 다르다고 단정하지 않는다(별도 검토 2차 뒤 확인 Y3). 종료 코드는 같이 1이다.
+    const head = state.unknown
+      ? '결과: 주소의 발행물을 자료 폴더의 마지막 발행과 견주지 못했어요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:'
+      : '결과: 주소의 발행물이 자료 폴더의 마지막 발행과 달라요. 서명, 시험 파일의 SHA-256 과 검사는 맞아요. 이유 1개:';
+    return fail([head, `  - ${urlDiffers}`]);
   }
   if (result.ok) {
     io.out('결과: 발행물이 맞아요. 서명, 시험 파일의 SHA-256 과 검사, 잠금 달력이 모두 맞아요.');

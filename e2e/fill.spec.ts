@@ -769,3 +769,368 @@ test('측정 중 채운 누름이 filled_taps 에 세어진다', async ({ page, 
   expect(row[head.indexOf('filled_taps')]).toBe('2');
   expect(row[head.indexOf('discarded_taps')]).toBe('0');
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// 누르는 동안 온 dblclick 으로 채우기(작업 지시서 4의 2-2, src/tapGuard.ts 의 FILL_HELD_DBLCLICK).
+// 아이폰 시뮬레이터에서 잰 이벤트 열(docs/ios_검증결과.md 의 "웹이 받은 이벤트", docs/ios_진행기록.md)을 그대로 흉내 낸다.
+// - iOS 18.4 의 사라지는 둘째 누름: pointerdown, touchstart, pointerup, touchend, click 1, pointerdown, touchstart, dblclick 2, pointerup, touchend
+// - iOS 26.4 의 보통 두 번 누름: ..., click 1, pointerdown, touchstart, pointerup, touchend, click 2, dblclick 2
+// - iOS 26.4 의 아주 빠른 두 번 누름: 누름, 손뗌, 누름, 손뗌 뒤에 click 2, dblclick 2
+// - 세 번 빠르게 누름(iOS 26.4 와 18.4 가 같음): 누름, 손뗌, 누름, 손뗌, click 2, dblclick 2, 누름, 손뗌, click 1
+// 누름 하나는 pointer 이벤트와 touch 이벤트를 함께 보낸다(아이폰 웹뷰와 같음). Touch 를 만들 수 없는 브라우저(이 PC 의 WebKit)에서는
+// touch 이벤트를 빼고 pointer 이벤트만 보낸다.
+
+/** 누르는 동안 온 dblclick 을 기다리는 시간(src/tapGuard.ts 의 HELD_WAIT_MS)보다 넉넉히 기다리는 시간(ms). */
+const AFTER_HELD_WAIT = 250;
+
+interface PressOptions {
+  /** 누르는 동안(손을 떼기 전) 보낼 dblclick 의 detail. */
+  dbl?: number;
+  /** 누른 채 기다리는 시간(ms, 길게 누름). */
+  holdMs?: number;
+  /** 손을 떼기 전에 옮겨 갈 자리(끌기). */
+  to?: Pt;
+  /** 손을 떼기 전에 contextmenu 를 보낸다(길게 누름이 알려짐). */
+  contextmenu?: boolean;
+  /** 마우스로 누른다(데스크톱). touch 이벤트를 보내지 않는다. */
+  mouse?: boolean;
+  /** 손을 뗀 바로 뒤(같은 차례 안)에 보낼 click 의 detail. */
+  thenClick?: number;
+}
+
+/** 아이폰 웹뷰가 보내는 차례대로 누름 하나를 보낸다: pointerdown, touchstart, (dblclick), pointerup, touchend, (click). */
+async function iosPress(page: Page, p: Pt, o: PressOptions = {}): Promise<void> {
+  const send = async (phase: 'down' | 'up') =>
+    page.evaluate(
+      ({ phase, p, o }) => {
+        const mouse = o.mouse === true;
+        const hit = (q: { x: number; y: number }) => document.elementFromPoint(q.x, q.y) ?? document.body;
+        const pointer = (type: string, q: { x: number; y: number }) =>
+          hit(q).dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              isPrimary: true,
+              pointerId: 1,
+              pointerType: mouse ? 'mouse' : 'touch',
+              button: 0,
+              clientX: q.x,
+              clientY: q.y,
+            }),
+          );
+        const touch = (type: string, q: { x: number; y: number }) => {
+          if (mouse || typeof Touch !== 'function') return;
+          try {
+            const el = hit(q);
+            const t = new Touch({ identifier: 1, target: el, clientX: q.x, clientY: q.y });
+            const ending = type === 'touchend';
+            el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, composed: true, changedTouches: [t], touches: ending ? [] : [t] }));
+          } catch {
+            // Touch 를 만들 수 없는 브라우저는 pointer 이벤트만 보낸다.
+          }
+        };
+        const mouseEvent = (type: string, q: { x: number; y: number }, detail: number) => {
+          const ev = new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, detail, clientX: q.x, clientY: q.y });
+          (ev as MouseEvent & { __test?: boolean }).__test = true;
+          hit(q).dispatchEvent(ev);
+        };
+        if (phase === 'down') {
+          pointer('pointerdown', p);
+          touch('touchstart', p);
+          return;
+        }
+        const end = o.to ?? p;
+        if (o.to) {
+          pointer('pointermove', o.to);
+          touch('touchmove', o.to);
+        }
+        if (o.contextmenu) hit(p).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: p.x, clientY: p.y }));
+        if (o.dbl) mouseEvent('dblclick', p, o.dbl);
+        pointer('pointerup', end);
+        touch('touchend', end);
+        if (o.thenClick) mouseEvent('click', end, o.thenClick);
+      },
+      { phase, p, o },
+    );
+  await send('down');
+  if (o.holdMs) await page.waitForTimeout(o.holdMs);
+  await send('up');
+}
+
+/** 그 좌표의 맨 위 요소에 dblclick 하나를 보낸다(손을 뗀 뒤에 오는 보통의 dblclick). */
+async function dblclickAt(page: Page, p: Pt, detail = 2): Promise<void> {
+  await page.evaluate(
+    ({ x, y, detail }) => {
+      const el = document.elementFromPoint(x, y) ?? document.body;
+      el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, composed: true, view: window, detail, clientX: x, clientY: y }));
+    },
+    { x: p.x, y: p.y, detail },
+  );
+}
+
+/**
+ * 아이폰 차례의 누름 열. 'p' 는 누름 하나(손가락 이벤트), 'h' 는 누르는 동안 dblclick 2 가 온 누름, 숫자는 그 detail 의 click,
+ * 'dbl' 은 손을 뗀 뒤의 dblclick 2, { wait } 는 기다림이다.
+ */
+type IosStep = 'p' | 'h' | 'dbl' | number | { wait: number };
+
+async function playIos(page: Page, p: Pt, steps: IosStep[], gap = 0): Promise<void> {
+  for (const s of steps) {
+    if (s === 'p') await iosPress(page, p);
+    else if (s === 'h') await iosPress(page, p, { dbl: 2 });
+    else if (s === 'dbl') await dblclickAt(page, p);
+    else if (typeof s === 'number') await clickAt(page, p, s);
+    else await page.waitForTimeout(s.wait);
+    if (gap > 0) await page.waitForTimeout(gap);
+  }
+}
+
+/** 웹의 판단 기록(src/tapGuard.ts 의 window.__saTapTrace)에서 그 판단의 수. */
+async function traced(page: Page, what: string): Promise<number> {
+  return page.evaluate((w) => ((window as Window & { __saTapTrace?: { what: string }[] }).__saTapTrace ?? []).filter((e) => e.what === w).length, what);
+}
+
+/** 아이폰 차례의 누름 열을 보내고 막기와 기다림이 끝난 뒤 끝 상태를 읽는다. */
+async function runIos(page: Page, c: Case, steps: IosStep[]): Promise<{ state: unknown; filled: number[] }> {
+  const p = await c.setup(page);
+  await countFills(page);
+  await playIos(page, p, steps);
+  await page.waitForTimeout(700);
+  if (c.check) await c.check(page);
+  return { state: await snapshot(page), filled: await fills(page) };
+}
+
+/**
+ * 누르는 동안 온 dblclick 이 와도 채우지 않는 경우. 첫 click 으로 손가락 아래의 요소가 바뀌어(다른 화면, 바텀시트, 닫힌 시트 뒤)
+ * 둘째 누름이 앞 click 과 같은 요소가 아니거나, 키가 잠겨 누를 수 없다. 진짜 click 이 다 오는 경우에도 둘째 click 은 바뀐 화면에서
+ * 막기가 버리거나 잠긴 키라 아무것도 하지 않아서 기록과 화면은 같다. 다만 그 버린 click 이 누를 수 있는 요소 위였으면
+ * 진짜 click 이 다 온 쪽에만 버린 누름 알림이 뜬다(noticeOnlyInFull).
+ */
+const HELD_NO_FILL: { prefix: string; noticeOnlyInFull: boolean }[] = [
+  { prefix: '키패드의 답 키: 마지막 문항', noticeOnlyInFull: true },
+  { prefix: '키패드가 잠긴 상태의 답 키', noticeOnlyInFull: false },
+  { prefix: '표시 화면의 채점 버튼', noticeOnlyInFull: true },
+  { prefix: '바텀시트를 여는 버튼', noticeOnlyInFull: false },
+  // 시트가 닫힌 뒤 그 자리는 누를 수 없는 바탕이라, 진짜 click 이 다 온 쪽도 막기가 버리지만 알림은 없다.
+  { prefix: '바텀시트를 닫는 버튼', noticeOnlyInFull: false },
+  { prefix: '아래 탭의 링크', noticeOnlyInFull: true },
+];
+
+test.describe('누르는 동안 온 dblclick 으로 채우기: iOS 18.4 의 사라지는 둘째 누름이 iOS 26.4 의 보통 두 번 누름과 끝 상태가 같다', () => {
+  for (const c of CASES) {
+    test(c.name, async ({ page }) => {
+      const noFill = HELD_NO_FILL.find((n) => c.name.startsWith(n.prefix));
+      // iOS 26.4 의 보통 두 번 누름: click 1, click 2 가 다 오고 dblclick 2 는 둘째 손뗌 뒤에 온다.
+      const full = await runIos(page, c, ['p', 1, 'p', 2, 'dbl']);
+      // iOS 18.4: 둘째 누름에서 손을 떼기 전에 dblclick 2 가 오고 그 누름의 click 은 오지 않는다.
+      const held = await runIos(page, c, ['p', 1, 'h']);
+      expect(full.filled, '진짜 click 이 다 오면 채우지 않는다').toEqual([]);
+      if (!noFill) {
+        expect(held.filled, '누르는 동안 dblclick 2 가 온 누름의 click(detail 2)을 하나 채운다').toEqual([2]);
+        expect(held.state).toEqual(full.state);
+        return;
+      }
+      expect(held.filled, '첫 click 으로 손가락 아래의 요소가 바뀌었거나 키가 잠겨 채우지 않는다').toEqual([]);
+      const { notice: fullNotice, ...fullRest } = full.state as { notice: boolean };
+      const { notice: heldNotice, ...heldRest } = held.state as { notice: boolean };
+      expect(heldRest).toEqual(fullRest);
+      expect(heldNotice).toBe(false);
+      expect(fullNotice).toBe(noFill.noticeOnlyInFull);
+    });
+  }
+});
+
+test.describe('누르는 동안 온 dblclick 으로 채우기: 채우는 경우와 채우지 않는 경우', () => {
+  async function keypad(page: Page): Promise<{ k: (n: number) => Promise<Pt> }> {
+    await seedAndOpen(page, {}, '/input?input=keypad');
+    await expect(page.getByTestId('now-no')).toHaveText('1번');
+    await countFills(page);
+    return { k: (n: number) => centerOf(page, `[data-key="${n}"]`) };
+  }
+
+  test('iOS 26.4 의 보통 두 번 누름(click 1, click 2, dblclick 2)은 두 번 그대로이고 채움은 0이다', async ({ page }) => {
+    const { k } = await keypad(page);
+    await playIos(page, await k(3), ['p', 1, 'p', 2, 'dbl', { wait: AFTER_HELD_WAIT }]);
+    expect(await fills(page)).toEqual([]);
+    expect(await traced(page, 'held-wait')).toBe(0);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+  });
+
+  test('iOS 26.4 의 아주 빠른 두 번 누름(click 2 하나와 dblclick 2)은 지금처럼 손뗌 수 규칙으로 하나를 채워 두 번이 된다', async ({ page }) => {
+    const { k } = await keypad(page);
+    await playIos(page, await k(3), ['p', 'p', 2, 'dbl', { wait: AFTER_HELD_WAIT }]);
+    expect(await fills(page)).toEqual([1]);
+    expect(await traced(page, 'held-fill')).toBe(0);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+  });
+
+  test('iOS 18.4 의 사라지는 둘째 누름(손을 떼기 전에 dblclick 2, 그 누름의 click 없음)은 하나를 채워 두 번이 된다', async ({ page }) => {
+    const { k } = await keypad(page);
+    await playIos(page, await k(3), ['p', 1, 'h']);
+    // 손을 뗀 뒤 기다리는 동안에는 아직 채우지 않는다.
+    expect(await answersOf(page)).toEqual({ 1: 3 });
+    await page.waitForTimeout(AFTER_HELD_WAIT);
+    expect(await fills(page)).toEqual([2]);
+    expect(await traced(page, 'held-fill')).toBe(1);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+    await expect(page.getByTestId('now-no')).toHaveText('3번');
+  });
+
+  test('데스크톱 브라우저의 더블클릭(마우스)은 채우지 않고 세 번 들어가지 않는다', async ({ page }) => {
+    const { k } = await keypad(page);
+    const p = await k(3);
+    await iosPress(page, p, { mouse: true, thenClick: 1 });
+    await iosPress(page, p, { mouse: true, thenClick: 2 });
+    await dblclickAt(page, p);
+    await page.waitForTimeout(AFTER_HELD_WAIT);
+    expect(await fills(page)).toEqual([]);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+  });
+
+  test('안드로이드 크롬(결정기록 7.1): 같은 키 두 번 누름과 옆 키를 빠르게 이어 눌러 detail 이 오른 것은 채우지 않고 세 번 들어가지 않는다', async ({ page }) => {
+    const { k } = await keypad(page);
+    // 같은 키를 두 번: click 1, click 2 가 다 오고 dblclick 2 는 손을 뗀 뒤에 온다.
+    await playIos(page, await k(3), ['p', 1, 'p', 2, 'dbl']);
+    await page.waitForTimeout(600);
+    // 옆 키를 빠르게 이어 누름: 키마다 손뗌과 click 이 하나씩 오고 detail 은 1, 2, 3 으로 오른다(dblclick 2 도 온다).
+    await playIos(page, await k(4), ['p', 1]);
+    await playIos(page, await k(5), ['p', 2, 'dbl']);
+    await playIos(page, await k(1), ['p', 3]);
+    await page.waitForTimeout(AFTER_HELD_WAIT);
+    expect(await fills(page)).toEqual([]);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3, 3: 4, 4: 5, 5: 1 });
+  });
+
+  test('누르는 동안 dblclick 이 온 뒤 끌거나 길게 눌러 뗀 누름은 채우지 않는다', async ({ page }) => {
+    const cases: [string, PressOptions][] = [
+      ['끌기(40px 옮겨 뗌)', { dbl: 2, to: { x: 0, y: -40 } }],
+      ['길게 누름(0.5초)', { dbl: 2, holdMs: 500 }],
+      ['contextmenu 가 온 누름', { dbl: 2, contextmenu: true }],
+    ];
+    for (const [name, o] of cases) {
+      const { k } = await keypad(page);
+      const p = await k(3);
+      await playIos(page, p, ['p', 1]);
+      await iosPress(page, p, o.to ? { ...o, to: { x: p.x + o.to.x, y: p.y + o.to.y } } : o);
+      await page.waitForTimeout(AFTER_HELD_WAIT);
+      expect(await fills(page), name).toEqual([]);
+      expect(await answersOf(page), name).toEqual({ 1: 3 });
+    }
+  });
+
+  test('채운 뒤에 늦게 온 그 누름의 진짜 click 은 버린다(두 번 들어가지 않는다)', async ({ page }) => {
+    const { k } = await keypad(page);
+    await playIos(page, await k(3), ['p', 1, 'h', { wait: AFTER_HELD_WAIT }, 2]);
+    await page.waitForTimeout(700);
+    expect(await fills(page)).toEqual([2]);
+    expect(await traced(page, 'held-late-drop')).toBe(1);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+    // 늦게 온 click 은 보호가 버린 누름이 아니라서 알림을 띄우지 않는다.
+    await expect(page.getByTestId('tap-notice')).toHaveCount(0);
+  });
+
+  test('기다리는 동안 그 누름의 click 이 오면 채우지 않는다', async ({ page }) => {
+    const { k } = await keypad(page);
+    const p = await k(3);
+    await playIos(page, p, ['p', 1]);
+    // 손을 떼고 곧바로(같은 차례 안) 그 누름의 click 2 가 온다.
+    await iosPress(page, p, { dbl: 2, thenClick: 2 });
+    await page.waitForTimeout(AFTER_HELD_WAIT);
+    expect(await fills(page)).toEqual([]);
+    expect(await traced(page, 'held-cancel')).toBe(1);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
+  });
+
+  test('앞 click 과 다른 요소에서 누르는 동안 dblclick 이 온 누름은 채우지 않는다', async ({ page }) => {
+    const { k } = await keypad(page);
+    await playIos(page, await k(3), ['p', 1]);
+    // 첫 누름 뒤 손가락 아래의 요소가 바뀐 경우(아이폰의 점수 해부에서 스크롤로 글자가 온 것과 같은 모양): 다른 키에서 dblclick 2.
+    await iosPress(page, await k(4), { dbl: 2 });
+    await page.waitForTimeout(AFTER_HELD_WAIT);
+    expect(await fills(page)).toEqual([]);
+    expect(await answersOf(page)).toEqual({ 1: 3 });
+  });
+
+  test('기다리는 동안 다른 키의 click 이 먼저 오면 기다리던 누름을 먼저 채워 누른 차례를 지킨다', async ({ page }) => {
+    const { k } = await keypad(page);
+    const p3 = await k(3);
+    const p4 = await k(4);
+    await playIos(page, p3, ['p', 1]);
+    await iosPress(page, p3, { dbl: 2 });
+    await iosPress(page, p4, { thenClick: 1 });
+    await page.waitForTimeout(AFTER_HELD_WAIT);
+    expect(await fills(page)).toEqual([2]);
+    expect(await answersOf(page)).toEqual({ 1: 3, 2: 3, 3: 4 });
+  });
+});
+
+test.describe('누르는 동안 온 dblclick 으로 채우기: 세 번 빠르게 누름의 끝 상태가 실행마다 같다', () => {
+  const markCase = { ...CASES[0]!, check: undefined };
+
+  test('표시 칸: 잰 이벤트 열(click 2, dblclick 2, click 1)을 이벤트 사이 간격을 바꿔 돌려도 끝 상태가 같다(표시 없음)', async ({ page }) => {
+    // 세 번 다 따로 온 것(진짜 click 이 다 옴): 표시 없음.
+    const all3 = await runIos(page, markCase, ['p', 1, 'p', 2, 'p', 3]);
+    expect((all3.state as { attrs: string[] }).attrs.length).toBeGreaterThan(0);
+    await expect(page.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', 'none');
+    const seen: unknown[] = [];
+    // 잰 차례와, 셋째 누름의 손뗌이 click 2 보다 먼저 온 차례(손가락 이벤트의 차례만 다르고 click 열은 같다).
+    const orders: [string, IosStep[]][] = [
+      ['잰 차례', ['p', 'p', 2, 'dbl', 'p', 1]],
+      ['셋째 손뗌이 click 2 보다 먼저', ['p', 'p', 'p', 2, 'dbl', 1]],
+    ];
+    for (const [order, steps] of orders) {
+      for (const gap of [0, 30, 80, 150]) {
+        const p = await markCase.setup(page);
+        await countFills(page);
+        await playIos(page, p, steps, gap);
+        await page.waitForTimeout(700);
+        expect(await fills(page), `${order}, 간격 ${gap}ms`).toEqual([1]);
+        await expect(page.locator('[data-mark-cell="3"]'), `${order}, 간격 ${gap}ms`).toHaveAttribute('data-mark', 'none');
+        seen.push(await snapshot(page));
+      }
+    }
+    for (const s of seen) expect(s).toEqual(all3.state);
+  });
+
+  test('표시 칸: 둘째 누름이 사라지는 세 번 누름도 셋째 누름이 기다림 안이든 뒤든 끝 상태가 같다(표시 없음)', async ({ page }) => {
+    const all3 = await runIos(page, markCase, ['p', 1, 'p', 2, 'p', 3]);
+    for (const wait of [10, AFTER_HELD_WAIT]) {
+      // 셋째 누름의 click 은 아이폰이 dblclick 뒤에 detail 을 1로 되돌려 보낸 것과 같게 detail 1 로 보낸다.
+      const r = await runIos(page, markCase, ['p', 1, 'h', { wait }, 'p', 1]);
+      expect(r.filled, `셋째 누름까지 ${wait}ms`).toEqual([2]);
+      expect(r.state, `셋째 누름까지 ${wait}ms`).toEqual(all3.state);
+    }
+  });
+});
+
+test('측정 중 누르는 동안 온 dblclick 으로 채운 누름은 filled_taps 에 들어가고 filled_held_taps 에 따로 세어진다', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await openApp(page, '/test');
+  await page.getByLabel('참가자 코드').fill('P08');
+  await page.getByTestId('mode-keypad').click();
+  await page.getByTestId('start-run').click();
+  await expectHash(page, '/');
+  await page.getByRole('button', { name: '시험 고르기' }).click();
+  await chooseExam(page, 'sample-a');
+  await expect(page.getByTestId('now-no')).toHaveText('1번');
+  await page.waitForTimeout(600);
+  const key = await centerOf(page, '[data-key="2"]');
+  // 손뗌 수 규칙으로 하나(아주 빠른 두 번 누름), 누르는 동안 온 dblclick 규칙으로 하나(사라지는 둘째 누름).
+  await playIos(page, key, ['p', 'p', 2, 'dbl']);
+  await page.waitForTimeout(1200);
+  await playIos(page, key, ['p', 1, 'h', { wait: AFTER_HELD_WAIT }]);
+  await expect(page.getByTestId('now-no')).toHaveText('5번');
+  await openApp(page, '/test');
+  const card = page.locator('[data-testid="run-card"][data-participant="P08"]');
+  await expect(card.getByTestId('m-filled')).toHaveText('2번');
+  await expect(card.getByTestId('m-filled-held')).toHaveText('1번');
+  await expect(card.getByTestId('m-discarded')).toHaveText('0번');
+  await page.getByTestId('copy-csv').click();
+  await expect(page.getByText('복사했어요.')).toBeVisible();
+  const csv = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n').trim().split('\n');
+  const head = csv[0]!.split(',');
+  const row = csv.find((l) => l.startsWith('P08,'))!.split(',');
+  expect(row[head.indexOf('filled_taps')]).toBe('2');
+  expect(row[head.indexOf('filled_held_taps')]).toBe('1');
+});

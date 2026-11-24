@@ -15,6 +15,7 @@ import Foundation
 /// - `-SAProbeControl`: 차단 규칙을 걸지 않는다. 탐침이 새는 요청을 잡아내는지 보는 대조 실행에만 쓴다.
 /// - `-SAForceLoadFailure`: 묶음 대신 없는 파일을 연다(불러오기 실패 안내 확인).
 /// - `-SAAppearance <light|dark>`: 앱의 밝기를 정해 둔다(캡처용). 이 맥의 시뮬레이터에서는 시스템 밝기 바꾸기가 앱에 닿지 않았다.
+/// - `-SAEventLog`: 웹이 받는 손가락 이벤트와 click 을 문서가 열리기 전부터 window.__saEventLog 에 적는다(작업 지시서 3-2의 3-4).
 struct DebugOptions: Sendable {
     var storeDirectory: URL?
     var seed: String?
@@ -24,6 +25,7 @@ struct DebugOptions: Sendable {
     var probeControl = false
     var forceLoadFailure = false
     var appearance: String?
+    var eventLog = false
 
     static func parse(_ arguments: [String]) -> DebugOptions {
         var options = DebugOptions()
@@ -56,6 +58,8 @@ struct DebugOptions: Sendable {
             case "-SAAppearance":
                 options.appearance = value
                 index += 1
+            case "-SAEventLog":
+                options.eventLog = true
             default:
                 break
             }

@@ -154,6 +154,45 @@ final class DebugProbe {
         }
     }
 
+    /// 웹이 받는 이벤트 기록(-SAEventLog). 문서가 열리기 전에 window 의 capture 단계에 붙어서 웹 코드의 듣기보다 먼저
+    /// 불린다. 그래서 웹이 버리는 click 과 웹이 새로 만들어 보내는 click(trusted 가 false)까지 본다. 기록만 하고
+    /// 이벤트를 막거나 바꾸지 않는다(passive). 화면 테스트가 탐침으로 window.__saEventLog 를 읽고 비운다.
+    static let eventLogScript = """
+    (() => {
+      const log = [];
+      window.__saEventLog = log;
+      const types = ['pointerdown', 'pointerup', 'pointercancel', 'touchstart', 'touchend', 'touchcancel', 'click', 'dblclick', 'contextmenu'];
+      const describe = (node) => {
+        const el = node && node.nodeType === 1 ? node : (node && node.parentElement);
+        if (!el || !el.closest) return '';
+        const hit = el.closest('[data-mark-cell], [data-short-mark], button, a, [role="button"], [role="switch"], [role="radio"]') || el;
+        const mark = hit.getAttribute('data-mark-cell');
+        if (mark) return 'mark-cell:' + mark;
+        const label = hit.getAttribute('aria-label') || (hit.textContent || '').replace(/\\s+/g, ' ').trim();
+        return hit.tagName.toLowerCase() + ':' + label.slice(0, 40);
+      };
+      for (const type of types) {
+        window.addEventListener(type, (e) => {
+          const p = e.changedTouches && e.changedTouches[0] ? e.changedTouches[0] : e;
+          log.push({
+            type,
+            ts: Math.round(e.timeStamp * 10) / 10,
+            now: Math.round(performance.now() * 10) / 10,
+            detail: typeof e.detail === 'number' ? e.detail : null,
+            x: Math.round(p.clientX || 0),
+            y: Math.round(p.clientY || 0),
+            pointerType: e.pointerType || null,
+            pointerId: typeof e.pointerId === 'number' ? e.pointerId : null,
+            touches: e.touches ? e.touches.length : null,
+            trusted: e.isTrusted,
+            target: describe(e.target),
+          });
+          if (log.length > 3000) log.splice(0, log.length - 3000);
+        }, { capture: true, passive: true });
+      }
+    })();
+    """
+
     /// 웹 환경: 다리, 넣어 준 값, 웹 저장소를 쓰지 않는지, 루트 글자 크기.
     static let stateProbe = """
     const app = window.__SA_APP__;

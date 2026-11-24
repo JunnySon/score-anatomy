@@ -2,7 +2,8 @@ import Foundation
 
 /// 웹과 껍데기의 약속(docs/앱_다리_규격.md). 규격 번호는 이 파일 한 곳에 둔다.
 enum BridgeSpec {
-    /// 다리 규격 번호. 웹 묶음의 manifest.json 에 적힌 bridge 와 같아야 한다(단위 테스트와 verify.sh 가 확인한다).
+    /// 다리 규격 번호. 웹 묶음의 manifest.json 에 적힌 bridge(묶음이 돌아가는 가장 낮은 규격) 이상, bridgeMax(웹이 아는
+    /// 가장 높은 규격) 이하여야 한다(docs/앱_다리_규격.md 7-2, 단위 테스트 ManifestTests 가 확인한다).
     static let version = 1
 
     /// 껍데기 종류(window.__SA_APP__.platform).

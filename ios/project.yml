@@ -1,4 +1,4 @@
-# 점수 해부 iOS 앱 껍데기의 XcodeGen 설정.
+# 모고칸(저장소 score-anatomy) iOS 앱 껍데기의 XcodeGen 설정. 앱 이름(홈 화면 이름)은 2026-11-24 에 모고칸으로 정했다.
 # 프로젝트 파일(ScoreAnatomy.xcodeproj)은 이 파일로 만들고 둘 다 커밋한다. 손으로 고치지 않는다.
 # 다시 만드는 법과 주의할 점(서명 팀이 지워지지 않게 하는 법)은 ios/README.md 에 있다.
 name: ScoreAnatomy
@@ -15,7 +15,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.2.0"
+    MARKETING_VERSION: "0.3.1"
     CURRENT_PROJECT_VERSION: "1"
     # 서명 팀(DEVELOPMENT_TEAM)과 번들 ID(SA_BUNDLE_ID)는 Config/Shared.xcconfig 에 둔다.
     # 여기에 적으면 xcconfig 보다 앞서서 Config/Signing.local.xcconfig 로 덮어쓸 수 없게 된다(README 참고).
@@ -51,7 +51,7 @@ targets:
     info:
       path: ScoreAnatomy/Info.plist
       properties:
-        CFBundleDisplayName: 점수 해부
+        CFBundleDisplayName: 모고칸
         CFBundleDevelopmentRegion: $(DEVELOPMENT_LANGUAGE)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)

@@ -60,7 +60,8 @@ final class RestartTests: XCTestCase {
     }
 }
 
-/// 6-5 사람 손 박자: 기다리지 않고 좌표를 정해진 간격으로 직접 누른다.
+/// 6-5 사람 손 박자: 기다리지 않고 좌표를 정해진 간격으로 직접 누른다. 작업 지시서 3-2: 웹이 빠진 누름 채우기를 더한 뒤에도
+/// 그대로 통과하고, 이 박자(0.4초 안팎)에서는 채운 누름이 하나도 없어야 한다(누름이 세 번 들어가지 않는다). -SAEventLog 로 본다.
 @MainActor
 final class RhythmTests: XCTestCase {
     override nonisolated func setUp() {
@@ -74,7 +75,7 @@ final class RhythmTests: XCTestCase {
 
     func testDoubleTapOnMarkCellMakesGuess() throws {
         let handle = AppHandle(name: "rhythm-marks")
-        handle.launch()
+        handle.launch(extra: ["-SAEventLog"])
         handle.goToMarksWithExampleAnswers()
         XCTAssertTrue(handle.button("없어요, 채점하기").exists, "표시가 0개일 때의 채점 버튼")
         // 칸마다 손가락 이벤트와 click 이 웹에 언제 오는지 기록해 둔다(근거로 남긴다).
@@ -88,8 +89,9 @@ final class RhythmTests: XCTestCase {
         }
         return true;
         """)
-        // 화면이 막 바뀐 직후의 보호가 끝난 뒤에 시작한다.
+        // 화면이 막 바뀐 직후의 보호가 끝난 뒤에 시작한다. 박자 누름의 이벤트만 보려고 앞의 기록을 비운다.
         Thread.sleep(forTimeInterval: 0.7)
+        _ = handle.takeEvents()
         var allGaps: [TimeInterval] = []
         for no in [9, 14] {
             let cell = handle.markCell(no)
@@ -102,6 +104,8 @@ final class RhythmTests: XCTestCase {
         XCTAssertTrue(handle.button("채점하기").exists, "표시를 붙이면 '채점하기'")
         XCTAssertEqual(noticeCount(handle), 0, "버린 누름 알림이 없다")
         XCTAssertLessThan(allGaps.max() ?? 9, 0.5, "실제 간격이 보호 시간(0.5초)보다 짧아야 의미가 있다: \(allGaps)")
+        let rhythmEvents = handle.takeEvents()
+        XCTAssertEqual(rhythmEvents.madeClicks, [], "사람 손 박자에서는 채운 누름이 없다(누름이 세 번 들어가지 않는다): \(rhythmEvents.sequence)")
 
         // 근거: 첫 click 은 손을 뗀 뒤 곧바로 온다. 그보다 늦게 다시 누르면 두 번 모두 click 으로 들어간다.
         let events = handle.evaluate("return window.__saEvents;") as? [[String: Any]] ?? []
@@ -120,13 +124,14 @@ final class RhythmTests: XCTestCase {
         cell20.doubleTap()
         Thread.sleep(forTimeInterval: 1.0)
         let after = handle.evaluate("return window.__saEvents.filter((e) => e.no === 20).map((e) => e.t + ':' + e.detail);") as? [String] ?? []
+        XCTAssertTrue(cell20.label.hasSuffix("찍음"), "아주 빠른 두 번 누름(doubleTap)도 찍음이 된다(웹의 빠진 누름 채우기): \(cell20.label)")
         recordMetric(["kind": "rhythm", "case": "marks-double", "gaps": allGaps, "firstClickAfterTouchEndMs": firstClick - firstEnd,
-                      "fastDoubleTapLabel": cell20.label, "fastDoubleTapEvents": after])
+                      "fastDoubleTapLabel": cell20.label, "fastDoubleTapEvents": after, "madeClicks": rhythmEvents.madeClicks, "realClicks": rhythmEvents.realClicks])
     }
 
     func testKeysAfterFixingNineAreNotEntered() throws {
         let handle = AppHandle(name: "rhythm-lock")
-        handle.launch()
+        handle.launch(extra: ["-SAEventLog"])
         handle.startExampleA()
         handle.enterAnswers(from: 1, to: 11)
         XCTAssertTrue(handle.nowNumber(12).waitForExistence(timeout: 5))
@@ -136,8 +141,11 @@ final class RhythmTests: XCTestCase {
         // 9번 칸을 눌러 고치고, 화면을 보지 않고 12, 13, 14번에 넣으려던 답 키를 0.3초 간격으로 이어 누른다.
         _ = tapRhythm(handle.app, points: [center(handle.inputCell(9))], gap: 0)
         XCTAssertTrue(handle.nowNumber(9).waitForExistence(timeout: 3), "9번을 고치는 중")
+        _ = handle.takeEvents()
         let gaps = tapRhythm(handle.app, points: keys, gap: 0.3)
         handle.waitForText("9번에 답을 넣었어요. 다음에 할 일을 골라 주세요.")
+        let lockEvents = handle.takeEvents()
+        XCTAssertEqual(lockEvents.madeClicks, [], "채운 누름이 없다: \(lockEvents.sequence)")
         XCTAssertTrue(handle.nowNumber(9).exists, "잠긴 채 9번에 머문다")
         XCTAssertTrue(handle.any("11문항 입력").exists)
         Thread.sleep(forTimeInterval: 0.5)
@@ -150,12 +158,12 @@ final class RhythmTests: XCTestCase {
         handle.button("12번부터 이어서 넣기").tap()
         XCTAssertTrue(handle.nowNumber(12).waitForExistence(timeout: 3))
         XCTAssertLessThan(gaps.max() ?? 9, 0.6, "실제 간격: \(gaps)")
-        recordMetric(["kind": "rhythm", "case": "lock", "gaps": gaps])
+        recordMetric(["kind": "rhythm", "case": "lock", "gaps": gaps, "madeClicks": lockEvents.madeClicks, "realClicks": lockEvents.realClicks])
     }
 
     func testTapsAfterLastItemDoNotPressReviewButtons() throws {
         let handle = AppHandle(name: "rhythm-last")
-        handle.launch()
+        handle.launch(extra: ["-SAEventLog"])
         handle.startExampleA()
         handle.enterAnswers(from: 1, to: 29)
         XCTAssertTrue(handle.nowNumber(30).waitForExistence(timeout: 5))
@@ -163,6 +171,7 @@ final class RhythmTests: XCTestCase {
         let key = { (label: String) in center(handle.keypad.buttons.matching(handle.exact(label)).firstMatch) }
         let k2 = key("2"), k7 = key("7"), k5 = key("5"), go = key("다음"), erase = key("지우기"), skip = key("안 풂")
         // 30번(답 275)을 넣고 "다음", 그 박자로 키패드 자리를 몇 번 더 누른다.
+        _ = handle.takeEvents()
         let gaps = tapRhythm(handle.app, points: [k2, k7, k5, go, go, erase, skip, go, k2], gap: 0.15)
         XCTAssertTrue(handle.any("넣은 답을 확인해 주세요").waitForExistence(timeout: 5), "입력 확인으로 넘어간다")
         Thread.sleep(forTimeInterval: 0.6)
@@ -171,7 +180,9 @@ final class RhythmTests: XCTestCase {
         XCTAssertEqual(dialogs, 0, "입력 확인의 칸이 눌려 시트가 열리지 않았다")
         XCTAssertEqual(handle.storedAnswers()[30] as? Int, 275)
         let notices = noticeCount(handle)
+        let lastEvents = handle.takeEvents()
+        XCTAssertEqual(lastEvents.madeClicks, [], "채운 누름이 없다: \(lastEvents.sequence)")
         XCTAssertLessThan(gaps.max() ?? 9, 0.5, "실제 간격이 보호 시간보다 짧아야 의미가 있다: \(gaps)")
-        recordMetric(["kind": "rhythm", "case": "last-item", "gaps": gaps, "notices": notices])
+        recordMetric(["kind": "rhythm", "case": "last-item", "gaps": gaps, "notices": notices, "madeClicks": lastEvents.madeClicks, "realClicks": lastEvents.realClicks])
     }
 }

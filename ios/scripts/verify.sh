@@ -101,7 +101,7 @@ run_ui() {
   local args=()
   for t in "$@"; do args+=("-only-testing:$t"); done
   log "화면 테스트 $label ($device): $*"
-  TEST_RUNNER_SA_OUT="$dir" TEST_RUNNER_SA_DEVICE="$device" TEST_RUNNER_SA_THEME="${UI_THEME:-light}" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+  TEST_RUNNER_SA_OUT="$dir" TEST_RUNNER_SA_DEVICE="$device" TEST_RUNNER_SA_THEME="${UI_THEME:-light}" TEST_RUNNER_SA_LOOK="$OUT/look" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
     -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$BUILD" -resultBundlePath "$OUT/$label.xcresult" \
     "${args[@]}" "${TEST_TIME[@]}" test-without-building > "$OUT/$label.log" 2>&1
   local code=$?
@@ -122,6 +122,8 @@ log "결과 폴더: $OUT"
 
 # ---------------------------------------------------------------- 0. 환경
 meta date "$(date '+%Y-%m-%d %H:%M')"
+meta startedAt "$(date '+%Y-%m-%d %H:%M:%S')"
+meta power "$(pmset -g batt | head -1 | sed "s/Now drawing from //; s/'//g"), $(pmset -g batt | sed -n 2p | sed 's/^ *-InternalBattery-0 ([^)]*)[[:space:]]*//'), 덮개 $(ioreg -r -k AppleClamshellState | grep -q '"AppleClamshellState" = No' && echo 열림 || echo 닫힘)"
 meta macos "$(sw_vers -productVersion) ($(sw_vers -buildVersion))"
 meta xcodeVersion "$(xcodebuild -version | head -1 | sed 's/Xcode //')"
 meta xcodeBuild "$(xcodebuild -version | tail -1 | sed 's/Build version //')"
@@ -182,7 +184,9 @@ IOS18=$(runtime_for 18)
 OLD=""
 if [ -n "$IOS17" ]; then OLD=$(create_sim "$PREFIX-iOS17" com.apple.CoreSimulator.SimDeviceType.iPhone-15 "${IOS17%% *}"); CREATED="$CREATED $OLD"; fi
 I18=""
-if [ -z "$IOS17" ] && [ -n "$IOS18" ]; then I18=$(create_sim "$PREFIX-iOS18" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "${IOS18%% *}"); CREATED="$CREATED $I18"; fi
+# iOS 18 은 참고로 늘 돌린다(작업 지시서 3-2의 3-5: iOS 18.4 참고 흐름을 맥이 깨어 있는 상태로 다시 돌림).
+if [ -n "$IOS18" ]; then I18=$(create_sim "$PREFIX-iOS18" com.apple.CoreSimulator.SimDeviceType.iPhone-16 "${IOS18%% *}"); CREATED="$CREATED $I18"; fi
+# iOS 17 런타임은 이 스크립트가 받지 않는다(받으려 한 기록과 까닭은 docs/ios_진행기록.md 의 3-5).
 [ -n "$MAIN" ] || { log "주 시뮬레이터를 만들지 못해 멈춘다"; exit 2; }
 if [ -n "$SE" ]; then meta seSimulator ok; else meta seSimulator "만들지 못함"; fi
 if [ -n "$IPAD" ]; then meta ipadSimulator ok; meta ipadName "iPad (A16), ${LATEST#* }"; else meta ipadSimulator "만들지 못함"; fi
@@ -234,7 +238,8 @@ run_ui main "$MAIN" iphone17 \
   ScoreAnatomyUITests/FontScaleUITests/testLargestStandardSize ScoreAnatomyUITests/FontScaleUITests/testAccessibilitySize \
   ScoreAnatomyUITests/FontScaleUITests/testLargestAccessibilitySizeIsCappedAtTwo ScoreAnatomyUITests/BridgeIntegrationTests \
   ScoreAnatomyUITests/StartScreenTests ScoreAnatomyUITests/AccessibilityAuditTests ScoreAnatomyUITests/CaptureTests \
-  ScoreAnatomyUITests/KeyboardInputTests
+  ScoreAnatomyUITests/KeyboardInputTests ScoreAnatomyUITests/FastTapTests ScoreAnatomyUITests/WebFixScreenTests \
+  ScoreAnatomyUITests/LookTests
 
 # 13. 어두운 화면 캡처: 이 맥의 시뮬레이터에서는 시스템 밝기 바꾸기(simctl ui appearance)가 앱에 닿지 않아서,
 # 캡처 테스트가 DEBUG 실행 인자(-SAAppearance dark)로 앱의 밝기를 정한다.
@@ -264,7 +269,8 @@ xcrun simctl ui "$MAIN" content_size large >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------- 8. iPhone SE 3세대
 if [ -n "$SE" ]; then
-  run_ui se "$SE" iphonese ScoreAnatomyUITests/FlowTests ScoreAnatomyUITests/SmallScreenTests ScoreAnatomyUITests/CaptureTests
+  run_ui se "$SE" iphonese ScoreAnatomyUITests/FlowTests ScoreAnatomyUITests/SmallScreenTests ScoreAnatomyUITests/CaptureTests \
+    ScoreAnatomyUITests/WebFixScreenTests/testKeypadPanelReachesScreenBottom
   dark_capture se-dark "$SE" iphonese
 fi
 
@@ -275,10 +281,11 @@ fi
 
 # ---------------------------------------------------------------- 10. 최소 버전
 if [ -n "$OLD" ]; then
-  run_ui old "$OLD" ios17 ScoreAnatomyUITests/FlowTests
-elif [ -n "$I18" ]; then
-  # iOS 17 런타임이 없어서 10번은 확인하지 못한다. 참고로 이 맥에 있는 가장 낮은 런타임에서 흐름을 한 번 돌린다.
-  run_ui ios18 "$I18" ios18 ScoreAnatomyUITests/FlowTests
+  run_ui old "$OLD" ios17 ScoreAnatomyUITests/FlowTests ScoreAnatomyUITests/RestartTests ScoreAnatomyUITests/FastTapTests
+fi
+if [ -n "$I18" ]; then
+  # 참고: 이 맥에 있는 iOS 18 런타임에서 같은 것을 돌린다(iOS 17 이 없으면 10번은 확인하지 못함이고 이 결과는 참고다).
+  run_ui ios18 "$I18" ios18 ScoreAnatomyUITests/FlowTests ScoreAnatomyUITests/RestartTests ScoreAnatomyUITests/FastTapTests
 fi
 
 # ---------------------------------------------------------------- 추가: Release 구성으로 켜기
@@ -286,7 +293,16 @@ fi
 log "Release 구성으로 켜기"
 xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" \
   "$TEST_LDFLAGS" ENABLE_TESTABILITY=YES build-for-testing > "$OUT/build-release-tests.log" 2>&1 || log "Release 테스트 빌드 실패(로그: $OUT/build-release-tests.log)"
-mkdir -p "$OUT/runs/release"
+mkdir -p "$OUT/runs/release" "$OUT/runs/release-look"
+# 15. 배포용 묶음의 모양(작업 지시서 3-2의 3-3): Release 앱은 기록 위치를 바꾸는 장치가 없어 앱 저장 공간을 쓴다. 앞 실행의
+# 기록이 남지 않게 앱을 지운 뒤(xcodebuild 가 다시 깐다) Debug 와 같은 새 상태에서 시작한다. Debug 쪽은 위의 주 기기 실행이 찍었다.
+APP_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BUILD/Build/Products/Release-iphonesimulator/ScoreAnatomy.app/Info.plist" 2>/dev/null || echo "")
+[ -n "$APP_ID" ] && xcrun simctl uninstall "$MAIN" "$APP_ID" >/dev/null 2>&1
+log "15. Release 모양 비교(LookTests)"
+TEST_RUNNER_SA_OUT="$OUT/runs/release-look" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release TEST_RUNNER_SA_LOOK="$OUT/look" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+  -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release-look.xcresult" \
+  -only-testing:ScoreAnatomyUITests/LookTests "${TEST_TIME[@]}" test-without-building > "$OUT/release-look.log" 2>&1
+"${REPORT[@]}" xcresult "$OUT/release-look.xcresult" "$OUT/ui-release-look.json" iphone17
 TEST_RUNNER_SA_OUT="$OUT/runs/release" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
   -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release.xcresult" \
   -only-testing:ScoreAnatomyUITests/ReleaseSmokeTests "${TEST_TIME[@]}" test-without-building > "$OUT/release.log" 2>&1
@@ -306,8 +322,15 @@ rm -rf "$REPO/docs/screens-ios"
 "${REPORT[@]}" captures "$OUT/screens" "$REPO/docs/screens-ios" "$OUT/captures.json"
 # 목록(9화면 x 2테마 x 2기기) 밖의 캡처는 참고용으로 extra 에 기기와 테마를 붙여 모은다.
 "${REPORT[@]}" extras "$OUT/runs" "$REPO/docs/screens-ios/extra" > "$OUT/extras.json"
+# 15. Release 와 Debug 의 같은 화면(iPhone 17, 밝은 화면).
+for config in Debug Release; do
+  lower=$(echo "$config" | tr 'A-Z' 'a-z')
+  mkdir -p "$REPO/docs/screens-ios/release/$lower"
+  cp "$OUT/look/$config"/*.png "$REPO/docs/screens-ios/release/$lower/" 2>/dev/null || true
+done
 
 # ---------------------------------------------------------------- 문서
+meta finishedAt "$(date '+%Y-%m-%d %H:%M:%S')"
 log "docs/ios_검증결과.md 쓰기"
 "${REPORT[@]}" render "$OUT" "$REPO/docs/ios_검증결과.md"
 status=$?

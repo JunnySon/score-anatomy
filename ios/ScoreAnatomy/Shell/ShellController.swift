@@ -177,6 +177,11 @@ final class ShellController {
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        #if DEBUG
+        if debugOptions.eventLog {
+            controller.addUserScript(WKUserScript(source: DebugProbe.eventLogScript, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
+        }
+        #endif
     }
 
     private func fail(_ reason: ShellFailure) {

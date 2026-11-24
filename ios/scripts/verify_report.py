@@ -47,7 +47,7 @@ BINARY_SYMBOLS = {
     "notification": ["_OBJC_CLASS_$_UNUserNotificationCenter"],
     "requiredReason": ["_OBJC_CLASS_$_NSUserDefaults", "_$s10Foundation12UserDefaultsC", "_stat", "_fstat", "_lstat", "_fstatat", "_getattrlist", "_fgetattrlist", "_getattrlistbulk", "_getattrlistat", "_mach_absolute_time", "_statfs", "_fstatfs", "_statvfs", "_fstatvfs"],
 }
-DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "shell-stats.json", "probe-network.json", "setInspectable:"]
+DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "-SAEventLog", "__saEventLog", "shell-stats.json", "probe-network.json", "setInspectable:"]
 
 
 def load(path, default=None):
@@ -454,7 +454,7 @@ def cmd_render(out_dir, doc_path):
     add(4, "다시 켜기", "통과" if all_passed(restart, 2) else "실패", fmt_tests(restart) + restart_numbers(rows), "2개 통과(12번까지 이어서 보기, 채점 기록 유지)")
 
     rhythm = suite("RhythmTests")
-    add(5, "사람 손 박자", "통과" if all_passed(rhythm, 3) else "실패", fmt_tests(rhythm) + rhythm_numbers(rows), "3개 통과, 실제 누름 간격이 보호 시간 0.5초보다 짧음")
+    add(5, "사람 손 박자", "통과" if all_passed(rhythm, 3) and no_fill_in_rhythm(rows) else "실패", fmt_tests(rhythm) + rhythm_numbers(rows), "3개 통과, 실제 누름 간격이 보호 시간 0.5초보다 짧음, 채운 누름 0개")
 
     net = suite("NetworkProbeTests")
     pm = scan.get("privacyManifest", {})
@@ -491,13 +491,16 @@ def cmd_render(out_dir, doc_path):
     else:
         add(9, "iPad(아이폰 앱 호환 방식)", "통과" if all_passed(ipad, 1) else "실패", f"{env.get('ipadName', '')}: " + fmt_tests(ipad) + ipad_numbers(rows), "시작 화면 테스트 1개 통과")
 
+    ref = tests_of(ios18_ui)
+    ref_note = (f" 참고(iOS {env.get('ios18Runtime')}, 맥이 깨어 있는 상태): 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름(3-4의 1번, 6번, 7번) {fmt_tests(suite('FastTapTests', ref))}."
+                if env.get("ios18Runtime") else "")
     if env.get("ios17Runtime"):
-        old = suite("FlowTests", tests_of(old_ui))
-        add(10, "최소 버전(iOS 17)", "통과" if all_passed(old, 1) else "실패", f"{env.get('ios17Runtime')}: " + fmt_tests(old), "iOS 17 에서 3번 통과")
+        old = tests_of(old_ui)
+        old_ok = all_passed(suite("FlowTests", old), 1) and all_passed(suite("RestartTests", old), 2) and all_passed(suite("FastTapTests", old), 15)
+        add(10, "최소 버전(iOS 17)", "통과" if old_ok else "실패", f"iOS {env.get('ios17Runtime')}: 흐름 {fmt_tests(suite('FlowTests', old))}, 다시 켜기 {fmt_tests(suite('RestartTests', old))}, 빠른 누름 {fmt_tests(suite('FastTapTests', old))}." + ref_note,
+            "iOS 17 에서 흐름, 다시 켜기, 빠른 누름 통과")
     else:
-        extra = suite("FlowTests", tests_of(ios18_ui))
-        note = f" 참고: 이 맥에 있던 가장 낮은 런타임 {env.get('ios18Runtime', '없음')}에서 3번 흐름 {fmt_tests(extra)}." if env.get("ios18Runtime") else ""
-        add(10, "최소 버전(iOS 17)", "확인하지 못함", "iOS 17 런타임이 이 맥에 없다(지시대로 내려받지 않음)." + note, "iOS 17 런타임이 있으면 3번 통과")
+        add(10, "최소 버전(iOS 17)", "확인하지 못함", "iOS 17 런타임이 이 맥에 없다(이 Xcode 의 xcodebuild 로는 받을 수 없었음, docs/ios_진행기록.md 3-5)." + ref_note, "iOS 17 런타임이 있으면 흐름, 다시 켜기, 빠른 누름 통과")
 
     vis = scan.get("visibleText", {})
     commits = scan.get("commitMessages", {})
@@ -507,7 +510,10 @@ def cmd_render(out_dir, doc_path):
     audit_tests = suite("AccessibilityAuditTests")
     ran = [a for a in audit if a.get("ran")]
     issues = sum(len(a.get("issues", [])) for a in audit)
-    add(12, "접근성 감사(기록용)", "통과" if all_passed(audit_tests, 1) and len(ran) == 4 else "실패", f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건(아래 표)", "네 화면 모두 감사를 돌리고 걸린 것을 기록(통과가 접근성을 보장하지 않음)")
+    per_screen = ", ".join(f"{a.get('screen')} {len(a.get('issues', []))}" for a in audit)
+    add(12, "접근성 감사(기록용)", "통과" if all_passed(audit_tests, 1) and len(ran) == 4 else "실패",
+        f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건({per_screen}). 지난번(웹 묶음 0.2.0, 2026-11-24) 38건(시작 7, 답 입력 4, 점수 해부 7, 계단 20)",
+        "네 화면 모두 감사를 돌리고 걸린 것을 기록(통과가 접근성을 보장하지 않음)")
 
     main_dark = tests_of(load(os.path.join(out_dir, "ui-main-dark.json"), {}))
     se_dark = tests_of(load(os.path.join(out_dir, "ui-se-dark.json"), {}))
@@ -524,16 +530,41 @@ def cmd_render(out_dir, doc_path):
         f"다리 통합(보관, 더 높은 version, 저장 실패, 불러오기 실패) {fmt_tests(bridge)}. 시작 화면(iPhone 17) {fmt_tests(start)}. 진행자용 화면의 키보드 글 입력 {fmt_tests(keyboard)}. Release 구성으로 켜기 {fmt_tests(release_smoke)}",
         "모두 통과. 13개 항목 밖이지만 판정과 종료 코드에 넣는다")
 
+    # 15 배포용 묶음의 모양(작업 지시서 3-2의 3-3)
+    look_debug = suite("LookTests")
+    look_release = suite("LookTests", tests_of(load(os.path.join(out_dir, "ui-release-look.json"), {})))
+    compare = load(os.path.join(out_dir, "look", "compare.json"), {})
+    look_screens = compare.get("screens", [])
+    look_ok = all_passed(look_debug, 1) and all_passed(look_release, 1) and len(look_screens) == 8 and not compare.get("problems")
+    only_debug = sorted({x for sc in look_screens for x in sc.get("onlyDebug", [])})
+    add(15, "추가: Release 와 Debug 의 화면 모양(3-3)", "통과" if look_ok else "실패",
+        f"Debug {fmt_tests(look_debug)}, Release {fmt_tests(look_release)}. 견준 화면 {len(look_screens)}개, 화소를 견준 요소 {sum(sc.get('pixelCompared', 0) for sc in look_screens)}개, "
+        f"크기가 다른 요소 {sum(len(sc.get('sizeDiffs', [])) for sc in look_screens)}개, 모양이 다른 요소 {sum(len(sc.get('pixelDiffs', [])) for sc in look_screens)}개, Release 에만 있는 요소 {sum(len(sc.get('onlyRelease', [])) for sc in look_screens)}개. "
+        f"Debug 에만 있는 요소: {', '.join(only_debug) if only_debug else '없음'}. 문제: {'; '.join(compare.get('problems', [])) or '없음'}",
+        "8화면 모두 같은 누름으로 가서 찍고, 달라도 되는 곳(기록 화면의 준비 중인 기능 목록과 진행자용 링크)만 다름")
+
+    # 16 웹에서 고친 것(결정기록 7.6, 작업 지시서 3-2의 3-4)
+    fast = suite("FastTapTests")
+    fix = suite("WebFixScreenTests")
+    se_fix = suite("WebFixScreenTests", se_tests)
+    fast_ok = all_passed(fast, 15) and all_passed(fix, 6) and (env.get("seSimulator") != "ok" or all_passed(se_fix, 1))
+    add(16, "추가: 웹에서 고친 것(결정기록 7.6)", "통과" if fast_ok else "실패",
+        f"빠른 누름(iPhone 17) {fmt_tests(fast)}. 화면 쪽(iPhone 17) {fmt_tests(fix)}. 키패드 판 아래 끝(iPhone SE) {fmt_tests(se_fix)}. 간격별 결과와 웹이 받은 이벤트는 아래 절",
+        "모두 통과. 0.1초와 0.2초 간격은 만들 수 없어 확인하지 못함으로 적음")
+
     lines = []
     lines.append("# iOS 앱 껍데기 검증 결과")
     lines.append("")
     total_fail = [i for i in items if i["status"] == "실패"]
     unknown = [i for i in items if i["status"] == "확인하지 못함"]
     core = [i for i in items if i["no"] <= 13]
-    lines.append(f"결론: 13개 항목 가운데 통과 {sum(1 for i in core if i['status'] == '통과')}, 실패 {sum(1 for i in core if i['status'] == '실패')}, 확인하지 못함 {sum(1 for i in core if i['status'] == '확인하지 못함')}. 추가 확인(14번)은 {items[-1]['status']}. `ios/scripts/verify.sh` 가 {env.get('date', '?')}에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.")
+    extras_status = ", ".join(f"{i['no']}번 {i['status']}" for i in items if i["no"] > 13)
+    lines.append(f"결론: 13개 항목 가운데 통과 {sum(1 for i in core if i['status'] == '통과')}, 실패 {sum(1 for i in core if i['status'] == '실패')}, 확인하지 못함 {sum(1 for i in core if i['status'] == '확인하지 못함')}. 추가 확인은 {extras_status}. `ios/scripts/verify.sh` 가 {env.get('date', '?')}에 돌려 쓴 문서예요. 실제로 돌린 것만 통과로 셌고, 건너뛴 테스트나 빠진 결과는 통과로 세지 않았어요.")
     lines.append("")
     lines.append(f"- 맥: macOS {env.get('macos', '?')}, Xcode {env.get('xcodeVersion', '?')}(빌드 {env.get('xcodeBuild', '?')}), SDK {env.get('sdk', '?')}, XcodeGen {env.get('xcodegen', '?')}")
     lines.append(f"- 저장소: 브랜치 {env.get('branch', '?')}, 커밋 {env.get('commit', '?')}{' (커밋하지 않은 바뀜 있음)' if env.get('dirty') == 'yes' else ''}")
+    lines.append(f"- 웹 묶음: {env.get('manifestInfo', '?')}")
+    lines.append(f"- 실행 시각: {env.get('startedAt', '?')} ~ {env.get('finishedAt', '?')}. 시작할 때 전원: {env.get('power', '?')}. 잠듦 확인은 docs/ios_진행기록.md 에 적어요(pmset 기록).")
     lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {env.get('simulators', '?')}")
     lines.append(f"- 데스크톱 폴더 대응: 테스트 빌드에만 링커 설정 `-Wl,-S`(디버그 맵 빼기)를 덧붙였어요. 테스트 바이너리의 디버그 맵 항목 {env.get('testDebugMapEntries', '?')}개(0이어야 해요). 이유는 docs/ios_결정기록.md 에 있어요. 앱 코드와 프로젝트 설정은 그대로예요.")
     lines.append("")
@@ -554,7 +585,8 @@ def cmd_render(out_dir, doc_path):
     release_ui = load(os.path.join(out_dir, "ui-release.json"), {})
     main_dark_ui = load(os.path.join(out_dir, "ui-main-dark.json"), {})
     se_dark_ui = load(os.path.join(out_dir, "ui-se-dark.json"), {})
-    for label, res in (("단위", unit), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
+    release_look_ui = load(os.path.join(out_dir, "ui-release-look.json"), {})
+    for label, res in (("단위", unit), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release 모양)", release_look_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
         for t in tests_of(res):
             dur = t.get("duration")
             lines.append(f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | {dur:.1f} |" if isinstance(dur, (int, float)) else f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | |")
@@ -591,6 +623,32 @@ def cmd_render(out_dir, doc_path):
     if targets:
         lines.append("")
         lines.append("감사와 함께 잰 실제 누름 영역(DOM, pt): " + ", ".join(f"{t.get('label')} {t.get('w')} x {t.get('h')}" for t in targets))
+    lines.append("")
+    lines.append("## 결정기록 7.6: 빠른 누름과 웹이 받은 이벤트")
+    lines.append("")
+    lines.append("웹이 받은 이벤트는 껍데기의 DEBUG 기록(-SAEventLog)이 문서가 열리기 전부터 window 의 capture 단계에서 적은 것이에요. '(채움)'은 웹의 빠진 누름 채우기가 만들어 보낸 click(trusted 가 false)이에요. 이 기록은 웹 코드보다 먼저 불려서, 손가락에서 온 click 이 먼저 적히고 그 처리 안에서 웹이 보낸 click 이 뒤에 적혀요(웹은 채운 click 을 먼저 처리해요). 간격은 웹의 이벤트 시각(timeStamp)으로 잰 ms 예요.")
+    lines.append("")
+    lines.append("| 기기 | iOS | 경우 | 결과 | 웹이 받은 이벤트 | pointer 누름/뗌 | touch 시작/끝 | 손가락 click(detail) | 채운 click | 누름 시작 사이 | 손뗌에서 다음 누름 | 채운 누름 늘어난 수 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for r in pick(rows, "fasttap"):
+        lines.append(f"| {r.get('device', '')} | {r.get('os', '')} | {esc(r.get('case', ''))} | {esc(r.get('result', ''))} | {esc(r.get('sequence', r.get('reason', '')))} | "
+                     f"{r.get('pointerdown', '')}/{r.get('pointerup', '')} | {r.get('touchstart', '')}/{r.get('touchend', '')} | {r.get('realClicks', '')} | {r.get('madeClicks', '')} | "
+                     f"{r.get('pressToPressMs', '')} | {r.get('releaseToPressMs', '')} | {r.get('filledDelta', '')} |")
+    for r in pick(rows, "fasttap-card"):
+        lines.append("")
+        lines.append(f"- 측정 카드({r.get('device')}, iOS {r.get('os')}): '채운 누름' {r.get('filledShown')}(기록 파일 {r.get('filledStored')})")
+    for r in pick(rows, "webfix"):
+        lines.append(f"- {r.get('case')}({r.get('device')}, iOS {r.get('os')}): {esc(json.dumps({k: v for k, v in r.items() if k not in ('kind', 'case', 'device', 'os')}, ensure_ascii=False, sort_keys=True))[:900]}")
+    lines.append("")
+    lines.append("## Release 와 Debug 의 화면 모양(3-3)")
+    lines.append("")
+    lines.append("같은 테스트(LookTests)를 Debug 와 Release 로 돌려 같은 누름으로 같은 화면까지 가서 찍었어요(Release 에는 상태를 심는 장치가 없어요). 캡처는 docs/screens-ios/release/debug 와 release 에 있어요. 이름이 있는 접근성 요소를 짝지어 크기와 화소(각자의 자리에서 잘라 견줌, 채널 차이 32 넘는 화소가 1% 넘으면 다름)를 견줬어요.")
+    lines.append("")
+    lines.append("| 화면 | 요소(Debug/Release) | Debug 에만 | Release 에만 | 크기 다름 | 화소를 견준 요소 | 모양 다름 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- |")
+    for sc in load(os.path.join(out_dir, "look", "compare.json"), {}).get("screens", []):
+        lines.append(f"| {sc.get('screen')} | {sc.get('debugElements')}/{sc.get('releaseElements')} | {esc(', '.join(sc.get('onlyDebug', [])) or '없음')} | {esc(', '.join(sc.get('onlyRelease', [])) or '없음')} | "
+                     f"{esc(', '.join(sc.get('sizeDiffs', [])) or '없음')} | {sc.get('pixelCompared')} | {esc(', '.join(sc.get('pixelDiffs', [])) or '없음')} |")
     lines.append("")
     lines.append("## 숫자 기록")
     lines.append("")
@@ -650,12 +708,17 @@ def rhythm_numbers(rows):
     for r in pick(rows, "rhythm"):
         gaps = r.get("gaps") or []
         if gaps:
-            text = f"{names.get(r.get('case'), r.get('case'))}: 실제 간격 {min(gaps):.2f}~{max(gaps):.2f}초"
+            text = f"{names.get(r.get('case'), r.get('case'))}: 실제 간격 {min(gaps):.2f}~{max(gaps):.2f}초, 채운 누름 {len(r.get('madeClicks') or [])}개"
             if r.get("case") == "marks-double" and r.get("firstClickAfterTouchEndMs") is not None:
                 text += f"(첫 click 은 손을 뗀 뒤 {r.get('firstClickAfterTouchEndMs'):.0f}ms 에 옴. 참고: 손을 떼고 곧바로 다시 누르는 XCUITest doubleTap 은 '{r.get('fastDoubleTapLabel', '')}', 이벤트 {', '.join(r.get('fastDoubleTapEvents', []))})"
             parts.append(text)
-    note = " XCUITest 의 좌표 누름은 한 번에 0.35초 넘게 걸려 지시서의 0.15초, 0.2초, 0.3초 간격을 그대로 낼 수 없었어요. 보호 시간(0.5초) 안의 가장 빠른 간격으로 확인했어요."
+    note = " XCUITest 의 좌표 누름은 한 번에 0.35초 넘게 걸려 0.15초, 0.2초, 0.3초 간격을 그대로 낼 수 없었어요. 보호 시간(0.5초) 안의 가장 빠른 간격으로 확인했어요. 이 박자에서 채운 누름이 0개여야 해요(누름이 세 번 들어가지 않음)."
     return (". " + ", ".join(parts) + "." + note) if parts else ""
+
+
+def no_fill_in_rhythm(rows):
+    rhythm = pick(rows, "rhythm")
+    return bool(rhythm) and all(len(r.get("madeClicks") or []) == 0 for r in rhythm if "madeClicks" in r) and all("madeClicks" in r for r in rhythm)
 
 
 def network_numbers(rows):

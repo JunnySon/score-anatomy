@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Badge, Chip, Message, Screen, TopBar } from '../components/ui';
-import { examShiftKey } from '../exams/merge';
 import { GradeError } from '../logic/scoring';
 import { navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
@@ -70,8 +69,9 @@ export function Marks({ h }: { h: SessionHandle }) {
       // "답 저장하기"가 같은 자리의 "기록 보기"로 바뀔 때, 연달아 누른 것이 새 버튼에 닿지 않게 한다.
       guardKey={saved ? 'saved' : 'open'}
       // 넘겨받은 새 판(정답 공개)으로 같은 자리의 "답 저장하기"나 "기록 보기"가 "채점하기"로 바뀌면, 학생이 누르지 않았어도 잠깐 막는다.
-      // 바뀌기 전 버튼을 보고 누른 것이 되돌릴 수 없는 채점이 되지 않게 한다(별도 검토 2차 P2).
-      shiftKey={examShiftKey(exam)}
+      // 바뀌기 전 버튼을 보고 누른 것이 되돌릴 수 없는 채점이 되지 않게 한다(별도 검토 2차 P2). 이 화면에서 새 판으로 자리나 뜻이
+      // 바뀌는 것은 정답 공개 여부뿐이라 그것만 본다. 다른 새 판에도 막으면 같은 칸을 빠르게 두 번 눌러 붙이는 찍음의 둘째 누름이 버려진다(2차 뒤 확인 X1).
+      shiftKey={released ? 'released' : 'unreleased'}
     >
       <div className="inline">
         <h2 className="title">{S.marks.title}</h2>

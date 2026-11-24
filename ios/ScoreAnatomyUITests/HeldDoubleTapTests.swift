@@ -78,11 +78,14 @@ final class HeldDoubleTapTests: XCTestCase {
         trial.made = clicks.count - trusted.count
         if downs.count >= 2 {
             trial.pressGapMs = ((downs[1] - downs[0]) * 10).rounded() / 10
-            let secondStart = downs[1]
-            let secondEnd = downs.count > 2 ? downs[2] : .infinity
-            trial.lost = !trusted.contains { now($0) >= secondStart && now($0) < secondEnd }
-            let secondUp = ups.first { $0 >= secondStart } ?? .infinity
-            trial.dblclickWhileHeld = events.contains { type($0) == "dblclick" && now($0) >= secondStart && now($0) < secondUp }
+            // 둘째 누름의 범위는 이벤트 차례로 정한다(같은 시각에 온 이벤트도 앞뒤를 가릴 수 있게).
+            let downIndexes = events.indices.filter { type(events[$0]) == "pointerdown" }
+            let secondStart = downIndexes[1]
+            let secondEnd = downIndexes.count > 2 ? downIndexes[2] : events.count
+            let second = events[secondStart..<secondEnd]
+            trial.lost = !second.contains { type($0) == "click" && ($0["trusted"] as? Bool) == true }
+            let secondUp = second.firstIndex { type($0) == "pointerup" } ?? secondEnd
+            trial.dblclickWhileHeld = events[secondStart..<secondUp].contains { type($0) == "dblclick" }
         }
         for (i, down) in downs.enumerated() {
             let next = i + 1 < downs.count ? downs[i + 1] : .infinity

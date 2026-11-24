@@ -12,6 +12,15 @@ struct TapEvents {
 
     func count(_ name: String) -> Int { raw.filter { kind($0) == name }.count }
 
+    /// 둘째 누름(두 번째 pointerdown 부터 그다음 pointerup 까지)에 dblclick 이 왔는지. iOS 18.4 의 WebKit 이 둘째 click 을
+    /// 보내지 않는 경우의 모양이다(누르는 동안 dblclick 만 옴). 이벤트 차례로 본다.
+    var heldDoubleClickOnSecondPress: Bool {
+        let downs = raw.indices.filter { kind(raw[$0]) == "pointerdown" }
+        guard downs.count >= 2 else { return false }
+        let end = raw[downs[1]...].firstIndex { kind($0) == "pointerup" } ?? raw.endIndex
+        return raw[downs[1]..<end].contains { kind($0) == "dblclick" }
+    }
+
     /// 손가락에서 온 click 의 detail(trusted).
     var realClicks: [Int] {
         raw.filter { kind($0) == "click" && ($0["trusted"] as? Bool) == true }.compactMap { $0["detail"] as? Int }

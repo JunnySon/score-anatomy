@@ -120,9 +120,9 @@
 | 3-1 최소 iOS 18.0 | 완료 | 6d8f12f. deploymentTarget 네 곳, 바뀐 줄은 IPHONEOS_DEPLOYMENT_TARGET 8줄뿐(서명 설정 그대로) |
 | 3-3 받는 쪽 코드 | 완료 | ab7fb43. ios/ScoreAnatomy/Remote, 다리 규격 2, 공개 키 넣기와 Release 테스트 키 검사 빌드 단계 |
 | 3-3 단위 테스트와 시험 서버 | 완료 | 5d71f8e. 단위 테스트 92개가 iOS 26.4, 18.4 에서 통과. 실제로 나간 머리글 7개(Host, Accept-Encoding, Accept, User-Agent, Accept-Language, Cache-Control, Connection) |
-| 3-3 화면 테스트 | 진행 중 | |
-| 3-2 iOS 18.4 되풀이 재기 | 남음 | |
-| 3-4 verify.sh 새 항목과 출시 준비 | 남음 | |
+| 3-3 화면 테스트 | 완료(개발용에서 통과) | 1ce669a. RemoteFetchTests 5개(iOS 26.4), 규격 2 의 시험 선택(받은 자료 없음), Release 가 시험 서버 주소를 무시. 앱이 받는 데 54ms, 요청 3개, 머리글 7개 |
+| 3-2 iOS 18.4 되풀이 재기 | 개발용 1회 완료, verify 에서 다시 | 62e4458. 02:28~02:38 iOS 18.4(iPhone 16) 32번씩: 표시 칸 사라짐 3, 채움 3. 답 키 사라짐 1, 채움 1. 점수 해부 같은 자리 사라짐 2, 채우지 않음 2(다른 요소, 웹의 설계대로), 끝 상태 모두 1등급만. 세 번 빠르게 10번 모두 표시 없음. 누른 수보다 많이 들어감 0 |
+| 3-4 verify.sh 새 항목과 출시 준비 | 완료(돌려 보기 전) | 03dae41. 17~22번, 10번 iOS 18, 6번 네트워크 규칙 |
 | 별도 검토 | 남음 | |
 | verify 전체 | 남음 | |
 | 문서 | 남음 | |

@@ -231,11 +231,12 @@ export function App() {
     [],
   );
   // 측정 중에 빠진 누름 채우기가 채운 누름도 같은 방식으로 센다(filled_taps, 작업 지시서 3-1의 3-1).
+  // 누르는 동안 온 dblclick 규칙으로 채운 것은 filled_held_taps 에도 센다(작업 지시서 4의 2-2).
   useEffect(
     () =>
-      addFillListener(() => {
+      addFillListener((rule) => {
         const r = routeRef.current;
-        countFilledTap(r.name, r.demo);
+        countFilledTap(r.name, r.demo, rule);
       }),
     [],
   );

@@ -139,6 +139,7 @@ function cleanRun(raw: unknown): TestRun | null {
   if (isObject(raw.parts)) {
     for (const [k, v] of Object.entries(raw.parts)) if (isObject(v)) parts[k] = cleanPart(v);
   }
+  const filledTaps = typeof raw.filledTaps === 'number' && Number.isInteger(raw.filledTaps) && raw.filledTaps >= 0 ? raw.filledTaps : 0;
   return {
     id: raw.id,
     participant: raw.participant,
@@ -159,7 +160,10 @@ function cleanRun(raw: unknown): TestRun | null {
     // 1.1에서 더한 칸. 없는 옛 측정 기록은 0으로 읽는다.
     discardedTaps: typeof raw.discardedTaps === 'number' && Number.isInteger(raw.discardedTaps) && raw.discardedTaps >= 0 ? raw.discardedTaps : 0,
     // 0.3.1에서 더한 칸. 없는 옛 측정 기록은 0으로 읽는다.
-    filledTaps: typeof raw.filledTaps === 'number' && Number.isInteger(raw.filledTaps) && raw.filledTaps >= 0 ? raw.filledTaps : 0,
+    filledTaps,
+    // 0.3.2에서 더한 칸(filledTaps 가운데 누르는 동안 온 dblclick 규칙으로 채운 수). 없는 옛 측정 기록은 0으로 읽고 filledTaps 를 넘지 않게 한다.
+    filledHeldTaps:
+      typeof raw.filledHeldTaps === 'number' && Number.isInteger(raw.filledHeldTaps) && raw.filledHeldTaps >= 0 ? Math.min(raw.filledHeldTaps, filledTaps) : 0,
     parts,
     answerKeyText: typeof raw.answerKeyText === 'string' ? raw.answerKeyText : '',
   };

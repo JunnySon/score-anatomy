@@ -1,6 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { catalog, findBundledExam, findExam, useExams } from '../exams';
 import { findMissing, gradeExam, type Grade } from '../logic/scoring';
+import type { FillRule } from '../tapGuard';
 import type { AnswerValue, AppData, Exam, GradedBefore, InputMode, SeenBefore, Session, TestRun } from '../types';
 import { demoStore } from './demo';
 import { fillGradedWith, newSession, setAnswer } from './session';
@@ -316,18 +317,24 @@ export function countDiscardedTap(screen: string, isDemo: boolean): void {
 
 /**
  * 빠진 누름 채우기(src/tapGuard.ts)가 채운 누름을 측정 기록에 센다. 세는 화면은 버린 누름과 같다(작업 지시서 3-1의 3-1).
+ * 누르는 동안 온 dblclick 규칙(rule 이 held)으로 채운 것은 filledTaps 에 넣고 filledHeldTaps 에도 센다(작업 지시서 4의 2-2).
  */
-export function countFilledTap(screen: string, isDemo: boolean): void {
-  countTap(screen, isDemo, 'filledTaps');
+export function countFilledTap(screen: string, isDemo: boolean, rule: FillRule = 'lifts'): void {
+  countTap(screen, isDemo, rule === 'held' ? ['filledTaps', 'filledHeldTaps'] : ['filledTaps']);
 }
 
-function countTap(screen: string, isDemo: boolean, field: 'discardedTaps' | 'filledTaps'): void {
+type TapField = 'discardedTaps' | 'filledTaps' | 'filledHeldTaps';
+
+function countTap(screen: string, isDemo: boolean, fields: TapField | TapField[]): void {
   if (!__SA_TOOLS__ || !store.get().activeRunId) return;
+  const list = Array.isArray(fields) ? fields : [fields];
   store.update((d) =>
     withActiveRun(d, (run) => {
       if (isDemo || screen === 'test' || screen === 'unknown') return run;
       if (screenLogName(screen, d.currentId !== null && d.currentId === run.sessionId) !== screen) return run;
-      return { ...run, [field]: run[field] + 1 };
+      const next = { ...run };
+      for (const f of list) next[f] = run[f] + 1;
+      return next;
     }),
   );
 }

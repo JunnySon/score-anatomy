@@ -196,8 +196,10 @@ export interface TestRun extends RunPart {
   examReselects: number;
   /** 측정 중에 연달아 누르기 보호가 받지 않은 누름의 수(측정에 묶인 화면에서만 센다). */
   discardedTaps: number;
-  /** 측정 중에 빠진 누름 채우기가 채운 누름의 수(측정에 묶인 화면에서만 센다, 작업 지시서 3-1의 3-1). */
+  /** 측정 중에 빠진 누름 채우기가 채운 누름의 수(측정에 묶인 화면에서만 센다, 작업 지시서 3-1의 3-1). 두 규칙을 모두 센다. */
   filledTaps: number;
+  /** filledTaps 가운데 누르는 동안 온 dblclick 규칙으로 채운 누름의 수(작업 지시서 4의 2-2). */
+  filledHeldTaps: number;
   /** 지금 묶인 기록이 아닌 기록에서 재던 값(기록 id별). 그 기록으로 돌아오면 이어 쓴다. */
   parts: Record<string, RunPart>;
   answerKeyText: string;

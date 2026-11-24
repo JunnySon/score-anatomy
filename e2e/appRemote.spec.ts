@@ -1062,3 +1062,59 @@ test('app-test: 복수 정답과 모두 정답 처리 시험: "정답 보기" �
   expectSameInput(await savedRecords(page, record.id as string), record.answers, record.marks);
   expectNoOtherRequests(page);
 });
+
+test('app-test: 누르는 동안 온 dblclick 으로 채울 누름을 기다리는 동안 새 자료로 내용이 옮겨 가면 채우지 않는다(작업 지시서 4의 별도 검토)', async ({ page }) => {
+  // 재풀이의 단답형 문항에서 숫자 1을 누르고(click 1), 같은 키를 다시 누르는 동안 dblclick 2 가 오고 그 누름의 click 은 오지 않는다(iOS 18.4).
+  // 그 손뗌 바로 뒤(같은 차례 안, 웹이 그 누름의 click 을 기다리는 동안)에 껍데기가 같은 시험의 새 판을 넘겨주어 화면 전체가 0.5초 막힌다.
+  // 진짜 click 이 왔다면 새 판보다 먼저 들어갔을 것이라, 막기가 걸린 뒤에 채우면 옮겨 간 내용에 들어갈 수 있다. 채우지 않는다.
+  const record = sessionRecord('s-held', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+  await openBundle(page, 'app-test', { bridge: 2, store: storeOf([record]), remote: remoteData(1, AT_1710, [testExam()]) }, '/retry/t09');
+  await expectHash(page, '/retry/t09');
+  await page.waitForTimeout(600);
+  const box = (await page.locator('[data-key="1"]').boundingBox())!;
+  const p = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  /** 아이폰 웹뷰의 차례로 누름 하나: pointerdown, touchstart, (dblclick), pointerup, touchend, (click), 그리고 (새 자료). */
+  const press = (o: { dbl?: number; click?: number; remote?: unknown }) =>
+    page.evaluate(
+      ({ p, o }) => {
+        const el = () => document.elementFromPoint(p.x, p.y) ?? document.body;
+        const pointer = (type: string) =>
+          el().dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, isPrimary: true, pointerId: 1, pointerType: 'touch', button: 0, clientX: p.x, clientY: p.y }));
+        const touch = (type: string) => {
+          if (typeof Touch !== 'function') return;
+          try {
+            const t = new Touch({ identifier: 1, target: el(), clientX: p.x, clientY: p.y });
+            el().dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, composed: true, changedTouches: [t], touches: type === 'touchend' ? [] : [t] }));
+          } catch {
+            // Touch 를 만들 수 없는 브라우저는 pointer 이벤트만 보낸다.
+          }
+        };
+        const mouse = (type: string, detail: number) =>
+          el().dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, composed: true, view: window, detail, clientX: p.x, clientY: p.y }));
+        pointer('pointerdown');
+        touch('touchstart');
+        if (o.dbl) mouse('dblclick', o.dbl);
+        pointer('pointerup');
+        touch('touchend');
+        if (o.click) mouse('click', o.click);
+        if (o.remote) {
+          const w = window as unknown as { __remoteCurrent: unknown; __saFromApp: (m: unknown) => void };
+          w.__remoteCurrent = o.remote;
+          w.__saFromApp({ type: 'remote', remote: o.remote });
+        }
+      },
+      { p, o },
+    );
+  await press({ click: 1 });
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('1');
+  await press({ dbl: 2, remote: remoteData(2, AT_2010, [testExam({ rev: 2 })]) });
+  await expect(page.locator('.tap-shield[data-area="screen"]')).toHaveCount(1);
+  await page.waitForTimeout(300);
+  // 채우지 않아서 넣는 중인 답은 1 그대로다(채웠다면 11).
+  await expect(page.getByTestId('entry').locator('.num')).toHaveText('1');
+  const skipped = await page.evaluate(() =>
+    ((window as Window & { __saTapTrace?: { what: string; reason?: string }[] }).__saTapTrace ?? []).filter((e) => e.what === 'held-skip').map((e) => e.reason),
+  );
+  expect(skipped).toEqual(['guard-after-lift']);
+  expectNoOtherRequests(page);
+});

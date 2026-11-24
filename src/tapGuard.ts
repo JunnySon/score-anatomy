@@ -60,11 +60,16 @@
 // - 기다리는 동안 그 자리에 click 이 오고 그 사이 그 자리에서 새로 뗀 누름이 없으면 그 누름의 click 이 온 것이라 채우지 않는다.
 //   다른 누름의 click(다른 자리이거나, 그 자리에서 새로 뗀 누름 뒤)이 먼저 오면 기다리던 누름을 먼저 채운 뒤 그 click 을 처리한다
 //   (누른 차례를 지킨다).
-// - 채운 뒤 HELD_LATE_MS 안에 그 자리로 click 이 오는데 그 사이 그 자리에서 새로 뗀 셀 수 있는 누름이 없으면, 채운 누름의
-//   진짜 click 이 늦게 온 것으로 보고 버린다(두 번 들어가지 않게, 알림과 셈 없음).
+// - 채운 뒤 HELD_LATE_MS 동안 그 자리(24px 안)의 장부를 둔다: 채운 누름의 손뗌 뒤에 그 자리에서 뗀 누름 수(취소는 빼고,
+//   길게 누름이나 끌기처럼 셀 수 없는 누름도 센다. pointer 와 touch 가운데 적은 쪽)와 그 자리로 받은 click 수(손뗌 수 규칙이 채운 것,
+//   보호가 버린 것도 셈). click 을 받으면 click 수가 뗀 누름 수보다 많아지는 그 click 만 채운 누름의 진짜 click 이 늦게 온 것으로 보고
+//   버린다(두 번 들어가지 않게, 알림과 셈 없음). 새로 뗀 누름의 click 은 그 누름 몫이라 받는다(별도 검토 logic-1).
 // - 만들어 보낸 click 은 위의 규칙과 똑같이 보호를 거친다(그 손뗌 시각에 걸려 있던 막기로 본다). 누른 요소가 앞 click 으로
 //   사라졌거나 쓸 수 없게 됐거나 덮였으면, 그 자리를 막고 있었을 때만 그 자리의 지금 요소로 보내 막기가 버리고 세게 하고
 //   (진짜 click 이 왔어도 버려졌을 것), 막고 있지 않으면 채우지 않는다.
+// - 기다리는 동안(그 손뗌 뒤) 새로 걸린 막기가 있으면 채우지 않는다. 진짜 click 은 그 막기보다 먼저 왔을 것이라, 지금 채우면
+//   옮겨 간 내용(새 자료로 옮겨 간 문항 등)에 들어간다. 채운 click 은 그 손뗌 뒤에 걸린 막기를 풀지 않는다(별도 검토
+//   regression-delayed-held-fill-clears-newer-guard, 손뗌 수 규칙의 채운 click 도 같다).
 // - FILL_HELD_DBLCLICK 을 false 로 하면 이 규칙만 꺼진다(dblclick 을 보지 않음).
 // - 측정 중이면 채운 누름(filled_taps)에 넣고, 이 규칙으로 채운 것은 filled_held_taps 에 따로 센다.
 
@@ -160,6 +165,8 @@ interface Lift extends Spot {
   control: Element | null;
   /** 누르는 동안 dblclick 이 온 누름의 손뗌이면 그 dblclick(pointer 와 touch 의 손뗌이 같은 것을 가리킨다). */
   held: Held | null;
+  /** 취소된 누름(pointercancel, touchcancel)인지. 취소된 누름은 click 이 없다. */
+  cancel?: boolean;
 }
 /** 마지막으로 받은 click(보호가 버린 것도 센다) 뒤의 손뗌. pointer 와 touch 를 따로 모은다. */
 const lifts: { pointer: Lift[]; touch: Lift[] } = { pointer: [], touch: [] };
@@ -184,8 +191,11 @@ let flushRunner: (fn: () => void) => void = (fn) => fn();
 let lastReceived: (Spot & { at: number; detail: number; control: Element | null }) | null = null;
 /** 누르는 동안 dblclick 이 온 누름을 떼고 그 누름의 click 을 기다리는 중이면 그 손뗌과 타이머. */
 let pendingHeld: { lift: Lift; held: Held; timer: number } | null = null;
-/** 누르는 동안 온 dblclick 으로 채운 자리. 그 누름의 진짜 click 이 늦게 오면 버린다. */
-let owedHeld: (Spot & { until: number }) | null = null;
+/**
+ * 누르는 동안 온 dblclick 으로 채운 자리의 장부. 채운 누름의 손뗌 뒤에 그 자리에서 뗀 누름 수(취소 빼고, pointer 와 touch 따로)와
+ * 그 자리로 받은 click 수. click 수가 뗀 누름 수보다 많아지는 click 은 채운 누름의 진짜 click 이 늦게 온 것이라 버린다.
+ */
+let owedHeld: (Spot & { until: number; lifts: { pointer: number; touch: number }; clicks: number }) | null = null;
 /** 지금 막고 있는 자리. strict 면 단답형 숫자 키(data-tap-safe)도 버린다. */
 let guard: GuardRecord | null = null;
 /**
@@ -428,13 +438,14 @@ function onPointerUp(e: PointerEvent): void {
     held: press?.held ?? null,
   };
   remember(lifts.pointer, lift);
+  countOwedLift('pointer', lift);
   armHeld(lift);
 }
 
 function onPointerCancel(e: PointerEvent): void {
   const press = pointerPresses.get(e.pointerId);
   pointerPresses.delete(e.pointerId);
-  remember(lifts.pointer, { x: press?.x0 ?? e.clientX, y: press?.y0 ?? e.clientY, t: performance.now(), ok: false, control: null, held: null });
+  remember(lifts.pointer, { x: press?.x0 ?? e.clientX, y: press?.y0 ?? e.clientY, t: performance.now(), ok: false, control: null, held: null, cancel: true });
 }
 
 function onTouchStart(e: TouchEvent): void {
@@ -468,6 +479,7 @@ function onTouchEnd(e: TouchEvent): void {
       held: press?.held ?? null,
     };
     remember(lifts.touch, lift);
+    countOwedLift('touch', lift);
     armHeld(lift);
   }
 }
@@ -476,8 +488,27 @@ function onTouchCancel(e: TouchEvent): void {
   const now = performance.now();
   for (const t of Array.from(e.changedTouches)) {
     touchPresses.delete(t.identifier);
-    remember(lifts.touch, { x: t.clientX, y: t.clientY, t: now, ok: false, control: null, held: null });
+    remember(lifts.touch, { x: t.clientX, y: t.clientY, t: now, ok: false, control: null, held: null, cancel: true });
   }
+}
+
+/** 장부가 열려 있으면(채운 뒤 HELD_LATE_MS 안) 그 자리에서 뗀 누름을 센다. 셀 수 없는 누름도 센다(그 누름도 click 을 낼 수 있다). */
+function countOwedLift(kind: 'pointer' | 'touch', lift: Lift): void {
+  const owed = owedHeld;
+  if (!owed) return;
+  if (performance.now() > owed.until) {
+    owedHeld = null;
+    return;
+  }
+  if (sameSpot(lift, owed)) owed.lifts[kind] += 1;
+}
+
+/** 장부의 뗀 누름 수. pointer 와 touch 가운데 받은 쪽마다 센 것 가운데 적은 쪽(받은 쪽이 없으면 0). */
+function owedPresses(owed: NonNullable<typeof owedHeld>): number {
+  const counts: number[] = [];
+  if (pointerSeen) counts.push(owed.lifts.pointer);
+  if (touchSeen) counts.push(owed.lifts.touch);
+  return counts.length === 0 ? 0 : Math.min(...counts);
 }
 
 /**
@@ -557,6 +588,12 @@ function consumeThrough(held: Held): void {
 
 /** 누르는 동안 dblclick 이 온 누름의 click 을 하나 만들어 보낸다. 보호는 진짜 click 과 똑같이 그 손뗌 시각으로 거친다. */
 function fillHeld(lift: Lift, held: Held, why: string): void {
+  // 기다리는 동안 새로 걸린 막기가 있다(새 자료로 내용이 옮겨 감, 화면이 바뀜). 진짜 click 은 그 전에 왔을 것이라 지금 채우면
+  // 옮겨 간 내용에 들어간다. 애매하므로 채우지 않는다(별도 검토 regression-delayed-held-fill-clears-newer-guard).
+  if (guardLog.some((g) => g.since > lift.t)) {
+    trace('held-skip', { why, reason: 'guard-after-lift' });
+    return;
+  }
   const control = held.control;
   const now = usableOf(control, lift.x, lift.y);
   let to: Element | null = null;
@@ -585,7 +622,15 @@ function fillHeld(lift: Lift, held: Held, why: string): void {
   });
   consumeThrough(held);
   lastReceived = { x: lift.x, y: lift.y, at: lift.t, detail: held.detail, control };
-  owedHeld = { x: lift.x, y: lift.y, until: performance.now() + HELD_LATE_MS };
+  // 장부를 연다. 기다리는 동안 그 자리에서 이미 뗀 누름(채운 누름의 손뗌 뒤의 것)도 센다.
+  const ledgerLifts = (list: Lift[]) => list.filter((l) => !l.cancel && sameSpot(l, lift)).length;
+  owedHeld = {
+    x: lift.x,
+    y: lift.y,
+    until: performance.now() + HELD_LATE_MS,
+    lifts: { pointer: ledgerLifts(lifts.pointer), touch: ledgerLifts(lifts.touch) },
+    clicks: 0,
+  };
   trace('held-fill', { why, detail: held.detail, x: Math.round(lift.x), y: Math.round(lift.y) });
   for (const l of fillListeners) l('held');
   filling = true;
@@ -602,7 +647,8 @@ function fillHeld(lift: Lift, held: Held, why: string): void {
 
 /**
  * 손가락이나 마우스에서 click 이 왔을 때, 누르는 동안 온 dblclick 규칙의 남은 일을 먼저 한다. 이 click 을 버렸으면 true.
- * - 채운 누름의 진짜 click 이 늦게 온 것이면 버린다: 채운 자리(24px 안)이고, 채운 뒤 그 자리에서 새로 뗀 셀 수 있는 누름이 없다.
+ * - 채운 자리(24px 안)의 장부가 열려 있으면: 받은 click 수가 채운 뒤 그 자리에서 뗀 누름 수보다 많아지는 click 은 채운 누름의 진짜 click 이
+ *   늦게 온 것이라 버리고 장부를 닫는다. 아니면 새로 뗀 누름의 click 이라 받고 장부에 센다.
  * - 기다리던 누름이 있으면: 그 자리이고 그 뒤 그 자리에서 새로 뗀 누름이 없으면 그 누름의 click 이라 기다림만 그만두고,
  *   아니면(다른 누름의 click) 기다리던 누름을 먼저 채운다.
  */
@@ -610,12 +656,15 @@ function settleHeldBefore(e: MouseEvent): boolean {
   const owed = owedHeld;
   if (owed) {
     if (performance.now() > owed.until) owedHeld = null;
-    else if (sameSpot({ x: e.clientX, y: e.clientY }, owed) && newerOkLifts(null, owed) === 0) {
-      owedHeld = null;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      trace('held-late-drop', { detail: e.detail, x: Math.round(e.clientX), y: Math.round(e.clientY) });
-      return true;
+    else if (sameSpot({ x: e.clientX, y: e.clientY }, owed)) {
+      if (owed.clicks + 1 > owedPresses(owed)) {
+        owedHeld = null;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        trace('held-late-drop', { detail: e.detail, x: Math.round(e.clientX), y: Math.round(e.clientY) });
+        return true;
+      }
+      owed.clicks += 1;
     }
   }
   const pending = pendingHeld;
@@ -740,6 +789,8 @@ function fillMissing(e: MouseEvent, target: Element, control: Element, times: nu
     if (!to) return;
     const dest = to;
     const ev = cloneClick(e, first + i);
+    // 채운 자리의 장부가 열려 있으면 이 채움도 그 자리의 누름 하나를 받은 것으로 센다.
+    if (owedHeld && sameSpot({ x: e.clientX, y: e.clientY }, owedHeld)) owedHeld.clicks += 1;
     trace('fill', { rule: 'lifts', detail: first + i, x: Math.round(e.clientX), y: Math.round(e.clientY) });
     for (const l of fillListeners) l('lifts');
     filling = true;
@@ -843,7 +894,9 @@ function onClick(e: MouseEvent): void {
       return;
     }
   }
-  clearGuard();
+  // 채운 click 은 그 누름의 손뗌 시각에 받은 것으로 본다. 그 손뗌 뒤에 걸린 막기(새 자료로 내용이 옮겨 감 등)는 진짜 click 이 왔을 때
+  // 아직 없었으므로 풀지 않는다(별도 검토 regression-delayed-held-fill-clears-newer-guard).
+  if (!(filling && fillClock !== null && guard !== null && guard.since > fillClock)) clearGuard();
   lastClick = { x: e.clientX, y: e.clientY, at: now };
   for (const l of acceptListeners) l();
 }

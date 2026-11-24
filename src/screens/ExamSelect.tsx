@@ -118,7 +118,7 @@ export function ExamSelect() {
             }
           >
             <span>{e.title}</span>
-            <span className="sub" data-testid="exam-note">
+            <span className="sub" data-testid="note-line">
               {noteChunks(e.note)}
             </span>
             {heldText(e.examDate)}

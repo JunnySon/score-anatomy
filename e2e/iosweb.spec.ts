@@ -256,7 +256,7 @@ test.describe('3-5 보기 문제', () => {
     for (const width of [360, 375, 390, 402, 414, 430]) {
       await page.setViewportSize({ width, height: 900 });
       await openApp(page, '/exams');
-      const notes = page.getByTestId('exam-note');
+      const notes = page.getByTestId('note-line');
       const count = await notes.count();
       expect(count).toBeGreaterThan(0);
       for (let i = 0; i < count; i += 1) {

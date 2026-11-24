@@ -150,7 +150,8 @@ meta commit "$(git -C "$REPO" rev-parse --short HEAD)"
 dirty_state() {
   # 이 검증이 읽는 곳(ios, docs/ios_*.md, 다리 규격)에 커밋하지 않은 바뀜이나 추적하지 않는 파일이 있는지. 만들어지는 결과물은 뺀다.
   local changed
-  changed=$(git -C "$REPO" status --porcelain --untracked-files=all -- ios 'docs/ios_*.md' docs/앱_다리_규격.md 2>/dev/null \
+  # 한글 파일 이름을 \352 같은 이스케이프 없이 받아야 아래에서 이름으로 뺄 수 있다(core.quotePath=false).
+  changed=$(git -C "$REPO" -c core.quotePath=false status --porcelain --untracked-files=all -- ios 'docs/ios_*.md' docs/앱_다리_규격.md 2>/dev/null \
     | grep -v -e 'docs/ios_검증결과.md' -e 'docs/screens-ios/' || true)
   if [ -n "$changed" ]; then echo yes; else echo no; fi
 }

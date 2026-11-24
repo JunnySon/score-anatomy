@@ -221,6 +221,7 @@ func tapRhythm(_ app: XCUIApplication, points: [CGPoint], gap: TimeInterval) -> 
     return zip(starts.dropFirst(), starts).map { $0.timeIntervalSince($1) }
 }
 
+@MainActor
 func center(_ element: XCUIElement) -> CGPoint {
     CGPoint(x: element.frame.midX, y: element.frame.midY)
 }

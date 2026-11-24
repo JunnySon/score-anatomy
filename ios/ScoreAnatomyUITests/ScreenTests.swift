@@ -204,8 +204,11 @@ final class ReleaseSmokeTests: XCTestCase {
         }
         continueAfterFailure = false
         let handle = AppHandle(name: "release")
-        // Release 에는 DEBUG 장치가 없으므로 아래 인자는 모두 무시돼야 한다.
-        handle.launch(seed: "unreadable", extra: ["-SAProbe", "state", "-SAForceLoadFailure"])
+        // Release 에는 DEBUG 장치가 없으므로 아래 인자는 모두 무시돼야 한다. 시험 서버 주소와 테스트 전용 키를 줘도
+        // 받지 않아야 한다(Release 의 주소는 빌드 설정 한 곳, 공개 키는 exam-data/public-key.txt 하나뿐이고 지금은 둘 다 없다).
+        let server = ProcessInfo.processInfo.environment["SA_EXAM_SERVER"].flatMap { $0.isEmpty ? nil : try? ExamServer.make("release") }
+        server?.set("pub=test-only-valid")
+        handle.launch(seed: "unreadable", extra: ["-SAProbe", "state", "-SAForceLoadFailure"] + (server?.launchArguments ?? []))
         XCTAssertTrue(handle.button("시험 고르기").waitForExistence(timeout: 20), "불러오기 실패 인자를 무시하고 시작 화면이 뜬다")
         XCTAssertTrue(handle.any("가입 없이 써요. 기록은 이 기기에 저장하고 서버로 보내지 않아요.").exists, "앱 안에서만 쓰는 문구")
         handle.web.links.matching(handle.exact("기록")).firstMatch.tap()
@@ -218,5 +221,19 @@ final class ReleaseSmokeTests: XCTestCase {
         XCTAssertEqual(probeFiles, [], "탐침이 없다")
         XCTAssertEqual(storeFiles, [], "기록 위치 바꾸기와 기록 심기가 없다")
         handle.capture("release-기록", theme: "light")
+        // 시험 선택: 받은 자료 안내와 새로 확인이 없고(지금과 같음), 시험 서버로 요청이 가지 않았다.
+        handle.web.links.matching(handle.exact("이번 시험")).firstMatch.tap()
+        XCTAssertTrue(handle.button("시험 고르기").waitForExistence(timeout: 8))
+        handle.button("시험 고르기").tap()
+        XCTAssertTrue(handle.any("어떤 시험을 넣을까요?").waitForExistence(timeout: 8), "시험 선택 화면")
+        Thread.sleep(forTimeInterval: 1.0)
+        XCTAssertFalse(handle.element(labelContains: "받은 자료 기준").exists, "받은 자료 안내가 없다")
+        XCTAssertFalse(handle.button("새로 확인").exists, "새로 확인이 없다")
+        XCTAssertFalse(handle.element(labelContains: "테스트 전용 시험").exists)
+        if let server {
+            XCTAssertEqual(server.paths(), [], "Release 는 실행 인자의 주소로 받지 않는다")
+        } else {
+            XCTFail("시험 서버 주소(SA_EXAM_SERVER)가 있어야 받지 않음을 확인할 수 있다")
+        }
     }
 }

@@ -48,7 +48,7 @@ xcodebuild -project ios/ScoreAnatomy.xcodeproj -scheme ScoreAnatomy -configurati
 caffeinate -dims ios/scripts/verify.sh
 ```
 
-- 시뮬레이터를 새로 만들어(이름이 `SA검증-` 으로 시작) 빌드, 단위 테스트, 화면 테스트, 정적 검사, 캡처를 모두 돌리고 끝나면 그 시뮬레이터를 지워요. 시간은 docs/ios_검증결과.md 의 실행 시각에 적혀요(2026-11-24 기준 1시간 반쯤).
+- 시뮬레이터를 새로 만들어(이름이 `SA검증-` 으로 시작) 빌드, 단위 테스트, 화면 테스트, 정적 검사, 캡처를 모두 돌리고 끝나면 그 시뮬레이터를 지워요. 시간은 docs/ios_검증결과.md 의 실행 시각에 적혀요(2026-11-24 에 이 맥에서 64분).
 - 도는 동안 맥이 잠들면 화면 테스트가 멈춰 실패해요. 전원 어댑터를 꽂고 덮개를 연 채로, 위처럼 `caffeinate` 로 감싸 돌려요. 끝난 뒤 `pmset -g log | grep -E "Sleep|Wake"` 로 실행 시각 사이에 잠든 기록이 없는지 봐요(덮개가 닫히면 caffeinate 가 있어도 잠들어요).
 - 시작할 때 앱 버전이 웹 묶음 버전과 다르면 아무것도 돌리지 않고 멈춰요(5장).
 - 결과는 [docs/ios_검증결과.md](../docs/ios_검증결과.md), 캡처는 `docs/screens-ios`, 로그와 테스트 결과 묶음은 `ios/build/verify` 에 남아요(커밋하지 않음).

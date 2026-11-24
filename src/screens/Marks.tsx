@@ -16,6 +16,10 @@ export function Marks({ h }: { h: SessionHandle }) {
   const shortItems = exam.items.filter((it) => it.kind === 'short');
   const released = exam.answerReleased;
   const saved = !released && session.savedAt !== null;
+  // "채점한 뒤에 표시한 기록이에요" 줄. 채점한 기록이면 표시를 바꾸기 전에도 같은 글자로 줄의 자리를 잡아 두고 숨긴다(별도 검토 C10).
+  // 표시를 처음 바꿀 때 이 줄이 새로 생기면 칸 격자가 줄 높이만큼 내려가서, 같은 칸을 빠르게 두 번 누른 둘째 누름이 윗줄의 다른 칸에 닿는다.
+  // 같은 글자라 글자를 키워 두 줄이 되어도 높이가 같다. 연달아 누르기 보호로 막으면 둘째 누름이 버려져 "찍음"이 되지 않으므로 막지 않는다.
+  const noteShown = isMarkedAfterGrading(session);
 
   /** 지금 붙어 있는 표시 그대로 채점한다. 표시를 지우지 않는다. */
   const grade = () => {
@@ -81,8 +85,8 @@ export function Marks({ h }: { h: SessionHandle }) {
       </div>
       <p className="mt2">{S.marks.body}</p>
       <p className="sub mt2">{S.marks.help}</p>
-      {isMarkedAfterGrading(session) ? (
-        <p className="cap mt2" data-testid="after-grading-note">
+      {noteShown || session.firstGradedAt !== null ? (
+        <p className={`cap mt2${noteShown ? '' : ' note--ghost'}`} data-testid={noteShown ? 'after-grading-note' : undefined} aria-hidden={noteShown ? undefined : 'true'}>
           {S.common.afterGradingNote}
         </p>
       ) : null}

@@ -55,6 +55,45 @@ test('표시가 0개일 때 같은 칸을 0.2초 간격으로 두 번 누르면 
   await expect(cell14).toHaveAttribute('data-mark', 'guess');
 });
 
+test('채점한 기록에서 표시를 처음 바꿀 때 같은 칸을 0.2초 간격으로 두 번 누르면 "찍음"이 되고 다른 칸은 눌리지 않는다(안내 줄이 생겨도 칸 격자가 밀리지 않는다)', async ({ page }) => {
+  const exam = loadExam('a');
+  await startExamA(page);
+  await enterKeypad(page, exam, exampleAnswers(exam));
+  await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
+  await expectHash(page, '/marks');
+  // 표시 없이 채점한 뒤 "입력 고치기"로 돌아와 채점한 기록의 표시 화면을 다시 연다. 아직 표시를 바꾸지 않아서 안내 줄은 보이지 않는다.
+  await page.getByRole('button', { name: '없어요, 채점하기' }).click();
+  await expectHash(page, '/score');
+  await page.getByRole('button', { name: '입력 고치기' }).click();
+  await expectHash(page, '/review');
+  await page.getByRole('button', { name: '맞아요, 다음으로' }).click();
+  await expectHash(page, '/marks');
+  await expect(page.getByTestId('after-grading-note')).toHaveCount(0);
+  const cellBoxes = () =>
+    page.locator('[data-mark-cell]').evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return `${el.getAttribute('data-mark-cell')} ${r.left} ${r.top} ${r.width} ${r.height}`;
+      }),
+    );
+  const before = await cellBoxes();
+  // 9번 칸의 위쪽(위 가장자리에서 10px 아래)을 누른다. 칸의 가운데는 격자가 안내 줄만큼 내려가도 같은 칸 안이라 위쪽을 누른다.
+  const box = (await page.locator('[data-mark-cell="9"]').boundingBox())!;
+  const at = { x: box.x + box.width / 2, y: box.y + 10 };
+  await page.waitForTimeout(600);
+  await tapAtRhythm(page, [at, at], 200);
+  await expect(page.getByTestId('after-grading-note')).toHaveText('채점한 뒤에 표시한 기록이에요');
+  await expect(page.locator('[data-mark-cell="9"]')).toHaveAttribute('data-mark', 'guess');
+  await expect(page.getByTestId('tap-notice')).toHaveCount(0);
+  expect((await stored(page)).sessions[0].marks).toEqual({ 9: 'guess' });
+  expect(await cellBoxes()).toEqual(before);
+  // 이 테스트가 보려는 상황인지 본다: 안내 줄(위 여백 포함)의 높이만큼 격자가 내려갔다면 둘째 누름은 윗줄의 4번 칸에 닿았을 자리다(별도 검토 C10).
+  const noteSpace = await page.getByTestId('after-grading-note').evaluate((el) => el.getBoundingClientRect().height + parseFloat(getComputedStyle(el).marginTop));
+  const cell4 = (await page.locator('[data-mark-cell="4"]').boundingBox())!;
+  expect(at.y - noteSpace).toBeGreaterThan(cell4.y);
+  expect(at.y - noteSpace).toBeLessThan(cell4.y + cell4.height);
+});
+
 test('잠금 뒤에 0.3초 간격으로 이어 누른 답 키는 어디에도 들어가지 않는다', async ({ page }) => {
   const exam = loadExam('a');
   const answers = exampleAnswers(exam);

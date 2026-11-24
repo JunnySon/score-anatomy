@@ -354,9 +354,11 @@ const toolSkipped = toolTests.filter((t) => t.status !== 'passed' && t.status !=
 const toolBadFiles = toolFiles.filter((f) => f.status !== 'passed');
 const missingTool = REQUIRED_TOOL_TESTS.filter((name) => !toolTests.some((t) => t.fullName === name && t.status === 'passed'));
 // 작업 지시서 1의 5장: 기다리지 않는 좌표 누름 테스트와 3-2 (f)의 뒷부분(화면 테스트가 맡는다, 결정기록 97번).
+// 채점한 기록의 표시 화면에서 처음 바꾸는 칸의 두 번 누름(별도 검토 C10, 결정기록 7.7)도 여기에 둔다.
 // 지워지거나 이름이 바뀌어 빠지면 2번 항목이 실패한다.
 const REQUIRED_E2E_TESTS = [
   '표시가 0개일 때 같은 칸을 0.2초 간격으로 두 번 누르면 "찍음"이 된다(채점 버튼 라벨이 바뀌어도 둘째 누름을 버리지 않는다)',
+  '채점한 기록에서 표시를 처음 바꿀 때 같은 칸을 0.2초 간격으로 두 번 누르면 "찍음"이 되고 다른 칸은 눌리지 않는다(안내 줄이 생겨도 칸 격자가 밀리지 않는다)',
   '잠금 뒤에 0.3초 간격으로 이어 누른 답 키는 어디에도 들어가지 않는다',
   '마지막 문항 뒤에 이어 누른 키가 입력 확인의 버튼을 누르지 않는다',
   '다 찬 상태에서 9번을 고친 뒤 이어 누른 키는 9번을 다시 바꾸지 않고 입력 확인의 버튼도 누르지 않는다',
@@ -430,7 +432,7 @@ const REQUIRED = {
   shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 206, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22).
+  e2eTests: 208, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22). 표시 화면의 자리 밀림(별도 검토 C10)에서 2개 늘었다(rhythm 1, fill 1).
   unitTests: 461, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기).
   toolTests: 104, // 통과한 발행 도구(scripts/exams) 단위 테스트 수의 최소(13번)
   leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
@@ -440,7 +442,7 @@ const REQUIRED = {
   appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
   appRemoteTests: 21, // 넘겨받기 화면 테스트(e2e/appRemote.spec.ts, 가짜 다리 규격 2, 작업 지시서 3의 8장과 별도 검토) 수
   appStyleTests: 3, // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts) 수
-  fillTests: 34, // 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts, 작업 지시서 3-1의 3-1) 수
+  fillTests: 35, // 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts, 작업 지시서 3-1의 3-1) 수. 별도 검토 C10 에서 1개 늘었다(채점한 기록에서 처음 바꾸는 표시 칸).
   iosWebTests: 22, // 아이폰에서 찾은 보기 문제 화면 테스트(e2e/iosweb.spec.ts, 작업 지시서 3-1의 3-2 ~ 3-5) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).

@@ -35,8 +35,9 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
   const titleId = `step-title-${step.typeId}`;
   return (
     <li className="card" data-testid={`step-${index + 1}`} data-type={step.typeId} aria-labelledby={titleId}>
-      <h3 className="title" id={titleId}>
-        {index + 1}. {step.name}
+      {/* 번호와 이름을 한 조각의 글자로 그린다. 조각으로 나뉘면 아이폰의 화면 낭독기가 "1", ".", "적분"으로 따로 읽는다(작업 지시서 3-1의 3-2). */}
+      <h3 className="title" id={titleId} data-testid="step-title">
+        {`${index + 1}. ${step.name}`}
       </h3>
       {/* 배점 문장은 유형 이름 아래 줄에 두고 줄바꿈을 허용한다. */}
       <p className="sub" data-testid="step-points">
@@ -48,11 +49,11 @@ function StepCard({ h, grade, step, index }: { h: SessionHandle; grade: Grade; s
 
       <h4 className="sub mt4">{S.steps.todoTitle}</h4>
       <ol className="stack gap2 mt2">
-        <li data-testid="todo-today">1. {S.steps.todoToday(step.retryNos)}</li>
+        <li data-testid="todo-today">{`1. ${S.steps.todoToday(step.retryNos)}`}</li>
         {coordLines.length > 0 ? (
           <li data-testid="todo-coords">
             <div className="inline">
-              <span>2. {S.steps.coordsTitle}</span>
+              <span data-testid="todo-coords-title">{`2. ${S.steps.coordsTitle}`}</span>
               {exam.isSample ? <Badge>{S.steps.coordsSample}</Badge> : null}
             </div>
             <ul className="sub mt2 selectable">

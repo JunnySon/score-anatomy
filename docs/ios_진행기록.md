@@ -96,3 +96,34 @@
   - 세 번 빠르게 누름: 이벤트 열(click 2, 채운 click 1, dblclick 2, click 1)은 1차 verify 와 같았는데 끝 상태가 "찍음"(1차는 "표시 없음").
 - 마지막 verify(22:42~22:55): 19개 가운데 18개 통과. 점수 해부의 같은 자리 두 번 누름(누름 시작 사이 286ms)에서 둘째 누름이 dblclick 2 만 오고 click 이 없어 실패(받지 않은 누름 0). 같은 실행에서 채점한 기록의 따로 누름과 세 번 누름은 통과.
 - 모아 보면: 기록이 남은 iOS 18.4 실행(개발용, 마지막 verify)에서 0.25~0.6초 간격 두 번 누름 14번 가운데 2번이 click 없이 dblclick 만 왔어요(286ms, 293ms). 1차 verify 의 같은 경우 4번은 모두 click 이 왔어요(그때 화면에 찍어 둔 기록, 폴더는 마지막 실행이 지움). iOS 26.4 는 같은 간격 22번, 모든 빠른 누름 69번에서 0번이에요. 웹 쪽에 알릴 것으로 적었어요(결정기록 3장).
+
+## 작업 지시서 4 의 2부: 최소 iOS 18, 시험 자료 받기와 서명 확인(다리 규격 2)
+
+브랜치 ios-remote(origin/main 3374df0 에서 만듦). 세션이 끊겼다가 이어지면 이 표와 git log 를 보고 남은 일부터 한다.
+
+### 시작 전 확인
+
+- 2026-11-24 23:52: origin/main 에 sync_version.py 가 없고(PR #6 열림) manifest 0.3.1, 배포용 묶음 title 점수 해부라서 멈추고 알림.
+- 2026-11-25 00:09: PR #6 병합(359957a, 부모 둘)을 확인했지만 manifest 0.3.1, title 점수 해부 그대로라 다시 멈춤.
+- 2026-11-25 01:37: origin/main 3374df0(1부 PR #7 병합 e546c48, 진행기록 PR #8). manifest version 0.3.2, 커밋 094e5f6, bridge 1, bridgeMax 2,
+  app-release title 모고칸, sync_version.py 있음. macOS 26.6.2(25G83), Xcode 26.4.1(17E202). 전원 연결(배터리 83%), 덮개 열림.
+  작업 폴더에 커밋하지 않은 변경 없음(ios/Config/Signing.local.xcconfig 없음).
+
+### 단계
+
+| 단계 | 상태 | 남긴 것 |
+| --- | --- | --- |
+| 시작 전 확인 | 완료 | 위 절 |
+| 규격 문서와 1부 PR 읽기 | 완료 | 시험 배포 규격 2, 3, 3-1, 4, 6, 7, 10장, 다리 규격 7장, testdata README, serve.ts, verify.ts, sign.ts(읽기만), PR #7 본문, 결정기록 7.8 |
+| 미리 확인한 것 세 가지 | 완료 | xcconfig 의 https:/$()/ 가 Info.plist 에서 https:// 가 됨. 빌드 스크립트 샌드박스는 입력으로 적은 폴더 안 파일은 읽지만 만든 앱(.app) 안의 파일은 하나씩 적어야 읽음. iOS 26.4, 18.4 시뮬레이터에서 예외 없이 http://127.0.0.1 에 붙음(ATS 예외 필요 없음) |
+| 3-1 앱 버전 0.3.2 | 완료 | b4e8224. sync_version.py, 바뀐 줄은 MARKETING_VERSION 뿐 |
+| 3-1 최소 iOS 18.0 | 완료 | 6d8f12f. deploymentTarget 네 곳, 바뀐 줄은 IPHONEOS_DEPLOYMENT_TARGET 8줄뿐(서명 설정 그대로) |
+| 3-3 받는 쪽 코드 | 완료 | ab7fb43. ios/ScoreAnatomy/Remote, 다리 규격 2, 공개 키 넣기와 Release 테스트 키 검사 빌드 단계 |
+| 3-3 단위 테스트와 시험 서버 | 완료 | 5d71f8e. 단위 테스트 92개가 iOS 26.4, 18.4 에서 통과. 실제로 나간 머리글 7개(Host, Accept-Encoding, Accept, User-Agent, Accept-Language, Cache-Control, Connection) |
+| 3-3 화면 테스트 | 진행 중 | |
+| 3-2 iOS 18.4 되풀이 재기 | 남음 | |
+| 3-4 verify.sh 새 항목과 출시 준비 | 남음 | |
+| 별도 검토 | 남음 | |
+| verify 전체 | 남음 | |
+| 문서 | 남음 | |
+| push, PR, 병합, 정리 | 남음 | |

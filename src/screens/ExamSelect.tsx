@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { platform } from '#platform';
+import { RemoteNotice, RemoteRefresh } from '../components/RemoteNotice';
 import { Badge, Message, Option, Screen, TopBar } from '../components/ui';
-import { EXAMS } from '../exams';
+import { catalog, useCatalog, useExams } from '../exams';
+import { examListShiftKey } from '../exams/merge';
 import { parseYmd } from '../logic/dates';
 import { navigate } from '../router';
 import { startSession } from '../state/hooks';
@@ -25,7 +28,15 @@ export function ExamSelect() {
   const [seen, setSeen] = useState<SeenBefore | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const questionRef = useRef<HTMLDivElement>(null);
-  const exam = EXAMS.find((e) => e.id === examId) ?? null;
+  // 시험 목록은 넘겨받은 새 자료가 오면 바뀐다(작업 지시서 3의 5-3). 고른 시험도 지금 목록에서 찾는다.
+  const exams = useExams();
+  const { remote } = useCatalog();
+  const exam = exams.find((e) => e.id === examId) ?? null;
+  // 받은 시험 자료 안내와 "새로 확인"(작업 지시서 3의 5-4): 앱에서 다리 규격 2 이상이고 넘겨받은 자료가 있을 때만 본문 끝에 둔다.
+  // 규격 1 껍데기, 브라우저, 넘겨받은 자료가 없으면 그리지 않아서 지금과 같다.
+  const appText = platform.remoteBridge ? platform.appText : null;
+  // 버튼 상태는 화면을 열 때마다 새로 만든다(화면을 떠났다 오면 결과 문구가 없다).
+  const [refresh] = useState(() => new RemoteRefresh(catalog));
 
   useEffect(() => {
     if (examId) questionRef.current?.scrollIntoView({ block: 'nearest' });
@@ -53,7 +64,10 @@ export function ExamSelect() {
       top={<TopBar back="/" title={S.start.pick} />}
       tabs="current"
       // 고를 때마다 아래 질문이 나타나고 화면이 저절로 스크롤된다. 연달아 누른 것이 그 자리에 온 다른 선택지에 닿지 않게 한다.
-      guardKey={`${examId ?? ''}/${graded ?? ''}/${seen ?? ''}`}
+      // 넘겨받은 새 자료로 시험 목록이 바뀌면(seq) 선택지의 자리가 옮겨 갈 수 있어서 그때도 막는다.
+      guardKey={`${examId ?? ''}/${graded ?? ''}/${seen ?? ''}/${remote?.seq ?? ''}`}
+      // 학생이 누르지 않았어도 넘겨받은 새 자료로 목록이 바뀌면 선택지의 자리가 옮겨 가서, 그때는 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={examListShiftKey(exams)}
       actions={
         <>
           {msg ? <Message>{msg}</Message> : null}
@@ -67,7 +81,7 @@ export function ExamSelect() {
         {S.exams.title}
       </h2>
       <div className="opts mt4" role="radiogroup" aria-labelledby="exam-q">
-        {EXAMS.map((e) => (
+        {exams.map((e) => (
           <Option
             key={e.id}
             testId={`exam-${e.id}`}
@@ -135,6 +149,8 @@ export function ExamSelect() {
           ) : null}
         </div>
       ) : null}
+
+      {appText && remote ? <RemoteNotice text={appText} remote={remote} refresh={refresh} /> : null}
     </Screen>
   );
 }

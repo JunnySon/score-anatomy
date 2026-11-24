@@ -1,23 +1,43 @@
 import { useState } from 'react';
+import { CorrectionNotice } from '../components/CorrectionNotice';
 import { ScoreBar } from '../components/ScoreBar';
-import { Badge, BottomSheet, Chip, IconInfo, Screen, TopBar } from '../components/ui';
-import { cutView, gradeKeys } from '../logic/cuts';
+import { Badge, BottomSheet, Chip, IconInfo, Message, Screen, TopBar } from '../components/ui';
+import { examShiftKey } from '../exams/merge';
+import { typesReadyOf } from '../exams/validate';
+import { cutView, gradeKeys, type CutView } from '../logic/cuts';
 import { analyze, type Grade } from '../logic/scoring';
 import { selectSteps } from '../logic/steps';
-import { actualLine, anatomySentences, luckLine } from '../logic/text';
+import { actualLine, anatomySentences, asOfLine, cutNote, luckLine, noCutsText, typesPendingText } from '../logic/text';
 import { href, navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
-import { isMarkedAfterGrading, setTargetGrade } from '../state/session';
+import { acknowledgeCorrection, correctionNotice, correctionOf, isMarkedAfterGrading, setTargetGrade } from '../state/session';
 import { S } from '../strings';
 
 // (8) 점수 해부 화면. 이 앱의 핵심 화면이다.
 // 주 숫자는 실제 점수 하나뿐이다. 추정값에는 "추정" 배지와 "약"을 붙인다.
 
+/**
+ * 등급컷 출처 시트의 내용: 예시 값인지, 출처, 기준, 설명(작업 지시서 3의 4-4).
+ * 배지를 눌러야 열리는 시트라서, 단위 테스트가 서버 그리기로 글자를 볼 수 있게 따로 내보낸다.
+ */
+export function CutSource({ cv, isSample }: { cv: CutView; isSample: boolean }) {
+  return (
+    <div className="stack gap2" data-testid="cut-source">
+      {isSample ? <p>{S.anatomy.sourceSample}</p> : null}
+      <p>{S.anatomy.source(cv.source)}</p>
+      <p>{asOfLine(cv.asOf)}</p>
+      <p className="sub">{cutNote(cv)}</p>
+    </div>
+  );
+}
+
 export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const { exam, session } = h;
   const [sourceOpen, setSourceOpen] = useState(false);
   const an = analyze(exam, grade);
-  const steps = selectSteps(exam, grade);
+  // 유형 분류 전(typesReady false)에는 계단을 셈하지 않고, 계단으로 가는 버튼 자리에 안내를 둔다(작업 지시서 3의 4-3).
+  const typesReady = typesReadyOf(exam);
+  const steps = typesReady ? selectSteps(exam, grade) : [];
   const keys = gradeKeys(exam);
   const cv = cutView(exam, an, session.targetGrade);
   const sentences = anatomySentences(an);
@@ -26,29 +46,37 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const badgeText = cv?.confirmed ? S.common.confirmed : S.common.estimate;
   const line1 = cv ? actualLine(cv, an.actual) : null;
   const line2 = cv ? luckLine(cv, an.luckAverageRounded) : null;
+  // 정답 정정 알림(작업 지시서 3의 4-6). 점수 화면과 같은 알림이다. 예시 결과에는 보여 주지 않는다.
+  const notice = h.isDemo ? null : correctionNotice(correctionOf(session, exam, grade));
 
   return (
     <Screen
       top={<TopBar back={h.isDemo ? '/' : '/score'} title={S.anatomy.top} />}
       tabs="current"
+      // 알림이 닫히면 아래 내용이 위로 올라오므로, 같은 자리를 연달아 누른 것이 올라온 요소에 닿지 않게 한다.
+      guardKey={notice ? 'correction' : 'plain'}
+      // 넘겨받은 새 판으로 정정 알림, 등급컷, 계단 버튼이 생기면 내용의 자리가 옮겨 간다. 그때는 마지막 누름과 상관없이 잠깐 막는다(별도 검토 A3).
+      shiftKey={examShiftKey(exam)}
       layer={
         sourceOpen && cv ? (
           <BottomSheet title={S.anatomy.sourceTitle} onClose={() => setSourceOpen(false)}>
-            <div className="stack gap2" data-testid="cut-source">
-              {exam.isSample ? <p>{S.anatomy.sourceSample}</p> : null}
-              <p>{S.anatomy.source(cv.source)}</p>
-              <p>{S.anatomy.asOf(cv.asOf)}</p>
-              <p className="sub">{cv.confirmed ? S.anatomy.sourceConfirmed : S.anatomy.sourceEstimate}</p>
-            </div>
+            <CutSource cv={cv} isSample={exam.isSample} />
           </BottomSheet>
         ) : null
       }
       actions={
-        <button type="button" className="btn btn--primary" data-testid="to-steps" onClick={() => navigate(h.path('/steps'))}>
-          {S.anatomy.toSteps(steps.length)}
-        </button>
+        typesReady ? (
+          <button type="button" className="btn btn--primary" data-testid="to-steps" onClick={() => navigate(h.path('/steps'))}>
+            {S.anatomy.toSteps(steps.length)}
+          </button>
+        ) : (
+          <Message plain testId="steps-pending">
+            {typesPendingText(exam)}
+          </Message>
+        )
       }
     >
+      {notice ? <CorrectionNotice notice={notice} onAck={() => h.update((s) => acknowledgeCorrection(s, exam))} /> : null}
       <div className="inline">
         <p className="sub">{exam.title}</p>
         {exam.isSample ? <Badge>{S.common.sample}</Badge> : null}
@@ -72,16 +100,19 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
           </div>
         ) : an.hasGuessMark ? (
           <p className="arow arow--text" data-testid="row-guess-none">
-            {S.anatomy.rowGuessNone}
+            {an.allCorrectGuessCount > 0 ? S.anatomy.rowGuessNoneAllCorrect : S.anatomy.rowGuessNone}
           </p>
         ) : (
           <p className="arow arow--text" data-testid="row-guess-empty">
             {/* 원인을 표시한 행이 아래에 있으면 "나눠 볼 것이 없어요"라고 하지 않고 찍음 표시가 없다는 사실만 적는다. */}
-            {an.causeMarkedCount > 0
-              ? S.anatomy.emptyGuessOnly(an.actual)
-              : an.hasAnyMark
-                ? S.anatomy.emptyGuess(an.actual)
-                : S.anatomy.emptyMarks(an.actual)}
+            {/* 찍음 표시가 모두 정답 처리 문항에만 있으면 표시가 없다고 하지 않고, 그 문항을 따로 나누지 않았다고 적는다(작업 지시서 3의 4-2). */}
+            {an.allCorrectGuessCount > 0
+              ? S.anatomy.emptyGuessAllCorrect(an.actual)
+              : an.causeMarkedCount > 0
+                ? S.anatomy.emptyGuessOnly(an.actual)
+                : an.hasAnyMark
+                  ? S.anatomy.emptyGuess(an.actual)
+                  : S.anatomy.emptyMarks(an.actual)}
           </p>
         )}
 
@@ -132,7 +163,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
 
       <section className="box mt6" aria-label={S.anatomy.cutBoxLabel} data-testid="cutbox">
         {keys.length === 0 ? (
-          <p data-testid="no-cuts">{S.anatomy.noCuts}</p>
+          <p data-testid="no-cuts">{noCutsText(exam)}</p>
         ) : (
           <>
             <p className={cv ? 'sub' : undefined} id="target-q">
@@ -181,7 +212,7 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
                     <details>
                       <summary>{S.anatomy.luckSummary(an.luckAverageRounded)}</summary>
                       <p className="sub" data-testid="luck-detail">
-                        {S.anatomy.luckDetail(an.actual)}
+                        {S.anatomy.luckDetail(an.actual, an.allCorrectGuessCount > 0)}
                       </p>
                     </details>
                   </div>

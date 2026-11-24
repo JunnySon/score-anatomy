@@ -2,8 +2,10 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Browser, Page } from '@playwright/test';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../src/logic/example';
+import { S, S_APP, S_TEST } from '../src/strings';
 import type { Answers, AnswerValue, Exam } from '../src/types';
 import { VARIANT_URL } from '../playwright.config';
+import { openBundle, otherRequestsOf, sendRemote } from './appBridge';
 import { checkScreen, findAnswerLeaks, waitSettled, type AuditOptions, type LeakTarget } from './audit';
 import {
   addMetric,
@@ -24,8 +26,10 @@ import {
   tapKey,
   wrongValue,
 } from './helpers';
+import { AT_1710, AT_2010, ESTIMATE_CUTS, TEST_LOCK, TEST_NOTE, itemsWith, remoteData, sessionRecord, storeOf, testExam, typesPendingExam } from './remoteData';
 
 // 모든 화면을 한 바퀴 돌면서 화면마다 검사하고(10장 3, 4, 5, 7, 8, 9번) 캡처한다(10번).
+// 코스의 끝에는 앱 시험용 묶음을 가짜 다리 규격 2로 열어, 넘겨받은 시험 자료가 있어야 생기는 화면을 더했다(작업 지시서 3의 5장).
 
 export interface TourRun {
   id: string;
@@ -74,6 +78,28 @@ function storeWith(session: { id: string }) {
   return { version: 1, sessions: [session], currentId: session.id, inputMode: 'keypad', testRuns: [], activeRunId: null };
 }
 
+/**
+ * 넘겨받은 시험(작업 지시서 3의 5장)에서 기록의 답이 틀린 문항과 그 인정하는 답(answer 와 복수 정답 altAnswers).
+ * 인정하는 답은 시험 파일에서 읽는다. "정답 보기"를 누르기 전에는 화면에 나오면 안 된다. 단답형만 화면 전체에서 찾는다.
+ */
+function wrongTargets(exam: Exam, answers: Answers): LeakTarget[] {
+  const targets: LeakTarget[] = [];
+  for (const it of exam.items) {
+    if (it.allCorrect || typeof it.answer !== 'number') continue;
+    if ([it.answer, ...(it.altAnswers ?? [])].includes(answers[it.no] as number)) continue;
+    targets.push({ no: it.no, answer: it.answer, altAnswers: it.altAnswers, distinctive: it.kind === 'short' });
+  }
+  return targets;
+}
+
+/** 주소의 해시만 바꾸고 그 화면이 그려질 때까지 기다린다. 앱용 묶음은 다시 읽으면 가짜 껍데기가 처음 자료를 다시 넣어서 이렇게 옮긴다. */
+async function gotoHash(page: Page, hash: string): Promise<void> {
+  await page.evaluate((h) => {
+    window.location.hash = `#${h}`;
+  }, hash);
+  await expectHash(page, hash);
+}
+
 export async function tour(page: Page, browser: Browser, run: TourRun): Promise<void> {
   const examA = loadExam('a');
   const examB = loadExam('b');
@@ -84,23 +110,37 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   let count = 0;
   let leakChecks = 0;
 
+  /**
+   * 캡처를 남긴다. 화면 없이 실행한 Chrome 은 브라우저를 띄운 뒤 첫 캡처를 "Unable to capture screenshot"으로 실패할 때가 있어서,
+   * 그 오류일 때만 화면을 바꾸지 않고 한 프레임을 기다렸다가 두 번까지 다시 찍는다(같은 화면 상태의 캡처다).
+   */
+  const capture = async (target: Page, path: string) => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await target.screenshot({ path, animations: 'disabled' });
+        return;
+      } catch (e) {
+        if (attempt >= 3 || !String(e).includes('Unable to capture screenshot')) throw e;
+        await target.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))));
+      }
+    }
+  };
   const shoot = async (target: Page, name: string, opts: AuditOptions = {}) => {
     count += 1;
     await settle(target);
     await checkScreen(target, name, run.id, opts);
-    if (dir) {
-      await target.screenshot({ path: resolve(dir, `${String(count).padStart(2, '0')}-${name}.png`), animations: 'disabled' });
-    }
+    if (dir) await capture(target, resolve(dir, `${String(count).padStart(2, '0')}-${name}.png`));
   };
   const stop = (name: string, opts: AuditOptions = {}) => shoot(page, name, opts);
 
-  const noLeak = async (where: string, revealed: number[] = []) => {
+  const noLeakOn = async (target: Page, targets: LeakTarget[], where: string, revealed: number[] = []) => {
     leakChecks += 1;
-    await waitSettled(page);
-    const leaks = await findAnswerLeaks(page, LEAK_TARGETS, revealed);
+    await waitSettled(target);
+    const leaks = await findAnswerLeaks(target, targets, revealed);
     addMetric({ kind: 'leak', run: run.id, where, leaks });
     expect.soft(leaks, `[${run.id}] ${where}: 정답 노출`).toEqual([]);
   };
+  const noLeak = (where: string, revealed: number[] = []) => noLeakOn(page, LEAK_TARGETS, where, revealed);
 
   // (1) 시작, (11) 기록 빈 상태, (12) 테스트 진행자용 처음
   await openApp(page, '/?input=keypad');
@@ -419,7 +459,8 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await openApp(page, '/anatomy');
   await expect(page.getByTestId('actual')).toHaveText('84점');
   await expect(page.getByTestId('cut-actual')).toHaveText('컷 범위 안이에요.');
-  await expect(page.getByText('컷이 확정되면 이 화면이 바뀌어요.')).toBeVisible();
+  // 추정 컷이라 컷 자료가 바뀌면 화면도 바뀐다고 알린다. 컷이 어떻게 바뀔지는 약속하지 않는다(작업 지시서 3의 4-4).
+  await expect(page.getByText('컷 자료가 바뀌면 이 화면도 바뀌어요.')).toBeVisible();
   await page.getByTestId('cutbox').scrollIntoViewIfNeeded();
   await stop('점수해부-컷범위안');
 
@@ -486,6 +527,133 @@ export async function tour(page: Page, browser: Browser, run: TourRun): Promise<
   await expect(page.getByTestId('key-result')).toHaveText('남은 오입력 0개');
   await page.getByTestId('run-card').scrollIntoViewIfNeeded();
   await stop('테스트진행자-측정기록');
+
+  // 앱 시험용 묶음(app-test)을 가짜 다리 규격 2로 연 상태(작업 지시서 3의 5장): 넘겨받은 시험 자료가 있어야 생기는 화면들.
+  // 넘겨받는 시험은 예시 시험 A의 사본으로 지은 테스트 전용 시험이고(e2e/remoteData.ts), 29번은 복수 정답(257, 258)으로 둬서
+  // 정답 노출 검사가 인정하는 답 모두를 찾게 한다. 기록은 검산 예시의 답, 표시, 원인으로 채점한 것이다.
+  // 묶음은 file:// 주소로 열린다. 테스트 공통 준비(e2e/helpers.ts)의 요청 검사는 이 테스트의 브라우저 묶음에서 처음 연 주소(웹 서버)
+  // 밖을 바깥으로 세므로, 묶음은 위의 변형 빌드처럼 새 브라우저 묶음에서 연다. 그 묶음은 묶음 파일 말고 읽은 주소가 없는지와
+  // 콘솔 오류를 따로 본다. 시각은 작업 지시서 3의 형식 예시(2030-01-02의 08:40, 17:10, 17:45, 20:10)만 쓴다.
+  {
+    const ctx = await browser.newContext({
+      viewport: run.viewport,
+      colorScheme: run.colorScheme,
+      deviceScaleFactor: run.deviceScaleFactor,
+      hasTouch: true,
+      isMobile: true,
+      locale: 'ko-KR',
+      timezoneId: 'Asia/Seoul',
+    });
+    const appErrors: string[] = [];
+    const appPage = async () => {
+      const p = await ctx.newPage();
+      p.on('pageerror', (e) => appErrors.push(e.message));
+      p.on('console', (m) => {
+        if (m.type() === 'error') appErrors.push(m.text());
+      });
+      return p;
+    };
+    const multi = { 29: { altAnswers: [258] } };
+    const pending = typesPendingExam({ rev: 2, items: itemsWith(multi) });
+    const ready = testExam({ rev: 3, items: itemsWith(multi), cuts: ESTIMATE_CUTS });
+    // 11번 정답을 학생이 넣은 4로 정정한 판(3점 문항이라 78점에서 81점). 정정 안내는 정답 값을 담지 않은 테스트 전용 문장이다.
+    const fixed = testExam({ rev: 4, answersRev: 2, answersNote: TEST_NOTE, items: itemsWith({ ...multi, 11: { answer: 4 } }), cuts: ESTIMATE_CUTS });
+    const record = sessionRecord('s-tour', 'test-remote-a', { gradedWith: { answersRev: 1, score: 78 } });
+    const store = storeOf([record]);
+    const before = wrongTargets(ready, record.answers as Answers);
+    const after = wrongTargets(fixed, record.answers as Answers);
+    expect(before.map((t) => t.no)).toEqual([11, 15, 20, 21, 27, 29]);
+    expect(after.map((t) => t.no)).toEqual([15, 20, 21, 27, 29]);
+    expect(after.find((t) => t.no === 29)).toEqual({ no: 29, answer: 257, altAnswers: [258], distinctive: true });
+
+    // 유형 분류 전 판(seq 1, 받은 자료 기준 오후 5시 10분): 점수는 보이고, 계단으로 가는 버튼 자리에 안내가 있다. 등급컷 자료도 아직 없다.
+    const vp = await appPage();
+    await openBundle(vp, 'app-test', { bridge: 2, store, remote: remoteData(1, AT_1710, [pending], [TEST_LOCK]), remoteMode: 'silent' });
+    await vp.getByRole('button', { name: S.start.resume }).click();
+    await expectHash(vp, '/anatomy');
+    await expect(vp.getByTestId('actual')).toHaveText('78점');
+    await expect(vp.getByTestId('steps-pending')).toHaveText(S.steps.typesPendingNoCuts);
+    await expect(vp.getByTestId('no-cuts')).toHaveText(S.anatomy.noCutsTypesPending);
+    await shoot(vp, '앱-점수해부-유형분류전');
+    await noLeakOn(vp, before, '앱 묶음 점수 해부, 유형 분류 전');
+
+    // 시험 선택 화면 본문 끝의 받은 자료 안내와 "새로 확인". 껍데기는 새로 확인에 답하지 않는 상태로 열었다.
+    await gotoHash(vp, '/exams');
+    await expect(vp.getByTestId('remote-issued')).toHaveText(S_APP.remoteIssued(2030, 1, 2, 17, 10));
+    await vp.getByTestId('remote-notice').scrollIntoViewIfNeeded();
+    await shoot(vp, '앱-시험선택-받은자료');
+    // 누르면 응답이 올 때까지 버튼을 쓸 수 없다.
+    const refresh = vp.getByTestId('remote-refresh');
+    await refresh.click();
+    await expect(refresh).toHaveAttribute('aria-disabled', 'true');
+    await shoot(vp, '앱-시험선택-새로확인중');
+    // 껍데기가 더 새로운 자료(seq 2, 오후 8시 10분)로 답한다. 유형 분류가 끝났고 추정 등급컷(2등급은 한 값)이 든 판이다.
+    await sendRemote(vp, remoteData(2, AT_2010, [ready], [TEST_LOCK]));
+    await expect(vp.getByTestId('remote-result')).toHaveText(S_APP.remoteResult.new);
+    await expect(vp.getByTestId('remote-issued')).toHaveText(S_APP.remoteIssued(2030, 1, 2, 20, 10));
+    await shoot(vp, '앱-시험선택-새로받음');
+
+    // 두 값이 같은 추정 컷은 한 숫자와 "추정"이고, 출처 시트는 시각이 든 기준과 한 값 추정 컷의 설명을 적는다.
+    await gotoHash(vp, '/anatomy');
+    await expect(vp.getByTestId('to-steps')).toHaveText(S.anatomy.toSteps(3));
+    await vp.getByTestId('grade-2').click();
+    await expect(vp.getByTestId('cut-title')).toHaveText('2등급 컷 82점');
+    await expect(vp.getByTestId('cut-badge')).toHaveText(S.common.estimate);
+    await vp.getByTestId('cutbox').scrollIntoViewIfNeeded();
+    await shoot(vp, '앱-점수해부-한값추정컷');
+    await noLeakOn(vp, before, '앱 묶음 점수 해부, 한 값 추정 컷');
+    await vp.getByTestId('cut-badge').click();
+    await expect(vp.getByTestId('cut-source').locator('p')).toHaveText([
+      S.anatomy.sourceSample,
+      S.anatomy.source('예시 값'),
+      S.anatomy.asOfTime(2030, 1, 2, 20, 10),
+      S.anatomy.sourceEstimateOne,
+    ]);
+    await shoot(vp, '앱-점수해부-컷출처');
+    await noLeakOn(vp, before, '앱 묶음 등급컷 출처, 기준 시각');
+    await vp.getByRole('button', { name: S.common.close }).click();
+    await expect(vp.getByTestId('cut-source')).toHaveCount(0);
+
+    // 정답 정정(seq 3): 점수 화면 위쪽의 알림. 알림의 정정 안내는 "정답 보기" 전에 보이는 글자라서 정답 노출 검사를 함께 한다.
+    await sendRemote(vp, remoteData(3, AT_2010, [fixed], [TEST_LOCK]));
+    await expect(vp.getByTestId('correction-text')).toHaveText(S.correction.changed(78, 81));
+    await gotoHash(vp, '/score');
+    await expect(vp.getByTestId('score')).toHaveText('81점');
+    await expect(vp.getByTestId('correction-note')).toHaveText(TEST_NOTE);
+    await shoot(vp, '앱-점수-정정알림');
+    await noLeakOn(vp, after, '앱 묶음 점수, 정정 알림');
+    // 대조: "정답 보기"를 누른 뒤에는 같은 검사기가 복수 정답(29번의 258)도 잡아낸다.
+    await gotoHash(vp, '/causes');
+    await vp.getByTestId('show-answer-29').click();
+    await expect(vp.getByTestId('answer-29')).toContainText('정답 257, 258');
+    expect(await findAnswerLeaks(vp, after, []), '검사기가 29번의 복수 정답 노출을 잡아내는지').toContain('29번 정답 258이 화면에 있음');
+    expect(otherRequestsOf(vp), '앱 묶음에서 묶음 파일 말고 읽은 주소').toEqual([]);
+    await vp.close();
+
+    // 껍데기가 자료를 아직 넘겨주지 못한 채(remote 칸 없음) 같은 기록으로 다시 연 앱: 기록을 지우지 않고 안내를 보여 준다.
+    const again = await appPage();
+    await openBundle(again, 'app-test', { bridge: 2, store });
+    await again.getByRole('link', { name: S.tabs.history, exact: true }).click();
+    await expectHash(again, '/history');
+    await expect(again.getByTestId('history-missing')).toHaveText(S.missingExam.body);
+    await shoot(again, '앱-기록-시험자료없음');
+    await gotoHash(again, '/anatomy');
+    await expect(again.getByTestId('exam-missing')).toHaveText(S.missingExam.body);
+    await shoot(again, '앱-시험자료없음');
+    expect(otherRequestsOf(again), '다시 연 앱 묶음에서 묶음 파일 말고 읽은 주소').toEqual([]);
+    await again.close();
+
+    // 진행자용 화면의 풀이 잠금 한 줄: 넘겨받은 테스트 전용 잠금 항목(2030-01-02T08:40부터 17:45까지)과, 시계를 한국 시간
+    // 2030년 1월 2일 오전 8시 40분에 고정한 상태. 시계는 이 브라우저 묶음 전체에 걸리므로 마지막에 새 페이지로 연다.
+    await ctx.clock.setFixedTime(new Date('2030-01-02T08:40:00+09:00'));
+    const admin = await appPage();
+    await openBundle(admin, 'app-test', { bridge: 2, remote: remoteData(3, AT_2010, [fixed], [TEST_LOCK]) }, '/test');
+    await expect(admin.getByTestId('lock-status')).toHaveText(S_TEST.lockClosed(17, 45));
+    await shoot(admin, '앱-테스트진행자-풀이잠금');
+    expect(otherRequestsOf(admin), '진행자용 화면을 연 앱 묶음에서 묶음 파일 말고 읽은 주소').toEqual([]);
+    expect(appErrors, '앱 묶음의 콘솔 오류').toEqual([]);
+    await ctx.close();
+  }
 
   addMetric({ kind: 'tour', run: run.id, screens: count, leakChecks, shots: dir ? count : 0 });
 }

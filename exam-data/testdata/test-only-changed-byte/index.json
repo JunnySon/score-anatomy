@@ -1,0 +1,21 @@
+{
+  "exams": [
+    {
+      "file": "files/test-only-exam.3.json",
+      "id": "test-only-exam",
+      "rev": 3,
+      "sha256": "46987dd9e13dc7dc877b6fbe64049ebfc21d47d518e446edac4c7cbea7be067f"
+    }
+  ],
+  "format": 1,
+  "issuedAt": "2030-01-02T20:10",
+  "locks": [
+    {
+      "end": "2030-01-02T17:45",
+      "id": "test-only-lock",
+      "label": "테스트 전용 잠금(형식 예시 시각)",
+      "start": "2030-01-02T08:40"
+    }
+  ],
+  "seq": 3
+}

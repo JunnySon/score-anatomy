@@ -1,9 +1,9 @@
 import { useMemo, useSyncExternalStore } from 'react';
-import { findExam } from '../exams';
+import { catalog, findBundledExam, findExam, useExams } from '../exams';
 import { findMissing, gradeExam, type Grade } from '../logic/scoring';
 import type { AnswerValue, AppData, Exam, GradedBefore, InputMode, SeenBefore, Session, TestRun } from '../types';
 import { demoStore } from './demo';
-import { newSession, setAnswer } from './session';
+import { fillGradedWith, newSession, setAnswer } from './session';
 import { store } from './store';
 import { activeRun, bindRun, isMine, isRunDone, logAnswer, logScreen, newRun, screenLogName, withActiveRun, withFinalAnswers } from './testlog';
 
@@ -39,22 +39,29 @@ function updateCurrent(fn: (s: Session) => Session, log?: (run: TestRun, prev: S
   });
 }
 
+/**
+ * 지금 기록과 그 시험. 기록이 없거나 그 시험을 지금 시험 목록에서 찾지 못하면 null.
+ * 시험 목록이 바뀌면(넘겨받은 새 자료, 작업 지시서 3의 5-3) 같은 기록이라도 새 판의 시험으로 손잡이를 다시 만들어 지금 화면을 다시 그린다.
+ * 화면은 다시 마운트되지 않는다(App.tsx 의 화면 열쇠는 주소로만 정한다). 그래서 답 입력 화면의 커서와 잠금 같은 화면 안 상태는 그대로다.
+ */
 export function useCurrentHandle(): SessionHandle | null {
   const data = useAppData();
+  const exams = useExams();
   const session = data.sessions.find((s) => s.id === data.currentId) ?? null;
   return useMemo(() => {
     if (!session) return null;
     const exam = findExam(session.examId);
     if (!exam) return null;
     return { isDemo: false, session, exam, update: (fn) => updateCurrent(fn), path: (p) => p };
-  }, [session]);
+  }, [session, exams]);
 }
 
+/** 예시 결과. 묶음 안 예시 시험으로만 그려서(src/state/demo.ts 와 같은 시험) 넘겨받은 자료로 검산 예시가 바뀌지 않는다. */
 export function useDemoHandle(): SessionHandle | null {
   const session = useSyncExternalStore(demoStore.subscribe, demoStore.get, demoStore.get);
   return useMemo(() => {
     if (!session) return null;
-    const exam = findExam(session.examId);
+    const exam = findBundledExam(session.examId);
     if (!exam) return null;
     return { isDemo: true, session, exam, update: (fn) => demoStore.update(fn), path: (p) => `/demo${p}` };
   }, [session]);
@@ -87,6 +94,8 @@ export function putAnswer(h: SessionHandle, no: number, value: AnswerValue | und
  */
 export function startSession(examId: string, gradedBefore: GradedBefore, seenBefore: SeenBefore | null): void {
   const nowIso = new Date().toISOString();
+  // 기록에 그때의 시험 제목을 적는다. 나중에 그 시험을 찾지 못해도 기록 화면이 시험 id 대신 제목을 보여 준다(별도 검토 D2).
+  const examTitle = findExam(examId)?.title;
   store.update((d) => {
     const run = __SA_TOOLS__ ? activeRun(d) : null;
     const reusable = isTestDevice(d)
@@ -95,10 +104,10 @@ export function startSession(examId: string, gradedBefore: GradedBefore, seenBef
     let sessions = d.sessions;
     let session: Session;
     if (reusable) {
-      session = { ...reusable, gradedBefore, seenBefore };
+      session = { ...reusable, gradedBefore, seenBefore, ...(examTitle ? { examTitle } : {}) };
       sessions = sessions.map((s) => (s.id === reusable.id ? session : s));
     } else {
-      session = newSession(examId, gradedBefore, seenBefore, nowIso);
+      session = newSession(examId, gradedBefore, seenBefore, nowIso, examTitle);
       sessions = [session, ...sessions];
     }
     const nd: AppData = { ...d, sessions, currentId: session.id };
@@ -123,6 +132,9 @@ function rebind(d: AppData, session: Session): AppData {
  * 시작 화면의 "이어서 보기"가 열 기록(지시서 8장 (1): 지난 기록이 있으면 "이어서 보기").
  * 지금 보는 기록이 있으면 그 기록, 없으면 남은 기록 가운데 가장 최근에 만든 것이다.
  * 테스트가 진행 중이면 이번 참가자의 측정에 묶인 기록만 대상으로 한다(앞 참가자의 기록이 열리지 않게).
+ * 지금 보는 기록은 남아 있는데 그 시험을 지금 시험 목록에서 찾지 못하면(넘겨받은 시험 자료가 아직 없을 때, 작업 지시서 3의 5-2)
+ * 다른 시험의 기록으로 옮겨 가지 않고 아무 기록도 고르지 않는다. 버튼에는 시험 이름이 없어서, 학생이 고르지 않은 다른 시험의 기록이
+ * 열리고 그 기록에 답을 이어 넣을 수 있었다(별도 검토 A6). 시험 자료가 오면 그 기록이 다시 대상이 된다.
  */
 export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | null {
   // 테스트 기기에서 측정이 진행 중이 아니면(참가자를 마친 뒤, 다음 참가자를 시작하기 전) 어떤 기록도 열지 않는다.
@@ -131,7 +143,9 @@ export function resumeCandidate(d: AppData): { session: Session; exam: Exam } | 
     const exam = s ? findExam(s.examId) : null;
     return s && exam ? { session: s, exam } : null;
   };
-  const current = pick(d.sessions.find((s) => s.id === d.currentId));
+  const currentSession = d.sessions.find((s) => s.id === d.currentId);
+  if (currentSession && !findExam(currentSession.examId)) return null;
+  const current = pick(currentSession);
   const run = __SA_TOOLS__ ? activeRun(d) : null;
   if (run) {
     // 테스트 중: 지금 보는 기록이 이번 참가자의 것이면 그 기록, 아니면 측정에 묶인 기록.
@@ -193,6 +207,25 @@ export function deleteSession(id: string): void {
 /** 시험 기록을 모두 지운다. 테스트 측정 기록은 테스트 진행자용 화면에서 따로 지운다. */
 export function deleteAllSessions(): void {
   store.update((d) => ({ ...d, testRuns: keepFinalAnswers(d, null), sessions: [], currentId: null }));
+}
+
+/**
+ * 채점 흔적(gradedWith)이 없는 옛 채점 기록 가운데 시험의 정답 판 번호가 1인 기록에 지금 값을 조용히 채운다(작업 지시서 3의 4-6).
+ * 앱이 시작할 때와 시험 목록이 바뀔 때마다 부른다(watchOldGradedRecords).
+ * 채울 것이 없으면 기록을 바꾸지 않아서 저장도 하지 않는다. 시험을 찾지 못한 기록은 건너뛰고 지우지 않는다.
+ */
+export function fillOldGradedRecords(): void {
+  store.update((d) => fillGradedWith(d, findExam));
+}
+
+/**
+ * 옛 채점 기록 채우기를 지금 한 번 하고, 시험 목록이 바뀔 때마다(넘겨받은 새 자료, 작업 지시서 3의 5부) 다시 한다.
+ * 시작할 때 찾지 못했던 시험이 나중에 오면 그때 채운다. 앱이 시작할 때 화면을 그리기 전에 부른다(src/main.tsx).
+ * 그만두는 함수를 돌려준다.
+ */
+export function watchOldGradedRecords(): () => void {
+  fillOldGradedRecords();
+  return catalog.subscribe(fillOldGradedRecords);
 }
 
 /** 앱: 기록 화면이 보관 안내를 보여 줬으면 기록에 남은 표시를 지운다. */

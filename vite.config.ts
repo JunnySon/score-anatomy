@@ -70,7 +70,8 @@ export default defineConfig(({ mode }) => {
     preview: { host: true },
     test: {
       environment: 'node',
-      include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
+      // 발행 도구(scripts/exams)의 테스트도 함께 돌린다(작업 지시서 3의 6-4).
+      include: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'scripts/**/*.test.ts'],
     },
   };
 });

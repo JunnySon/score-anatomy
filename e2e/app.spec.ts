@@ -16,6 +16,7 @@ import {
   storeMessages,
 } from './appBridge';
 import { addMetric, chooseCauses, chooseExam, enterKeypad, expect, expectHash, loadExam, openApp, setMarks, tapKey, test } from './helpers';
+import { AT_1710, remoteData, testExam } from './remoteData';
 
 // 앱용 묶음(작업 지시서 1의 2부): 가짜 다리를 넣은 브라우저에서 커밋된 묶음 두 개를 직접 연다.
 // 껍데기와의 약속은 docs/앱_다리_규격.md 에 있다. 묶음은 ios/ScoreAnatomy/Web 에 있고, verify 가 지금 코드로 다시 만든 것과 같은지 따로 본다.
@@ -196,11 +197,19 @@ for (const bundle of BUNDLES) {
     await expect(page.getByTestId('entered-count')).toHaveText('2문항 입력');
   });
 
-  test(`${bundle}: 다리 규격 번호가 다르면 다리로 아무것도 보내지 않고 기록을 저장하지 않는다(앱 전용 파일을 건드리지 않는다)`, async ({ page }) => {
-    await openBundle(page, bundle, { bridge: 2, store: JSON.stringify({ version: 1, sessions: [] }) });
+  test(`${bundle}: 다리 규격 번호가 웹이 받지 않는 번호(3)면 다리로 아무것도 보내지 않고 기록을 저장하지 않으며 시험 자료도 넘겨받지 않는다(앱 전용 파일을 건드리지 않는다)`, async ({ page }) => {
+    // 웹은 규격 1과 2를 받는다(docs/앱_다리_규격.md 7-2). 3은 웹이 모르는 규격이라 remote 칸이 있어도 쓰지 않는다.
+    await openBundle(page, bundle, {
+      bridge: 3,
+      store: JSON.stringify({ version: 1, sessions: [] }),
+      remote: remoteData(1, AT_1710, [testExam()]),
+    });
     await expect(page.locator('html')).toHaveClass(/sa-app/);
     await expect(page.getByTestId('store-notice')).toHaveText(S_APP.storageFailed);
     await page.getByRole('button', { name: '시험 고르기' }).click();
+    await expect(page.getByTestId('exam-sample-a')).toBeVisible();
+    await expect(page.getByTestId('exam-test-remote-a')).toHaveCount(0);
+    await expect(page.getByTestId('remote-notice')).toHaveCount(0);
     await chooseExam(page, 'sample-a');
     await tapKey(page, 3);
     await expect(page.getByTestId('now-no')).toHaveText('2번');
@@ -345,6 +354,8 @@ test('app-test: 껍데기가 글자 크기 바뀜을 알리면 바로 바꾸고,
 test('app-test: 진행자용 화면은 있고 "파일 저장"은 빼고 복사만 둔다. 복사가 실패하거나 답이 없으면 다시 누르라고 알린다', async ({ page }) => {
   await openBundle(page, 'app-test', {}, '/test');
   await expect(page.getByText(S_TEST.title).first()).toBeVisible();
+  // 시험용 묶음의 진행자용 화면에는 소개 문장 아래에 풀이 잠금 한 줄이 있다(작업 지시서 3의 4-5). 묶음 안 달력으로 지금을 판정한다(달력에 따라 열림이나 잠김).
+  await expect(page.getByTestId('lock-status')).toHaveText(/^풀이 잠금: 지금 (열림|잠김\(오[전후] \d+시( \d+분)?까지\))$/);
   await expect(page.getByTestId('save-json')).toHaveCount(0);
   await expect(page.getByTestId('save-csv')).toHaveCount(0);
   await expect(page.getByText(S_TEST.noNetworkApp)).toBeVisible();

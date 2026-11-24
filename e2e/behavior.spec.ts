@@ -414,6 +414,49 @@ test('저장이 안 되는 브라우저에서도 화면은 동작한다', async 
   await expect(page.getByTestId('history-item')).toContainText('78점');
 });
 
+test('채점 흔적(gradedWith)이 없는 옛 채점 기록은 앱을 열 때 조용히 채우고, 알림과 기록 화면의 표시가 없다(작업 지시서 3의 4-6)', async ({ page }) => {
+  const exam = loadExam('a');
+  type Stored = { version: number; sessions: { id: string; answers: Record<string, unknown>; gradedWith?: unknown }[] };
+  const stored = (): Promise<Stored> => page.evaluate(() => JSON.parse(window.localStorage.getItem('score-anatomy') ?? '{}'));
+  await openApp(page, '/');
+  // 1.1에서 채점한 기록(채점 흔적 칸이 없음)과 입력 중인 기록. 예시 시험 A의 정답 판 번호는 1이다.
+  await page.evaluate(
+    (d) => window.localStorage.setItem('score-anatomy', JSON.stringify(d)),
+    {
+      version: 1,
+      sessions: [
+        {
+          id: 'old',
+          examId: 'sample-a',
+          createdAt: '2026-11-21T10:00:00.000Z',
+          gradedBefore: 'not_yet',
+          answers: exampleAnswers(exam),
+          gradedAt: '2026-11-21T10:05:00.000Z',
+          firstGradedAt: '2026-11-21T10:05:00.000Z',
+        },
+        { id: 'typing', examId: 'sample-a', createdAt: '2026-11-22T10:00:00.000Z', gradedBefore: 'not_yet', answers: { 1: 3 } },
+      ],
+      currentId: null,
+    },
+  );
+  await page.reload();
+  await openApp(page, '/history');
+  await expect(page.getByTestId('history-item')).toHaveCount(2);
+  // 시작할 때 채점한 기록에만 지금 값(정답 판 번호 1, 78점)을 채웠다. 저장 형식의 version 과 넣은 답은 그대로다.
+  const data = await stored();
+  expect(data.version).toBe(1);
+  const old = data.sessions.find((s) => s.id === 'old')!;
+  expect(old.gradedWith).toEqual({ answersRev: 1, score: 78 });
+  expect(old.answers).toEqual(JSON.parse(JSON.stringify(exampleAnswers(exam))));
+  expect('gradedWith' in data.sessions.find((s) => s.id === 'typing')!).toBe(false);
+  // 정답이 정정된 것이 아니라서 기록 화면의 표시도, 점수 해부 화면의 알림도 없다.
+  await expect(page.getByTestId('history-corrected')).toHaveCount(0);
+  await page.getByRole('button', { name: /기록 열기, .*78점/ }).click();
+  await expectHash(page, '/anatomy');
+  await expect(page.getByTestId('actual')).toHaveText('78점');
+  await expect(page.getByTestId('correction-notice')).toHaveCount(0);
+});
+
 test('저장된 값이 망가져 있어도 처음 상태로 열린다', async ({ page }) => {
   await openApp(page, '/');
   await page.evaluate(() => window.localStorage.setItem('score-anatomy', '{not json'));

@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { findExam } from './exams';
 import { exampleAnswers } from './logic/example';
@@ -82,6 +82,30 @@ describe('결정 기록의 번호', () => {
 });
 
 
+/** 폴더 아래의 글자 파일(코드, 설정, 문서)을 모두 모은다. */
+function textFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) out.push(...textFiles(full));
+    else if (/\.(ts|tsx|mjs|md|json|css|html)$/.test(name)) out.push(full);
+  }
+  return out;
+}
+
+describe('확정을 약속하는 문구(작업 지시서 3의 4-4)', () => {
+  it('화면 문구, 코드, 화면 테스트, 문서 어디에도 등급컷의 확정을 약속하는 문장이 없다', () => {
+    const root = process.cwd();
+    // 앱용 묶음(ios)은 npm run build:app 으로 다시 만들 때 바뀌어서 여기서 보지 않는다.
+    const files = [...['src', 'e2e', 'scripts', 'docs'].flatMap((d) => textFiles(resolve(root, d))), resolve(root, 'README.md'), resolve(root, 'index.html')];
+    // 이 파일도 읽으므로 찾는 말("확정" 뒤에 "되면"이나 "이 되면")을 조각으로 나눠 적는다.
+    const promise = new RegExp(['확정', '(이\\s*)?', '되면'].join(''));
+    const hits = files.filter((f) => promise.test(readFileSync(f, 'utf8'))).map((f) => relative(root, f));
+    expect(files.length).toBeGreaterThan(50);
+    expect(hits).toEqual([]);
+  });
+});
+
 describe('앱 다리 규격 번호', () => {
   it('규격 문서 제목, 웹 코드(src/platform/app.ts)의 번호가 같다', () => {
     const doc = readFileSync(resolve(process.cwd(), 'docs/앱_다리_규격.md'), 'utf8');
@@ -93,5 +117,23 @@ describe('앱 다리 규격 번호', () => {
     expect(Number(inDoc![1])).toBe(Number(inCode![1]));
     // 문서의 __SA_APP__ 표에 적은 bridge 값도 같다.
     expect(doc).toContain(`| bridge | ${inCode![1]} |`);
+  });
+
+  it('규격 문서의 "규격 N" 장 가운데 가장 큰 번호와 manifest 칸 표의 bridgeMax 가 웹 코드의 BRIDGE_MAX 와 같다', () => {
+    const doc = readFileSync(resolve(process.cwd(), 'docs/앱_다리_규격.md'), 'utf8');
+    const app = readFileSync(resolve(process.cwd(), 'src/platform/app.ts'), 'utf8');
+    // scripts/app-bundles.mjs 가 manifest.json 의 bridgeMax 를 읽는 줄과 같은 모양이다.
+    const max = app.match(/^export const BRIDGE_MAX = (\d+);$/m);
+    const low = app.match(/^export const BRIDGE_VERSION = (\d+);$/m);
+    expect(max).not.toBeNull();
+    expect(low).not.toBeNull();
+    expect(Number(max![1])).toBeGreaterThanOrEqual(Number(low![1]));
+    // "## 7. 규격 2" 같은 장 제목. 규격 1은 1~6장이라 "규격 N" 장 제목이 없다.
+    const chapters = [...doc.matchAll(/^## \d+\. 규격 (\d+)/gm)].map((m) => Number(m[1]));
+    expect(chapters.length).toBeGreaterThan(0);
+    expect(Math.max(...chapters)).toBe(Number(max![1]));
+    // manifest.json 의 칸 표에 bridgeMax 행이 있고 값이 같다.
+    expect(doc).toMatch(/^\| bridgeMax \| /m);
+    expect(doc).toContain(`| bridgeMax | ${max![1]} |`);
   });
 });

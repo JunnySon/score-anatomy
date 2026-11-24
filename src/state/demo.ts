@@ -1,14 +1,15 @@
-import { findExam, SAMPLE_EXAM_ID } from '../exams';
+import { findBundledExam, SAMPLE_EXAM_ID } from '../exams';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
 import type { Session } from '../types';
 
 // "예시 결과 보기"에 쓰는 기록. 7장 검산 예시를 그대로 넣는다.
 // 메모리에만 두고 저장하지 않는다. 기록 목록에도 넣지 않는다.
+// 묶음 안 예시 시험으로만 만든다. 앱 껍데기가 넘겨준 자료(작업 지시서 3의 5부)로 검산 예시가 바뀌지 않게 한다.
 
 export const DEMO_SESSION_ID = 'demo';
 
 export function buildDemoSession(): Session | null {
-  const exam = findExam(SAMPLE_EXAM_ID);
+  const exam = findBundledExam(SAMPLE_EXAM_ID);
   if (!exam || !exam.answerReleased) return null;
   return {
     id: DEMO_SESSION_ID,

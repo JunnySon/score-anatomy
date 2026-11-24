@@ -6,11 +6,17 @@
 // 다른 자리를 누르면 바로 푼다.
 //
 // - 화면을 요소로 가리지 않고 그 자리에 온 click 만 버린다. 그래서 그 자리에서 시작한 끌기(스크롤)는 그대로 된다.
-// - 화면 전체를 막는 것은 한 군데뿐이다. 마지막 문항의 답을 넣어 저절로 입력 확인 화면으로 넘어갈 때다.
+// - 화면 전체를 막는 것은 두 경우다. 하나는 마지막 문항의 답을 넣어 저절로 입력 확인 화면으로 넘어갈 때다.
 //   답을 넣던 박자로 더 누른 것이 새 화면의 버튼(다른 자리)에 닿아 확인과 표시를 건너뛰고 채점되는 일을 막는다.
+//   다른 하나는 학생의 누름 없이 껍데기가 넘겨준 새 시험 자료로 화면 안 내용의 자리가 옮겨 갈 때다(markContentShifted).
+//   옮겨 가기 전의 자리를 보고 누른 것이 그 자리에 온 다른 시험이나 다른 문항에 닿지 않게 한다(작업 지시서 3의 별도 검토 A3).
 //   그 밖에는 다른 자리의 키를 화면이 바뀐 직후에 눌러도 들어간다.
 // - 단답형 숫자 키(data-tap-safe)는 버리지 않는다. 숫자는 "다음"이나 "넣기"로 확정하기 전에는 저장되지 않고
 //   큰 칸에 보여서, 잘못 들어가도 보고 지울 수 있다. 반대로 숫자를 버리면 누른 것과 다른 답(150 대신 50)이 저장될 수 있다.
+//   화면 전체를 막는 동안 받은 숫자 키는 막기를 풀지 않는다. 숫자 하나로 막기가 풀려 이어 누른 다른 키(답 맞춰 보기 등)가
+//   그대로 들어가는 일을 막는다(별도 검토 2차 P1).
+// - 다만 넘겨받은 새 자료로 재풀이의 지금 문항이 다른 문항으로 옮겨 갔을 때는 그 0.5초 동안 숫자 키도 버린다(markContentShifted 의 strict).
+//   그때 누른 숫자는 옮겨 가기 전 문항에 넣던 답의 나머지라서, 옮겨 온 문항의 칸에 들어가면 안 된다(별도 검토 2차 P1).
 // - 키보드로 누른 것(Enter, Space)은 건드리지 않는다.
 // - 버린 누름이 누를 수 있는 요소 위였으면 알림을 띄운다(src/tapNotice.ts). 측정 중이면 버린 누름을 센다(src/App.tsx).
 
@@ -30,8 +36,8 @@ export type GuardArea = 'spot' | 'screen';
 
 /** 마지막으로 받아들인 누름. */
 let lastClick: (Spot & { at: number }) | null = null;
-/** 지금 막고 있는 자리. */
-let guard: (Spot & { area: GuardArea; until: number }) | null = null;
+/** 지금 막고 있는 자리. strict 면 단답형 숫자 키(data-tap-safe)도 버린다. */
+let guard: (Spot & { area: GuardArea; until: number; strict: boolean }) | null = null;
 /** 막고 있는 자리에 두는 표시. 누름을 받지 않는다. 화면 테스트와 화면 검사가 막는 시간이 끝났는지 볼 때 쓴다. */
 let marker: HTMLDivElement | null = null;
 let timer = 0;
@@ -79,8 +85,8 @@ function clearGuard(): void {
   }
 }
 
-function holdGuard(spot: Spot, area: GuardArea, ms: number): void {
-  guard = { x: spot.x, y: spot.y, area, until: performance.now() + ms };
+function holdGuard(spot: Spot, area: GuardArea, ms: number, strict = false): void {
+  guard = { x: spot.x, y: spot.y, area, until: performance.now() + ms, strict };
   if (!marker) {
     marker = document.createElement('div');
     marker.className = 'tap-shield';
@@ -115,14 +121,20 @@ function onClick(e: MouseEvent): void {
   if (e.detail === 0) return;
   const now = performance.now();
   if (guard && isGuarded(e, now)) {
-    const safe = e.target instanceof Element && e.target.closest('[data-tap-safe]') !== null;
+    const safe = !guard.strict && e.target instanceof Element && e.target.closest('[data-tap-safe]') !== null;
     if (!safe) {
       // 막고 있는 곳에 온 누름은 버리고, 그때부터 다시 센다.
       e.preventDefault();
       e.stopImmediatePropagation();
-      holdGuard(guard, guard.area, TAP_GUARD_MS);
+      holdGuard(guard, guard.area, TAP_GUARD_MS, guard.strict);
       const interactive = e.target instanceof Element && e.target.closest(INTERACTIVE_SELECTOR) !== null;
       for (const l of discardListeners) l({ interactive, guardId });
+      return;
+    }
+    if (guard.area === 'screen') {
+      // 화면 전체를 막는 동안 받은 숫자 키는 막기를 풀지 않는다(별도 검토 2차 P1). 남은 시간 동안 다른 키는 그대로 버린다.
+      // 버린 누름 알림도 닫지 않는다. 닫으면 같은 보호 구간에서 이어 버린 누름이 알림 없이 사라진다(별도 검토 2차 뒤 확인 X3).
+      lastClick = { x: e.clientX, y: e.clientY, at: now };
       return;
     }
   }
@@ -149,6 +161,21 @@ export function markUiChanged(area: GuardArea = 'spot'): void {
   const now = performance.now();
   if (now - lastClick.at >= TAP_GUARD_MS) return;
   const keepScreen = guard !== null && guard.area === 'screen' && now < guard.until;
+  // 숫자 키까지 막는 화면 전체 막기(markContentShifted 의 strict)가 남아 있으면 그것도 줄이지 않는다.
+  const keepStrict = keepScreen && guard !== null && guard.strict;
   guardId += 1;
-  holdGuard(lastClick, area === 'screen' || keepScreen ? 'screen' : 'spot', TAP_GUARD_MS);
+  holdGuard(lastClick, area === 'screen' || keepScreen ? 'screen' : 'spot', TAP_GUARD_MS, keepStrict);
+}
+
+/**
+ * 학생의 누름 없이(껍데기가 넘겨준 새 시험 자료로) 화면 안 내용의 자리가 옮겨 갔다고 알린다(작업 지시서 3의 별도 검토 A3).
+ * markUiChanged 와 달리 마지막 누름과 상관없이 화면 전체를 이때부터 0.5초 막는다. 누른 적이 없으면 어느 자리를 막을지 알 수 없고,
+ * 목록이 한 칸씩 밀리면 어느 자리에든 다른 선택지가 올 수 있어서다. 받지 않은 누름이 있으면 지금처럼 그때부터 다시 센다.
+ * 키보드로 누른 것은 건드리지 않는다. 단답형 숫자 키(data-tap-safe)는 받되 막기를 풀지 않고, strict 면 숫자 키도 버린다
+ * (재풀이의 지금 문항이 다른 문항으로 옮겨 갔을 때, 별도 검토 2차 P1).
+ */
+export function markContentShifted(strict = false): void {
+  if (typeof document === 'undefined') return;
+  guardId += 1;
+  holdGuard(lastClick ?? { x: 0, y: 0 }, 'screen', TAP_GUARD_MS, strict);
 }

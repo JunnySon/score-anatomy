@@ -1,4 +1,5 @@
 /* 기록 화면의 "준비 중인 기능" 목록 모양. 이 화면 모듈에서만 불러서, 사용성 테스트 도구가 없는 빌드(앱 배포용 묶음)에는 들어가지 않는다(src/tools). */
+/* 기록 목록과 함께 쓰는 .rule-list 의 규칙은 src/styles/app.css 에 있다. 다른 화면도 쓰는 클래스의 규칙은 여기에 두지 않는다(src/tools/toolCss.test.ts 가 확인한다). */
 
 .upcoming {
   display: flex;

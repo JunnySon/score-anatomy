@@ -9,5 +9,5 @@ const files = buildAll(APP_WEB_DIR);
 const manifest = writeManifest(APP_WEB_DIR, files);
 for (const [name, f] of Object.entries(files)) console.log(`${name}: ${Math.round(f.bytes / 1024)} KB, SHA-256 ${f.sha256}`);
 console.log(
-  `manifest.json: 커밋 ${manifest.commit ?? '확인 못 함'}${manifest.dirty ? '(커밋하지 않은 바뀜이 있었음)' : ''}, 버전 ${manifest.version}, 다리 규격 ${manifest.bridge}`,
+  `manifest.json: 커밋 ${manifest.commit ?? '확인 못 함'}${manifest.dirty ? '(커밋하지 않은 바뀜이 있었음)' : ''}, 버전 ${manifest.version}, 다리 규격 bridge ${manifest.bridge}(이 묶음이 돌아가는 가장 낮은 규격), bridgeMax ${manifest.bridgeMax}(웹이 아는 가장 높은 규격)`,
 );

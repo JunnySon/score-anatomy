@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { findExam } from '../exams';
 import { exampleAnswers, exampleCauses, exampleMarks } from '../logic/example';
-import { GradeError } from '../logic/scoring';
+import { GradeError, gradeExam } from '../logic/scoring';
 import type { Exam, Session, TestRun } from '../types';
 import {
+  currentRetry,
   cycleMark,
   isMarkedAfterGrading,
   markGraded,
@@ -90,6 +91,47 @@ describe('기록 고치기', () => {
     expect(s.retries[15]).toBeUndefined();
     s = markGraded(s, examA, NOW);
     expect(Object.keys(s.causes).map(Number)).toEqual([11, 20, 21, 27, 29]);
+  });
+
+  it('채점하면 채점 흔적(gradedWith)에 정답 판 번호와 점수를 적고, 오답 원인은 지우지 않는다(작업 지시서 3의 4-6)', () => {
+    const s = markGraded({ ...filled(), marks: exampleMarks(), causes: exampleCauses() }, examA, NOW);
+    // 예시 시험 A에는 정답 판 번호(answersRev)가 없어서 1이다.
+    expect(s.gradedWith).toEqual({ answersRev: 1, score: 78 });
+    // 정답 판 번호를 올리고 15번 정답을 넣은 답(1)으로 고친 사본(테스트 전용 자료)으로 다시 채점하면 지금 값이 적힌다.
+    const fixed: Exam = {
+      ...examA,
+      answersRev: 2,
+      answersNote: '테스트 전용 정정 안내예요.',
+      items: examA.items.map((it) => (it.no === 15 ? { ...it, answer: 1 } : it)),
+    };
+    const again = markGraded(s, fixed, NOW);
+    expect(again.gradedWith).toEqual({ answersRev: 2, score: 82 });
+    // 맞게 된 15번의 원인은 지우지 않는다(채점 결과에는 원인이 붙지 않아 화면에서만 빠진다).
+    expect(again.causes).toEqual(exampleCauses());
+    expect(gradeExam(fixed, again).items.find((it) => it.no === 15)!.cause).toBeNull();
+    // 답과 표시는 그대로다.
+    expect(again.answers).toEqual(s.answers);
+    expect(again.marks).toEqual(s.marks);
+  });
+
+  it('재풀이 기록에는 정답 판 번호가 2 이상일 때만 적고, 판이 다른 기록은 이어 세지 않고 화면에서 뺀다(작업 지시서 3의 4-6)', () => {
+    let s = markGraded(filled(), examA, NOW);
+    s = recordRetry(s, 15, false, false, NOW);
+    // 정답 판 번호 1(칸 없음)이면 지금까지와 같은 모양이다.
+    expect(s.retries[15]).toEqual({ correct: false, attempts: 1, firstCorrectAttempt: null, answerKnown: false, at: NOW });
+    expect(recordRetry(s, 15, true, false, NOW, 1).retries[15]).toEqual({ correct: true, attempts: 2, firstCorrectAttempt: 2, answerKnown: false, at: NOW });
+    expect(currentRetry(s, 15, examA)).toEqual(s.retries[15]);
+    // 정답 판 번호가 2인 판에서는 그 전의 기록을 보여 주지 않고(지우지도 않고), 다시 풀면 처음부터 센다.
+    const rev2: Exam = { ...examA, answersRev: 2, answersNote: '테스트 전용 정정 안내예요.' };
+    expect(currentRetry(s, 15, rev2)).toBeNull();
+    expect(s.retries[15]).toBeDefined();
+    s = recordRetry(s, 15, true, false, NOW, 2);
+    expect(s.retries[15]).toEqual({ correct: true, attempts: 1, firstCorrectAttempt: 1, answerKnown: false, at: NOW, answersRev: 2 });
+    expect(currentRetry(s, 15, rev2)).toEqual(s.retries[15]);
+    expect(currentRetry(s, 15, examA)).toBeNull();
+    // 같은 판에서는 이어 센다.
+    expect(recordRetry(s, 15, false, true, NOW, 2).retries[15]).toEqual({ correct: false, attempts: 2, firstCorrectAttempt: 1, answerKnown: true, at: NOW, answersRev: 2 });
+    expect(currentRetry(s, 20, rev2)).toBeNull();
   });
 
   it('채점한 뒤에 표시를 바꾸면 따로 적는다', () => {
@@ -284,6 +326,35 @@ describe('저장소', () => {
     )!;
     expect(fresh.sessions[0]!.selfChecks).toEqual({ 9: { result: 'solved', at: NOW } });
     expect(fresh.testRuns.map((r) => r.discardedTaps)).toEqual([3, 0]);
+  });
+
+  it('채점 흔적(gradedWith)과 재풀이 기록의 정답 판 번호가 없는 옛 기록도 version 1 그대로 읽고, 모양이 맞는 값만 남긴다(작업 지시서 3의 4-6)', () => {
+    const retry = { correct: true, attempts: 1, firstCorrectAttempt: 1, answerKnown: false, at: NOW };
+    const read = (more: Record<string, unknown>) =>
+      parseStored(JSON.stringify({ version: 1, sessions: [{ id: 'a', examId: 'sample-a', ...more }] }))!.sessions[0]!;
+    // 칸이 없으면 칸 없이 읽는다(옛 기록).
+    const old = read({ gradedAt: NOW, retries: { 15: retry } });
+    expect('gradedWith' in old).toBe(false);
+    expect(old.retries[15]).toEqual(retry);
+    // 모양이 맞으면 그대로 남긴다.
+    expect(read({ gradedWith: { answersRev: 2, score: 82 } }).gradedWith).toEqual({ answersRev: 2, score: 82 });
+    expect(read({ gradedWith: { answersRev: 1, score: 0, extra: true } }).gradedWith).toEqual({ answersRev: 1, score: 0 });
+    // 모양이 틀리면 칸이 없는 옛 기록으로 읽는다.
+    for (const bad of [null, 'x', 78, [1, 78], {}, { answersRev: 0, score: 78 }, { answersRev: 1.5, score: 78 }, { answersRev: '2', score: 78 }, { answersRev: 2 }, { answersRev: 2, score: -1 }, { answersRev: 2, score: 7.5 }]) {
+      expect('gradedWith' in read({ gradedWith: bad }), JSON.stringify(bad)).toBe(false);
+    }
+    // 재풀이 기록의 정답 판 번호는 2 이상일 때만 남긴다(1이나 틀린 값이면 칸 없음, 곧 1).
+    const retries = read({ retries: { 1: { ...retry, answersRev: 3 }, 2: { ...retry, answersRev: 1 }, 3: { ...retry, answersRev: 'x' }, 4: { ...retry, answersRev: 2.5 } } }).retries;
+    expect(retries[1]!.answersRev).toBe(3);
+    for (const no of [2, 3, 4]) expect('answersRev' in retries[no]!).toBe(false);
+    // 저장 형식의 version 은 그대로 1이고, 채점 흔적은 저장했다가 다시 열어도 남는다.
+    const mem = new MemoryStorage();
+    const store = new Store(mem);
+    store.update((d) => ({ ...d, sessions: [markGraded(filled(), examA, NOW)] }));
+    const saved = JSON.parse(mem.getItem(STORAGE_KEY)!);
+    expect(saved.version).toBe(1);
+    expect(saved.sessions[0].gradedWith).toEqual({ answersRev: 1, score: 78 });
+    expect(new Store(mem).get().sessions[0]!.gradedWith).toEqual({ answersRev: 1, score: 78 });
   });
 
   it('기록 속의 모양이 맞지 않는 값은 버린다', () => {

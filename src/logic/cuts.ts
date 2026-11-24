@@ -4,7 +4,7 @@ import type { Anatomy } from './scoring';
 // 등급컷까지 남은 점수(작업 지시서 7장).
 
 export type Gap =
-  /** 컷 범위보다 아래. from~to점 남았다. 확정 컷이면 from과 to가 같다. */
+  /** 컷 범위보다 아래. from~to점 남았다. 한 숫자 컷(두 값이 같은 컷)이면 from과 to가 같다. */
   | { pos: 'below'; from: number; to: number }
   | { pos: 'within' }
   | { pos: 'above' };
@@ -19,9 +19,18 @@ export interface CutView {
   grade: string;
   lo: number;
   hi: number;
-  /** confirmed가 true이고 lo와 hi가 같을 때만 확정으로 본다. */
+  /**
+   * 배지("확정", "추정"). confirmed가 true이고 lo와 hi가 같을 때만 확정으로 본다.
+   * confirmed는 주관 기관이 원점수 등급컷을 직접 발표했을 때만 true다(작업 지시서 3의 4-4).
+   */
   confirmed: boolean;
+  /**
+   * 한 숫자 컷인지(lo와 hi가 같음). 확정 컷과, 두 값이 같은 추정 컷이다(작업 지시서 3의 4-4).
+   * 범위가 아니라서 "범위 안", "범위보다 위" 대신 "컷과 같은 점수", "컷보다 위"로 적는다. 배지는 confirmed를 따른다.
+   */
+  single: boolean;
   source: string;
+  /** 등급컷 기준. 날짜("YYYY-MM-DD")이거나 한국 시간의 날짜와 시각("YYYY-MM-DDTHH:mm")이다. */
   asOf: string;
   /** 첫 줄. 항상 실제 점수 기준이다. */
   actualGap: Gap;
@@ -46,6 +55,7 @@ export function cutView(exam: Exam, anatomy: Anatomy, grade: string | null): Cut
     lo,
     hi,
     confirmed: exam.cuts.confirmed === true && lo === hi,
+    single: lo === hi,
     source: exam.cuts.source,
     asOf: exam.cuts.asOf,
     actualGap: gapFor(anatomy.actual, lo, hi),

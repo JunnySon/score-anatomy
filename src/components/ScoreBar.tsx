@@ -24,7 +24,7 @@ export function ScoreBar({ an, mini }: { an: Anatomy; mini?: boolean }) {
       <div
         className={`bar${mini ? ' bar--mini' : ''}`}
         role="img"
-        aria-label={S.anatomy.barLabel(an.total, an.plainCorrectPoints, an.guessCorrectPoints, an.slipPoints, an.otherWrongPoints)}
+        aria-label={S.anatomy.barLabel(an.total, an.plainCorrectPoints, an.guessCorrectPoints, an.slipPoints, an.otherWrongPoints, an.allCorrectGuessCount > 0)}
         data-testid="score-bar"
       >
         {segs

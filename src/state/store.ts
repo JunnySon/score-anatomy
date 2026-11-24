@@ -1,6 +1,6 @@
 import { platform } from '#platform';
 import type { StorageBackend } from '../platform/types';
-import type { AppData, InputMode, RunPart, Session, TestRun } from '../types';
+import type { AppData, GradedWith, InputMode, RetryRecord, RunPart, Session, TestRun } from '../types';
 
 // 상태 저장소. 기록은 이 기기에만 둔다(브라우저는 localStorage, 아이폰 앱은 다리로 앱 전용 파일. src/platform).
 // 읽기와 쓰기를 try/catch로 감싸고, 저장이 안 돼도 화면은 메모리 상태로 동작한다.
@@ -38,21 +38,31 @@ const isAnswer = (v: unknown): v is Session['answers'][number] => v === 'skip' |
 const isMark = (v: unknown): v is Session['marks'][number] => v === 'doubt' || v === 'guess' || v === 'unsure';
 const isCause = (v: unknown): v is Session['causes'][number] => v === 'slip' || v === 'blank' || v === 'unknown';
 const isTrue = (v: unknown): v is true => v === true;
+/** 정답 보기로 본 인정하는 답의 글자(별도 검토 A5): 0~999 의 정수를 쉼표로 이은 것. */
+const isSeenKey = (v: unknown): v is string => typeof v === 'string' && /^\d{1,3}(?:,\d{1,3})*$/.test(v);
 const isSelfCheck = (v: unknown): v is Session['selfChecks'][number] =>
   isObject(v) && (v.result === 'solved' || v.result === 'stuck') && typeof v.at === 'string';
 const isRetryLike = (v: unknown): v is Record<string, unknown> =>
   isObject(v) && typeof v.correct === 'boolean' && typeof v.attempts === 'number' && typeof v.answerKnown === 'boolean' && typeof v.at === 'string';
+/** 정답 판 번호(작업 지시서 3의 4-1, 4-2)로 쓸 수 있는 값: 1 이상의 정수. */
+const isAnswersRev = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1;
+/** 채점 흔적(작업 지시서 3의 4-6)의 모양: 정답 판 번호는 1 이상의 정수, 점수는 0 이상의 정수. */
+const isGradedWith = (v: unknown): v is GradedWith =>
+  isObject(v) && isAnswersRev(v.answersRev) && typeof v.score === 'number' && Number.isInteger(v.score) && v.score >= 0;
 
 function cleanRetries(raw: unknown): Session['retries'] {
   const out: Session['retries'] = {};
   for (const [k, v] of Object.entries(cleanRecord(raw, isRetryLike))) {
-    out[Number(k)] = {
+    const rec: RetryRecord = {
       correct: v.correct as boolean,
       attempts: v.attempts as number,
       firstCorrectAttempt: typeof v.firstCorrectAttempt === 'number' ? v.firstCorrectAttempt : v.correct === true ? (v.attempts as number) : null,
       answerKnown: v.answerKnown as boolean,
       at: v.at as string,
     };
+    // 작업 지시서 3의 4-6에서 더한 칸. 2 이상일 때만 남긴다(없거나 1이면 정답 판 번호 1, 모양이 틀리면 버리고 1로 본다).
+    if (isAnswersRev(v.answersRev) && v.answersRev >= 2) rec.answersRev = v.answersRev;
+    out[Number(k)] = rec;
   }
   return out;
 }
@@ -61,7 +71,7 @@ function cleanSession(raw: unknown): Session | null {
   if (!isObject(raw)) return null;
   if (typeof raw.id !== 'string' || typeof raw.examId !== 'string') return null;
   const gradedAt = typeof raw.gradedAt === 'string' ? raw.gradedAt : null;
-  return {
+  const session: Session = {
     id: raw.id,
     examId: raw.examId,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
@@ -85,6 +95,14 @@ function cleanSession(raw: unknown): Session | null {
     // 1.1에서 더한 칸. 없는 옛 기록도 빈 값으로 읽는다(저장 형식의 version 은 그대로 1이다).
     selfChecks: cleanRecord(raw.selfChecks, isSelfCheck),
   };
+  // 작업 지시서 3의 4-6에서 더한 칸(채점 흔적). 모양이 맞을 때만 칸을 두고, 없거나 틀리면 칸이 없는 옛 기록으로 읽는다(version 은 그대로 1).
+  if (isGradedWith(raw.gradedWith)) session.gradedWith = { answersRev: raw.gradedWith.answersRev, score: raw.gradedWith.score };
+  // 정답 보기로 본 인정하는 답(별도 검토 A5). 모양이 맞는 값만 남기고, 하나도 없으면 칸을 두지 않는다(칸이 없는 옛 기록으로 읽는다).
+  const seen = cleanRecord(raw.answerSeen, isSeenKey);
+  if (Object.keys(seen).length > 0) session.answerSeen = seen;
+  // 기록을 시작한 때의 시험 제목(별도 검토 D2). 빈칸이 아닌 글자(200자까지)일 때만 칸을 두고, 아니면 칸이 없는 옛 기록으로 읽는다.
+  if (typeof raw.examTitle === 'string' && raw.examTitle.trim() !== '' && raw.examTitle.length <= 200) session.examTitle = raw.examTitle;
+  return session;
 }
 
 /** 날짜로 쓸 수 있는 시각만 받는다(절댓값 8.64e15 이하). */

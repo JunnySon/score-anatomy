@@ -297,10 +297,9 @@ test.describe('3-5 보기 문제', () => {
 
   for (const scheme of ['light', 'dark'] as const) {
     for (const dpr of [1, 2, 3]) {
-      test(`진행 막대의 둥근 끝에 틈이 없다(${scheme === 'light' ? '밝은' : '어두운'} 화면, ${dpr}배)`, async ({ browser }) => {
-        const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: dpr, colorScheme: scheme });
-        const page = await context.newPage();
-        try {
+      test.describe(`진행 막대(${scheme === 'light' ? '밝은' : '어두운'} 화면, ${dpr}배)`, () => {
+        test.use({ viewport: { width: 390, height: 844 }, deviceScaleFactor: dpr, colorScheme: scheme });
+        test('진행 막대의 둥근 끝에 틈이 없다', async ({ page }) => {
           await openApp(page, '/');
           await seedStore(page, {
             version: 1,
@@ -350,9 +349,7 @@ test.describe('3-5 보기 문제', () => {
             return bad;
           }, png.toString('base64'));
           expect(result).toEqual([]);
-        } finally {
-          await context.close();
-        }
+        });
       });
     }
   }
@@ -399,10 +396,9 @@ test.describe('3-5 보기 문제', () => {
   });
 
   for (const scheme of ['light', 'dark'] as const) {
-    test(`표시 화면: 내용이 아래 띠 밑으로 더 이어질 때만 띠 위쪽에 옅은 그림자가 있다(${scheme === 'light' ? '밝은' : '어두운'} 화면)`, async ({ browser }) => {
-      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
-      const page = await context.newPage();
-      try {
+    test.describe(`표시 화면의 아래 단서(${scheme === 'light' ? '밝은' : '어두운'} 화면)`, () => {
+      test.use({ viewport: { width: 390, height: 844 }, colorScheme: scheme });
+      test('내용이 아래 띠 밑으로 더 이어질 때만 띠 위쪽에 옅은 그림자가 있다', async ({ page }) => {
         await openApp(page, '/');
         await seedStore(page, {
           version: 1,
@@ -435,9 +431,7 @@ test.describe('3-5 보기 문제', () => {
           el.scrollTop = 0;
         });
         await expect(dock).toHaveAttribute('data-more', 'true');
-      } finally {
-        await context.close();
-      }
+      });
     });
   }
 

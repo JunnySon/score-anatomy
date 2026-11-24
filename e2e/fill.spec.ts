@@ -243,41 +243,30 @@ async function runSequence(page: Page, c: Case, details: number[]): Promise<{ st
 
 test.describe('빠진 누름 채우기: click(detail 2) 하나만 온 것과 click(detail 1, 2)가 다 온 것의 끝 상태가 같다', () => {
   for (const c of CASES) {
-    test(c.name, async ({ browser }) => {
-      const full = await browser.newPage();
-      const lone = await browser.newPage();
-      try {
-        const a = await runSequence(full, c, [1, 2]);
-        const b = await runSequence(lone, c, [2]);
-        expect(a.filled, '진짜 click 이 다 오면 채우지 않는다').toEqual([]);
-        expect(b.filled, 'detail 2 하나만 오면 detail 1 하나를 채운다').toEqual([1]);
-        expect(b.state).toEqual(a.state);
-      } finally {
-        await full.close();
-        await lone.close();
-      }
+    test(c.name, async ({ page }) => {
+      // 같은 페이지에서 차례로 돌린다. 열 때마다 기록을 새로 넣고 다시 읽으므로 앞 차례의 상태(보호, 알림, 기록)가 남지 않는다.
+      const full = await runSequence(page, c, [1, 2]);
+      const lone = await runSequence(page, c, [2]);
+      expect(full.filled, '진짜 click 이 다 오면 채우지 않는다').toEqual([]);
+      expect(lone.filled, 'detail 2 하나만 오면 detail 1 하나를 채운다').toEqual([1]);
+      expect(lone.state).toEqual(full.state);
     });
   }
 });
 
 test.describe('빠진 누름 채우기: 세 번 누름', () => {
   const markCase = CASES[0]!;
-  test('표시 칸: click(detail 3) 하나만, click(detail 1, 3)만 온 것이 세 번 다 온 것과 같다(표시 없음으로 돌아온다)', async ({ browser }) => {
-    const pages = await Promise.all([browser.newPage(), browser.newPage(), browser.newPage()]);
-    try {
-      const noCheck = { ...markCase, check: undefined };
-      const all3 = await runSequence(pages[0]!, noCheck, [1, 2, 3]);
-      const only3 = await runSequence(pages[1]!, noCheck, [3]);
-      const oneThree = await runSequence(pages[2]!, noCheck, [1, 3]);
-      await expect(pages[0]!.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', 'none');
-      expect(all3.filled).toEqual([]);
-      expect(only3.filled).toEqual([1, 2]);
-      expect(oneThree.filled).toEqual([2]);
-      expect(only3.state).toEqual(all3.state);
-      expect(oneThree.state).toEqual(all3.state);
-    } finally {
-      await Promise.all(pages.map((p) => p.close()));
-    }
+  test('표시 칸: click(detail 3) 하나만, click(detail 1, 3)만 온 것이 세 번 다 온 것과 같다(표시 없음으로 돌아온다)', async ({ page }) => {
+    const noCheck = { ...markCase, check: undefined };
+    const all3 = await runSequence(page, noCheck, [1, 2, 3]);
+    await expect(page.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', 'none');
+    const only3 = await runSequence(page, noCheck, [3]);
+    const oneThree = await runSequence(page, noCheck, [1, 3]);
+    expect(all3.filled).toEqual([]);
+    expect(only3.filled).toEqual([1, 2]);
+    expect(oneThree.filled).toEqual([2]);
+    expect(only3.state).toEqual(all3.state);
+    expect(oneThree.state).toEqual(all3.state);
   });
 });
 

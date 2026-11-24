@@ -111,6 +111,8 @@ function RunCard({ row }: { row: RunExportRow }) {
         <dd data-testid="m-discarded">{S_TEST.times(run.discardedTaps)}</dd>
         <dt>{S_TEST.metric.filled}</dt>
         <dd data-testid="m-filled">{S_TEST.times(run.filledTaps)}</dd>
+        <dt>{S_TEST.metric.filledHeld}</dt>
+        <dd data-testid="m-filled-held">{S_TEST.times(run.filledHeldTaps)}</dd>
       </dl>
 
       <details className="mt2">

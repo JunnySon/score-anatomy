@@ -20,7 +20,7 @@ if (!existsSync(src)) {
 }
 
 const html = readFileSync(src, 'utf8');
-const title = /<title>([^<]*)<\/title>/.exec(html)?.[1] ?? '점수 해부';
+const title = /<title>([^<]*)<\/title>/.exec(html)?.[1] ?? '모고칸';
 const cssMatch = /<style>([\s\S]*?)<\/style>/.exec(html);
 const jsMatch = /<script type="module">([\s\S]*?)<\/script>/.exec(html);
 if (!cssMatch || !jsMatch) {

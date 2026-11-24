@@ -60,7 +60,8 @@ export function clockText(h: number, mi: number): string {
 }
 
 export const S = {
-  appName: '점수 해부',
+  // 앱 이름(작업 지시서 4, 2026-11-24 사람이 정함). "점수 해부"는 앱 안의 화면 이름으로 남는다(anatomy.top).
+  appName: '모고칸',
 
   common: {
     back: '뒤로',
@@ -494,6 +495,7 @@ export const S_TEST = {
     residual: '남은 오입력',
     discarded: '받지 않은 누름',
     filled: '채운 누름',
+    filledHeld: '그 가운데 누르는 동안 온 dblclick 으로 채운 누름',
     screens: '화면 진입 기록',
   },
   seconds: (s: number) => `${s}초`,

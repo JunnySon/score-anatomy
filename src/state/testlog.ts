@@ -50,6 +50,7 @@ export function newRun(participant: string, inputMode: InputMode, plannedExamId:
     examReselects: 0,
     discardedTaps: 0,
     filledTaps: 0,
+    filledHeldTaps: 0,
     parts: {},
     answerKeyText: '',
   };
@@ -319,6 +320,8 @@ export function exportCsv(rows: RunExportRow[]): string {
     'residual_items',
     'discarded_taps',
     'filled_taps',
+    // 0.3.2: filled_taps 가운데 누르는 동안 온 dblclick 규칙으로 채운 수(작업 지시서 4의 2-2). filled_taps 바로 뒤 칸이다.
+    'filled_held_taps',
     'screens',
   ];
   for (let i = 1; i <= maxItems; i += 1) head.push(`inputs_q${i}`);
@@ -341,6 +344,7 @@ export function exportCsv(rows: RunExportRow[]): string {
       m.residualNos.join(' '),
       run.discardedTaps,
       run.filledTaps,
+      run.filledHeldTaps,
       run.screens.map((s) => `${s.screen}@${iso(s.at)}`).join(' '),
     ];
     for (let i = 1; i <= maxItems; i += 1) {

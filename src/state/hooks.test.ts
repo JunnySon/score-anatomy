@@ -647,9 +647,29 @@ describe('테스트 측정과 시험 기록', () => {
     countFilledTap('unknown', false);
     const run = activeRun(store.get())!;
     expect(run.filledTaps).toBe(3);
+    expect(run.filledHeldTaps).toBe(0);
     expect(run.discardedTaps).toBe(0);
     const csv = exportCsv([{ run, session: current(), exam: examA }]).split('\n');
     expect(csv[1]!.split(',')[csv[0]!.split(',').indexOf('filled_taps')]).toBe('3');
+  });
+
+  it('누르는 동안 온 dblclick 규칙으로 채운 누름은 채운 누름에 넣고 따로도 센다(작업 지시서 4의 2-2)', () => {
+    startTestRun('P10', 'keypad', 'sample-a');
+    startSession('sample-a', 'not_yet', null);
+    countFilledTap('input', false, 'lifts');
+    countFilledTap('marks', false, 'held');
+    countFilledTap('input', false, 'held');
+    // 세지 않는 화면에서는 어느 쪽도 늘지 않는다.
+    countFilledTap('test', false, 'held');
+    countFilledTap('anatomy', true, 'held');
+    const run = activeRun(store.get())!;
+    expect(run.filledTaps).toBe(3);
+    expect(run.filledHeldTaps).toBe(2);
+    expect(run.discardedTaps).toBe(0);
+    const csv = exportCsv([{ run, session: current(), exam: examA }]).split('\n');
+    const head = csv[0]!.split(',');
+    expect(csv[1]!.split(',')[head.indexOf('filled_taps')]).toBe('3');
+    expect(csv[1]!.split(',')[head.indexOf('filled_held_taps')]).toBe('2');
   });
 });
 

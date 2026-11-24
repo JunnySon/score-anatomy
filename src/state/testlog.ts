@@ -49,6 +49,7 @@ export function newRun(participant: string, inputMode: InputMode, plannedExamId:
     ...emptyPart(),
     examReselects: 0,
     discardedTaps: 0,
+    filledTaps: 0,
     parts: {},
     answerKeyText: '',
   };
@@ -317,6 +318,7 @@ export function exportCsv(rows: RunExportRow[]): string {
     'residual_errors',
     'residual_items',
     'discarded_taps',
+    'filled_taps',
     'screens',
   ];
   for (let i = 1; i <= maxItems; i += 1) head.push(`inputs_q${i}`);
@@ -338,6 +340,7 @@ export function exportCsv(rows: RunExportRow[]): string {
       m.residualErrors,
       m.residualNos.join(' '),
       run.discardedTaps,
+      run.filledTaps,
       run.screens.map((s) => `${s.screen}@${iso(s.at)}`).join(' '),
     ];
     for (let i = 1; i <= maxItems; i += 1) {

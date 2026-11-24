@@ -493,6 +493,7 @@ export const S_TEST = {
     toScore: '시험 선택부터 첫 점수까지',
     residual: '남은 오입력',
     discarded: '받지 않은 누름',
+    filled: '채운 누름',
     screens: '화면 진입 기록',
   },
   seconds: (s: number) => `${s}초`,

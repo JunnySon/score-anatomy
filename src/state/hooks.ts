@@ -311,12 +311,23 @@ export function isTestDevice(d: AppData): boolean {
  * (진행자용 화면, 예시 결과, 측정에 묶이지 않은 기록의 화면에서는 세지 않는다).
  */
 export function countDiscardedTap(screen: string, isDemo: boolean): void {
+  countTap(screen, isDemo, 'discardedTaps');
+}
+
+/**
+ * 빠진 누름 채우기(src/tapGuard.ts)가 채운 누름을 측정 기록에 센다. 세는 화면은 버린 누름과 같다(작업 지시서 3-1의 3-1).
+ */
+export function countFilledTap(screen: string, isDemo: boolean): void {
+  countTap(screen, isDemo, 'filledTaps');
+}
+
+function countTap(screen: string, isDemo: boolean, field: 'discardedTaps' | 'filledTaps'): void {
   if (!__SA_TOOLS__ || !store.get().activeRunId) return;
   store.update((d) =>
     withActiveRun(d, (run) => {
       if (isDemo || screen === 'test' || screen === 'unknown') return run;
       if (screenLogName(screen, d.currentId !== null && d.currentId === run.sessionId) !== screen) return run;
-      return { ...run, discardedTaps: run.discardedTaps + 1 };
+      return { ...run, [field]: run[field] + 1 };
     }),
   );
 }

@@ -109,6 +109,8 @@ function RunCard({ row }: { row: RunExportRow }) {
         <dd data-testid="m-residual">{m.residualErrors === null ? S_TEST.notYet : S_TEST.count(m.residualErrors)}</dd>
         <dt>{S_TEST.metric.discarded}</dt>
         <dd data-testid="m-discarded">{S_TEST.times(run.discardedTaps)}</dd>
+        <dt>{S_TEST.metric.filled}</dt>
+        <dd data-testid="m-filled">{S_TEST.times(run.filledTaps)}</dd>
       </dl>
 
       <details className="mt2">

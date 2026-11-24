@@ -271,6 +271,9 @@ const appCheck = {
   dirtyFlag: null,
   ancestor: false,
   inputsSame: false,
+  // 작업 지시서 4의 2-4: 커밋된 앱용 묶음의 내용이 origin/main 의 것과 다르면 manifest 의 version 도 달라야 한다.
+  // status 는 'ok'(규칙을 지킴), 'fail'(같은 version 인데 SHA-256 이 다름), 'unchecked'(origin/main 을 읽지 못함, 실패로 치지 않음).
+  mainRule: { status: 'unchecked', mainCommit: null, mainVersion: null, changed: [], reason: '' },
 };
 try {
   const first = buildAll(join(OUT, 'app-check-1'));
@@ -298,8 +301,42 @@ try {
       manifest: appCheck.manifest?.files?.[key]?.sha256 ?? null,
     });
   }
+  // origin/main 은 마지막으로 git fetch 한 때의 것이다(verify 는 통신하지 않는다). 읽지 못하면 확인하지 못함으로 둔다.
+  const mainHead = gitRun(['rev-parse', '--verify', '--quiet', 'origin/main^{commit}']);
+  const mainManifestRaw = mainHead.status === 0 ? gitRun(['show', `origin/main:${APP_WEB_REL}/manifest.json`]) : null;
+  let mainManifest = null;
+  try {
+    mainManifest = mainManifestRaw && mainManifestRaw.status === 0 ? JSON.parse(mainManifestRaw.stdout) : null;
+  } catch {
+    mainManifest = null;
+  }
+  if (mainHead.status !== 0) appCheck.mainRule.reason = 'origin/main 을 찾지 못했어요';
+  else if (mainManifest === null) appCheck.mainRule.reason = 'origin/main 의 manifest.json 을 읽지 못했어요';
+  else {
+    appCheck.mainRule.mainCommit = mainHead.stdout.trim();
+    appCheck.mainRule.mainVersion = typeof mainManifest.version === 'string' ? mainManifest.version : null;
+    let unreadable = false;
+    for (const mode of BUNDLES) {
+      const key = `${mode}/index.html`;
+      const shown = gitRun(['show', `origin/main:${APP_WEB_REL}/${key}`], 'buffer');
+      if (shown.status !== 0) {
+        unreadable = true;
+        continue;
+      }
+      const mainSha = createHash('sha256').update(shown.stdout).digest('hex');
+      const mine = appCheck.rows.find((r) => r.key === key)?.committed ?? null;
+      if (mine !== mainSha) appCheck.mainRule.changed.push(key);
+    }
+    if (unreadable) appCheck.mainRule.reason = 'origin/main 의 묶음 파일을 읽지 못했어요';
+    else
+      appCheck.mainRule.status =
+        appCheck.mainRule.changed.length > 0 && appCheck.manifest?.version === appCheck.mainRule.mainVersion ? 'fail' : 'ok';
+  }
   appCheck.ran = true;
   for (const r of appCheck.rows) console.log(`${r.key}: 커밋된 것 ${r.committed}, 다시 만든 것 ${r.rebuilt}, 한 번 더 ${r.again}, manifest ${r.manifest}`);
+  console.log(
+    `origin/main 과 견줌: ${appCheck.mainRule.status === 'unchecked' ? `확인하지 못함(${appCheck.mainRule.reason})` : `커밋 ${appCheck.mainRule.mainCommit.slice(0, 7)}, 버전 ${appCheck.mainRule.mainVersion} 에서 ${appCheck.manifest?.version}, 내용이 다른 묶음 ${appCheck.mainRule.changed.length}개, ${appCheck.mainRule.status === 'ok' ? '규칙을 지킴' : '같은 버전인데 내용이 달라요'}`}`,
+  );
   console.log(
     `추적됨 ${appCheck.tracked}, 작업 폴더와 같음 ${appCheck.clean}, manifest dirty ${appCheck.dirtyFlag}, manifest 커밋이 HEAD 의 조상 ${appCheck.ancestor}, 그 뒤로 묶음 재료가 그대로 ${appCheck.inputsSame}`,
   );
@@ -574,7 +611,8 @@ const manifestOk =
   appCheck.tracked &&
   appCheck.clean &&
   appCheck.ancestor &&
-  appCheck.inputsSame;
+  appCheck.inputsSame &&
+  appCheck.mainRule.status !== 'fail';
 const appBuildOk = appRowsOk && manifestOk;
 const appTests = byFile('app.spec.ts');
 const appTestsOk = allOk(appTests) && appTests.length === REQUIRED.appTests;
@@ -735,7 +773,7 @@ function buildReport(textOk, textResult) {
       '앱용 묶음이 지금 코드로 다시 만든 것과 같음',
       appBuildOk,
       appCheck.ran
-        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 bridge ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts 의 BRIDGE_VERSION ${BRIDGE_VERSION}), bridgeMax ${appCheck.manifest?.bridgeMax ?? '없음'}(BRIDGE_MAX ${BRIDGE_MAX}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'})`
+        ? `HEAD 에 커밋된 ${appCheck.rows.map((r) => `${r.key} ${r.committed === r.rebuilt ? '같음' : '다름'}(두 번 만든 것끼리 ${r.rebuilt === r.again ? '같음' : '다름'}, manifest 와 ${r.manifest === r.committed ? '같음' : '다름'}, ${r.committedBytes === null ? '커밋에 없음' : `${Math.round(r.committedBytes / 1024)} KB`})`).join(', ')}. 세 파일 추적 ${appCheck.tracked ? '됨' : '안 됨'}, 작업 폴더와 ${appCheck.clean ? '같음' : '다름'}. manifest: 버전 ${appCheck.manifest?.version ?? '없음'}(package.json ${appCheck.pkgVersion}), 다리 규격 bridge ${appCheck.manifest?.bridge ?? '없음'}(src/platform/app.ts 의 BRIDGE_VERSION ${BRIDGE_VERSION}), bridgeMax ${appCheck.manifest?.bridgeMax ?? '없음'}(BRIDGE_MAX ${BRIDGE_MAX}), 커밋 ${appCheck.manifest?.commit ? appCheck.manifest.commit.slice(0, 7) : '없음'}(dirty ${appCheck.dirtyFlag}, HEAD 의 조상 ${appCheck.ancestor ? '맞음' : '아님'}, 그 뒤로 묶음 재료 ${appCheck.inputsSame ? '그대로' : '바뀜'}). 묶음 내용이 바뀌면 버전도 바뀌어야 함(origin/main 과 견줌): ${appCheck.mainRule.status === 'unchecked' ? `확인하지 못함(${appCheck.mainRule.reason})` : `origin/main ${appCheck.mainRule.mainCommit.slice(0, 7)} 의 버전 ${appCheck.mainRule.mainVersion}, 내용이 다른 묶음 ${appCheck.mainRule.changed.length}개, ${appCheck.mainRule.status === 'ok' ? '지킴' : '같은 버전인데 내용이 다름'}`}`
         : `만들지 못함: ${appCheck.error ?? '알 수 없음'}`,
     ],
     [

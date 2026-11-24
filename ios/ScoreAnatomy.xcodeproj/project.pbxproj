@@ -11,6 +11,7 @@
 		10EC1902AA8D1DE4B79B859D /* AppHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EFDACFF4EC02443BEDB247 /* AppHandle.swift */; };
 		14BF946A2FC3EBFAD6B10BFC /* app-release in Resources */ = {isa = PBXBuildFile; fileRef = 5045026A721C8CC788ED7BF8 /* app-release */; };
 		16D4A1D34F700CC9A66B68F2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 19929B165C3A39CD17790589 /* PrivacyInfo.xcprivacy */; };
+		2806271400323D302C8B9A09 /* RemoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10CD4C16948C4B2ACCC4B49E /* RemoteTests.swift */; };
 		295BE8E3DF90654D93FC9049 /* ScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6726CE7BE73A72BBD9024AF1 /* ScreenTests.swift */; };
 		353D48E766CC5BEABCD9792F /* ReleaseCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6870E900CBD841ECD0896D4 /* ReleaseCheck.swift */; };
 		3564D64AD16362868CF75142 /* StoreFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D9F95EA764BA21D80E9D99D /* StoreFileTests.swift */; };
@@ -64,6 +65,7 @@
 /* Begin PBXFileReference section */
 		01E3F6C041BA1574E76E34A2 /* DeviceServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceServices.swift; sourceTree = "<group>"; };
 		056C9329FCD8D0FB592D3B9B /* ScoreAnatomyTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ScoreAnatomyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		10CD4C16948C4B2ACCC4B49E /* RemoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTests.swift; sourceTree = "<group>"; };
 		19929B165C3A39CD17790589 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		20765675FC1FBCD7E03B04E4 /* BridgeCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeCommand.swift; sourceTree = "<group>"; };
 		2175BE0BF8D05BDB8CD48B25 /* TouchSynth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchSynth.swift; sourceTree = "<group>"; };
@@ -231,6 +233,7 @@
 		C913AFA0266F1F988A3E8424 /* ScoreAnatomyTests */ = {
 			isa = PBXGroup;
 			children = (
+				10CD4C16948C4B2ACCC4B49E /* RemoteTests.swift */,
 				2D2C56EC92D4B78426A41B51 /* ShellUnitTests.swift */,
 				6D9F95EA764BA21D80E9D99D /* StoreFileTests.swift */,
 			);
@@ -448,6 +451,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2806271400323D302C8B9A09 /* RemoteTests.swift in Sources */,
 				B6C59020C19114DAD92A7B70 /* ShellUnitTests.swift in Sources */,
 				3564D64AD16362868CF75142 /* StoreFileTests.swift in Sources */,
 			);

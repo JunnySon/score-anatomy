@@ -88,15 +88,15 @@ enum ReleaseCheck {
     /// 공개 키 파일(표준 base64 44자 한 줄, 끝의 줄바꿈 하나는 괜찮음)을 32바이트로 읽는다. 모양이 틀리면 nil.
     /// scripts/exams/sign.ts 의 parsePublicKeyText 와 같은 기준이다.
     static func publicKeyBytes(fromFile bytes: [UInt8]) -> [UInt8]? {
-        guard let text = String(validating: bytes, as: UTF8.self) else { return nil }
-        return strictBase64(oneLine(text), letters: 43, padding: 1, length: 32)
+        guard String(validating: bytes, as: UTF8.self) != nil else { return nil }
+        return strictBase64(oneLine(bytes), letters: 43, padding: 1, length: 32)
     }
 
     /// 서명 파일(표준 base64 88자 한 줄, 끝의 줄바꿈 하나는 괜찮음)을 64바이트로 읽는다. 모양이 틀리면 nil.
-    /// UTF-8 이 아니면 빈 글자로 보고 틀린 것으로 한다(verify.ts 의 checkIndex 와 같다).
+    /// UTF-8 이 아니면 틀린 모양으로 본다(verify.ts 의 checkIndex 는 빈 글자로 읽어 같은 결과가 된다).
     static func signatureBytes(fromFile bytes: [UInt8]) -> [UInt8]? {
-        let text = String(validating: bytes, as: UTF8.self) ?? ""
-        return strictBase64(oneLine(text), letters: 86, padding: 2, length: 64)
+        guard String(validating: bytes, as: UTF8.self) != nil else { return nil }
+        return strictBase64(oneLine(bytes), letters: 86, padding: 2, length: 64)
     }
 
     /// 공개 키의 지문: 공개 키 32바이트의 SHA-256 을 16진수로 적은 것의 앞 16자.
@@ -109,15 +109,15 @@ enum ReleaseCheck {
     }
 
     /// 끝의 줄바꿈 하나(LF 나 CRLF)만 뺀다. 그 밖의 빈칸이나 줄은 그대로 둬서 모양 검사에 걸리게 한다.
-    private static func oneLine(_ text: String) -> String {
-        if text.hasSuffix("\r\n") { return String(text.dropLast(2)) }
-        if text.hasSuffix("\n") { return String(text.dropLast(1)) }
-        return text
+    /// Swift 의 글자(Character)로는 CRLF 가 한 글자라서 바이트로 다룬다.
+    private static func oneLine(_ bytes: [UInt8]) -> [UInt8] {
+        if bytes.count >= 2, bytes[bytes.count - 2] == 0x0D, bytes[bytes.count - 1] == 0x0A { return Array(bytes.dropLast(2)) }
+        if bytes.last == 0x0A { return Array(bytes.dropLast(1)) }
+        return bytes
     }
 
     /// 표준 base64 를 바이트로. 다시 적었을 때 같은 글자가 되는 것만 받는다(남는 비트가 0이 아닌 글자 등은 받지 않음).
-    private static func strictBase64(_ body: String, letters: Int, padding: Int, length: Int) -> [UInt8]? {
-        let ascii = Array(body.utf8)
+    private static func strictBase64(_ ascii: [UInt8], letters: Int, padding: Int, length: Int) -> [UInt8]? {
         guard ascii.count == letters + padding else { return nil }
         for (offset, byte) in ascii.enumerated() {
             if offset < letters {
@@ -126,6 +126,7 @@ enum ReleaseCheck {
                 guard byte == UInt8(ascii: "=") else { return nil }
             }
         }
+        let body = String(decoding: ascii, as: UTF8.self)
         guard let data = Data(base64Encoded: body), data.count == length, data.base64EncodedString() == body else { return nil }
         return Array(data)
     }

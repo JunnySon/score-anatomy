@@ -33,6 +33,23 @@ enum RemoteOutcome: Equatable, Sendable {
     case failed(String)
 }
 
+/// 발행물 파일을 가져오는 곳. 앱은 정해진 주소(NetworkReleaseSource)에서 받고, 단위 테스트는 폴더나 만든 바이트를 쓴다.
+protocol ReleaseSource: Sendable {
+    /// path 는 index.json, index.json.sig 이거나 안전한 경로다.
+    func get(_ path: String) async -> Result<[UInt8], ReleaseFetchSession.Failure>
+}
+
+/// 정해진 주소 한 곳에서 받는다. 주소 밖으로 나가는 요청은 만들지 않는다.
+struct NetworkReleaseSource: ReleaseSource {
+    let location: RemoteLocation
+    let session: ReleaseFetchSession
+
+    func get(_ path: String) async -> Result<[UInt8], ReleaseFetchSession.Failure> {
+        guard let url = location.url(for: path) else { return .failure(.outsideBase) }
+        return await session.fetch(url)
+    }
+}
+
 /// 한 번 받기: 받기, 확인, 합치기, 보관(docs/시험_배포_규격.md 3장의 차례). 웹이나 화면과 상관없이 돌아서 화면을 막지 않는다.
 struct RemoteRun: Sendable {
     let location: RemoteLocation
@@ -44,20 +61,23 @@ struct RemoteRun: Sendable {
     let limit: TimeInterval
 
     func run() async -> RemoteOutcome {
-        let started = Date()
         let session = ReleaseFetchSession(limit: limit)
         defer { session.close() }
-        guard let indexURL = location.url(for: ReleaseRules.indexFile), let signatureURL = location.url(for: ReleaseRules.signatureFile) else {
-            return .failed("주소를 만들지 못함")
-        }
+        return await Self.evaluate(source: NetworkReleaseSource(location: location, session: session), publicKey: publicKey,
+                                   current: current, store: store, limit: limit)
+    }
+
+    /// 받아서 확인하고, 모두 통과하면 합쳐서 보관한다. 하나라도 틀리면 아무것도 바꾸지 않는다.
+    static func evaluate(source: some ReleaseSource, publicKey: [UInt8], current: RemoteSnapshot?, store: RemoteStore, limit: TimeInterval) async -> RemoteOutcome {
+        let started = Date()
         // 1. index.json 과 index.json.sig 를 캐시를 쓰지 않고 받는다.
         let index: [UInt8]
-        switch await session.fetch(indexURL) {
+        switch await source.get(ReleaseRules.indexFile) {
         case .success(let bytes): index = bytes
         case .failure(let failure): return .failed("index.json: \(failure)")
         }
         let signature: [UInt8]
-        switch await session.fetch(signatureURL) {
+        switch await source.get(ReleaseRules.signatureFile) {
         case .success(let bytes): signature = bytes
         case .failure(let failure): return .failed("index.json.sig: \(failure)")
         }
@@ -85,8 +105,7 @@ struct RemoteRun: Sendable {
             if let kept = mine?.exams.first(where: { $0.sha256 == entry.sha256 }) {
                 bytes = kept.bytes
             } else {
-                guard let url = location.url(for: entry.file) else { return .failed("\(entry.file): 주소를 만들지 못함") }
-                switch await session.fetch(url) {
+                switch await source.get(entry.file) {
                 case .success(let value): bytes = value
                 case .failure(let failure): return .failed("\(entry.file): \(failure)")
                 }

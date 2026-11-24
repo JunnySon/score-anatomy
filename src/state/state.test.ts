@@ -311,6 +311,7 @@ describe('저장소', () => {
     expect(old.version).toBe(1);
     expect(old.sessions[0]!.selfChecks).toEqual({});
     expect(old.testRuns[0]!.discardedTaps).toBe(0);
+    expect(old.testRuns[0]!.filledTaps).toBe(0);
     const fresh = parseStored(
       JSON.stringify({
         version: 1,
@@ -321,11 +322,15 @@ describe('저장소', () => {
             selfChecks: { 9: { result: 'solved', at: NOW }, 14: { result: 'maybe', at: NOW }, 20: 'stuck' },
           },
         ],
-        testRuns: [{ id: 'r', participant: 'P01', discardedTaps: 3 }, { id: 's', participant: 'P02', discardedTaps: -1 }],
+        testRuns: [
+          { id: 'r', participant: 'P01', discardedTaps: 3, filledTaps: 2 },
+          { id: 's', participant: 'P02', discardedTaps: -1, filledTaps: 1.5 },
+        ],
       }),
     )!;
     expect(fresh.sessions[0]!.selfChecks).toEqual({ 9: { result: 'solved', at: NOW } });
     expect(fresh.testRuns.map((r) => r.discardedTaps)).toEqual([3, 0]);
+    expect(fresh.testRuns.map((r) => r.filledTaps)).toEqual([2, 0]);
   });
 
   it('채점 흔적(gradedWith)과 재풀이 기록의 정답 판 번호가 없는 옛 기록도 version 1 그대로 읽고, 모양이 맞는 값만 남긴다(작업 지시서 3의 4-6)', () => {
@@ -499,12 +504,17 @@ describe('사용성 테스트 측정 기록', () => {
     const head = csv[0]!.split(',');
     const cells = csv[1]!.split(',');
     expect(head.slice(0, 6)).toEqual(['participant', 'input_mode', 'planned_exam', 'exam', 'exam_reselects', 'started_at']);
-    expect(head).toHaveLength(15 + 30);
+    expect(head).toHaveLength(16 + 30);
     expect(cells[head.indexOf('exam_reselects')]).toBe('0');
     // 1.1: 연달아 누르기 보호가 받지 않은 누름의 수.
     expect(cells[head.indexOf('discarded_taps')]).toBe('0');
     const csv2 = exportCsv([{ run: { ...r, discardedTaps: 3 }, session, exam: examA }]).trim().split('\n');
     expect(csv2[1]!.split(',')[head.indexOf('discarded_taps')]).toBe('3');
+    // 0.3.1: 빠진 누름 채우기가 채운 누름의 수(작업 지시서 3-1의 3-1). 받지 않은 누름 바로 뒤 칸이다.
+    expect(head.indexOf('filled_taps')).toBe(head.indexOf('discarded_taps') + 1);
+    expect(cells[head.indexOf('filled_taps')]).toBe('0');
+    const csv3 = exportCsv([{ run: { ...r, filledTaps: 2 }, session, exam: examA }]).trim().split('\n');
+    expect(csv3[1]!.split(',')[head.indexOf('filled_taps')]).toBe('2');
     expect(cells[0]).toBe('P01');
     expect(cells[head.indexOf('input_seconds')]).toBe('60.4');
     expect(cells[head.indexOf('residual_errors')]).toBe('1');

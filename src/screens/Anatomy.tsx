@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { CorrectionNotice } from '../components/CorrectionNotice';
 import { ScoreBar } from '../components/ScoreBar';
 import { Badge, BottomSheet, Chip, IconInfo, Message, Screen, TopBar } from '../components/ui';
@@ -12,6 +12,7 @@ import { href, navigate } from '../router';
 import type { SessionHandle } from '../state/hooks';
 import { acknowledgeCorrection, correctionNotice, correctionOf, isMarkedAfterGrading, setTargetGrade } from '../state/session';
 import { S } from '../strings';
+import { markUiChanged } from '../tapGuard';
 
 // (8) 점수 해부 화면. 이 앱의 핵심 화면이다.
 // 주 숫자는 실제 점수 하나뿐이다. 추정값에는 "추정" 배지와 "약"을 붙인다.
@@ -48,6 +49,24 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
   const line2 = cv ? luckLine(cv, an.luckAverageRounded) : null;
   // 정답 정정 알림(작업 지시서 3의 4-6). 점수 화면과 같은 알림이다. 예시 결과에는 보여 주지 않는다.
   const notice = h.isDemo ? null : correctionNotice(correctionOf(session, exam, grade));
+
+  // 목표 등급을 고르면 등급컷 상자의 첫 줄이 보이게 한다(작업 지시서 3-1의 3-4). 이미 보이면 움직이지 않고 초점도 옮기지 않는다.
+  // 스크롤로 내용의 자리가 옮겨 가면 화면이 바뀐 것으로 보고, 등급을 고른 자리를 이어 누른 것이 옮겨 온 요소에 닿지 않게 막는다.
+  const firstLineRef = useRef<HTMLParagraphElement>(null);
+  const shownGrade = useRef(session.targetGrade);
+  useLayoutEffect(() => {
+    if (shownGrade.current === session.targetGrade) return;
+    shownGrade.current = session.targetGrade;
+    const el = firstLineRef.current;
+    const body = el?.closest('.body');
+    if (!el || !body) return;
+    const r = el.getBoundingClientRect();
+    const b = body.getBoundingClientRect();
+    if (r.top >= b.top && r.bottom <= b.bottom) return;
+    markUiChanged();
+    const reduce = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+  }, [session.targetGrade]);
 
   return (
     <Screen
@@ -195,7 +214,10 @@ export function Anatomy({ h, grade }: { h: SessionHandle; grade: Grade }) {
                     </span>
                   </button>
                 </div>
-                <p className="num" data-testid="cut-actual">
+                {/* 첫 줄은 고치기 전처럼 앞 조각("실제 78점 기준")과 뒤 조각("3~7점 남았어요")을 줄바꿈 없는 덩어리로 둔다.
+                    한 글자 조각으로 바꾸면(조각 안을 U+00A0 로 묶음) 아이폰 화면 테스트가 보통 빈칸으로 찾는 글자와 달라져서 그대로 둔다
+                    (작업 지시서 3-1의 3-2, 결정기록 7.2). */}
+                <p className="num" data-testid="cut-actual" ref={firstLineRef}>
                   {line1.lead.map((part, i) => (
                     <span key={part}>
                       {i > 0 ? ' ' : ''}

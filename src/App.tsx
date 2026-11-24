@@ -16,6 +16,7 @@ import { Start } from './screens/Start';
 import { Steps } from './screens/Steps';
 import {
   countDiscardedTap,
+  countFilledTap,
   logScreenEvent,
   openSession,
   resumeCandidate,
@@ -29,7 +30,7 @@ import {
 import { resumePath } from './state/session';
 import { activeRun } from './state/testlog';
 import { S } from './strings';
-import { addDiscardListener } from './tapGuard';
+import { addDiscardListener, addFillListener } from './tapGuard';
 import { platform } from '#platform';
 import { store } from './state/store';
 import { showFloatingNotice } from './tapNotice';
@@ -226,6 +227,15 @@ export function App() {
       addDiscardListener(() => {
         const r = routeRef.current;
         countDiscardedTap(r.name, r.demo);
+      }),
+    [],
+  );
+  // 측정 중에 빠진 누름 채우기가 채운 누름도 같은 방식으로 센다(filled_taps, 작업 지시서 3-1의 3-1).
+  useEffect(
+    () =>
+      addFillListener(() => {
+        const r = routeRef.current;
+        countFilledTap(r.name, r.demo);
       }),
     [],
   );

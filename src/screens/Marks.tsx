@@ -72,6 +72,8 @@ export function Marks({ h }: { h: SessionHandle }) {
       // 바뀌기 전 버튼을 보고 누른 것이 되돌릴 수 없는 채점이 되지 않게 한다(별도 검토 2차 P2). 이 화면에서 새 판으로 자리나 뜻이
       // 바뀌는 것은 정답 공개 여부뿐이라 그것만 본다. 다른 새 판에도 막으면 같은 칸을 빠르게 두 번 눌러 붙이는 찍음의 둘째 누름이 버려진다(2차 뒤 확인 X1).
       shiftKey={released ? 'released' : 'unreleased'}
+      // 맨 위에서는 단답형 칸이 아래 고정 띠에 가려지므로, 내용이 띠 밑으로 더 이어질 때 띠 위쪽에 옅은 그림자를 둔다(작업 지시서 3-1의 3-5).
+      moreHint
     >
       <div className="inline">
         <h2 className="title">{S.marks.title}</h2>

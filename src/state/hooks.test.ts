@@ -4,6 +4,7 @@ import { exampleAnswers } from '../logic/example';
 import type { Answers, Exam } from '../types';
 import {
   countDiscardedTap,
+  countFilledTap,
   deleteAllSessions,
   deleteSession,
   finishTestRun,
@@ -631,6 +632,24 @@ describe('테스트 측정과 시험 기록', () => {
     expect(activeRun(store.get())!.discardedTaps).toBe(5);
     const csv = exportCsv([{ run: activeRun(store.get())!, session: current(), exam: examA }]).split('\n');
     expect(csv[1]!.split(',')[csv[0]!.split(',').indexOf('discarded_taps')]).toBe('5');
+  });
+
+  it('채운 누름은 받지 않은 누름과 같은 화면에서만 따로 센다(작업 지시서 3-1의 3-1)', () => {
+    countFilledTap('input', false);
+    expect(store.get().testRuns).toEqual([]);
+    startTestRun('P09', 'keypad', 'sample-a');
+    countFilledTap('start', false);
+    startSession('sample-a', 'not_yet', null);
+    countFilledTap('input', false);
+    countFilledTap('marks', false);
+    countFilledTap('test', false);
+    countFilledTap('anatomy', true);
+    countFilledTap('unknown', false);
+    const run = activeRun(store.get())!;
+    expect(run.filledTaps).toBe(3);
+    expect(run.discardedTaps).toBe(0);
+    const csv = exportCsv([{ run, session: current(), exam: examA }]).split('\n');
+    expect(csv[1]!.split(',')[csv[0]!.split(',').indexOf('filled_taps')]).toBe('3');
   });
 });
 

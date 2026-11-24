@@ -7,6 +7,8 @@
 }
 
 html {
+  /* 기기의 아래 안전 영역(홈 표시 줄) 높이. 아래 여백은 모두 이 변수 하나를 쓴다(화면 테스트가 값을 넣어 본다, 작업 지시서 3-1의 3-3). */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
   height: 100%;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -125,6 +127,11 @@ a {
 }
 .nowrap {
   white-space: nowrap;
+}
+/* 통째로 다음 줄로 내려가는 글자 조각(시험 설명의 쉼표로 나뉜 조각). 한 줄보다 길면 그 안에서 평소대로 끊긴다. */
+.keep {
+  display: inline-block;
+  max-width: 100%;
 }
 
 /* 간격 도우미 */
@@ -245,9 +252,29 @@ a {
 }
 
 .dock {
+  position: relative;
   flex: none;
   background: var(--bg);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-bottom);
+}
+/* 내용이 띠 밑으로 더 이어질 때만 띠 위쪽 경계에 옅은 그림자를 둔다(src/components/ui.tsx 의 moreHint). 글자나 화살표는 없다. */
+.dock--more::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: var(--s3);
+  background: linear-gradient(to top, var(--shade), transparent);
+  pointer-events: none;
+}
+/* 키패드 판이 화면 맨 아래에 오면 판의 바탕을 화면 아래 끝까지 잇는다. 안전 영역만큼의 여백은 판 안쪽 아래에 둔다.
+   키의 자리와 크기는 그대로이고, 안전 영역이 0이면 고치기 전과 같다(작업 지시서 3-1의 3-3). */
+.dock:has(> .pad:last-child) {
+  padding-bottom: 0;
+}
+.dock:has(> .pad:last-child) > .pad:last-child {
+  padding-bottom: calc(var(--s2) + var(--safe-bottom));
 }
 /* 연달아 누르기 보호가 누름을 버렸을 때의 알림(src/tapNotice.ts). 고정 위치라 화면 구성을 밀지 않고, 누름을 받지 않는다. */
 .tap-notice {
@@ -576,18 +603,23 @@ a {
   display: inline-flex;
 }
 
-/* 진행 막대 */
+/* 진행 막대.
+   채움을 막대 안의 다른 요소로 그리면 둥근 끝에서 테두리 안쪽 곡선과 채움을 자르는 곡선이 따로 부드럽게 그려져
+   그 사이로 막대 바탕(흰색)이 1픽셀 비친다(작업 지시서 3-1의 3-5). 그래서 채움을 막대 자신의 바탕(그러데이션)으로 그리고
+   테두리 밑까지 칠해, 채운 쪽의 테두리 밑은 테두리와 같은 색이 되게 한다. 채움의 오른쪽 끝 자리는 고치기 전과 같다
+   (테두리 안쪽 폭에 비율을 곱하고 왼쪽 테두리 1px 을 더한 자리). */
+@property --progress {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
 .progress {
+  --progress-end: calc(1px + (100% - 2px) * var(--progress));
   height: 6px;
   border: 1px solid var(--outline);
   border-radius: 3px;
-  background: var(--bg);
-  overflow: hidden;
-}
-.progress__fill {
-  height: 100%;
-  background: var(--outline);
-  transition: width var(--t);
+  background: linear-gradient(to right, var(--outline) var(--progress-end), var(--bg) var(--progress-end)) border-box;
+  transition: --progress var(--t);
 }
 
 /* 답 입력: 키패드 방식 */
@@ -1035,7 +1067,7 @@ details[open] > summary::after {
   background: var(--bg);
   border-top: 1px solid var(--line);
   border-radius: var(--r-card) var(--r-card) 0 0;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--safe-bottom);
   animation: rise var(--t) ease-out;
 }
 .sheet:focus,

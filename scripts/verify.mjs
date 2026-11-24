@@ -3,6 +3,7 @@
 // 전부 실행하고 결과를 docs/검증결과.md 에 남긴다.
 // 12번에는 작업 지시서 3의 넘겨받기 화면 테스트(가짜 다리 규격 2, e2e/appRemote.spec.ts)와
 // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts)도 들어 있다.
+// 2번에는 작업 지시서 3-1의 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts)와 아이폰에서 찾은 보기 문제 화면 테스트(e2e/iosweb.spec.ts)도 들어 있다.
 // 13번은 발행 도구(scripts/exams)의 단위 테스트와, 커밋된 테스트 전용 발행물(exam-data/testdata)을 실제 Node 의 exams:verify 로 확인한 결과다.
 // 실행해서 확인한 수치만 적는다.
 
@@ -429,8 +430,8 @@ const REQUIRED = {
   shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 150, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다)
-  unitTests: 460, // 통과한 단위 테스트 수의 최소
+  e2eTests: 206, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22).
+  unitTests: 461, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기).
   toolTests: 104, // 통과한 발행 도구(scripts/exams) 단위 테스트 수의 최소(13번)
   leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
@@ -439,6 +440,8 @@ const REQUIRED = {
   appTests: 40, // 앱용 묶음 화면 테스트(e2e/app.spec.ts) 수
   appRemoteTests: 21, // 넘겨받기 화면 테스트(e2e/appRemote.spec.ts, 가짜 다리 규격 2, 작업 지시서 3의 8장과 별도 검토) 수
   appStyleTests: 3, // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts) 수
+  fillTests: 34, // 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts, 작업 지시서 3-1의 3-1) 수
+  iosWebTests: 22, // 아이폰에서 찾은 보기 문제 화면 테스트(e2e/iosweb.spec.ts, 작업 지시서 3-1의 3-2 ~ 3-5) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
 const AUDIT_LISTS = [
@@ -507,7 +510,12 @@ const unitOk =
   missingUnit.length === 0;
 const flowTests = byFile('flow.spec.ts');
 const missingE2e = REQUIRED_E2E_TESTS.filter((title) => !tests.some((t) => t.file.endsWith('rhythm.spec.ts') && t.title === title && t.ok));
-const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0;
+// 작업 지시서 3-1: 빠진 누름 채우기(3-1)와 아이폰에서 찾은 보기 문제(3-2 ~ 3-5)의 화면 테스트. 줄거나 실패하면 2번 항목이 실패한다.
+const fillTests = byFile('fill.spec.ts');
+const iosWebTests = byFile('iosweb.spec.ts');
+const fillOk = allOk(fillTests) && fillTests.length === REQUIRED.fillTests;
+const iosWebOk = allOk(iosWebTests) && iosWebTests.length === REQUIRED.iosWebTests;
+const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0 && fillOk && iosWebOk;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
 const smallOk =
   allOk(smallTests) &&
@@ -669,7 +677,7 @@ function buildReport(textOk, textResult) {
       '2',
       '화면 흐름(390x844)',
       flowOk,
-      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인. 꼭 있어야 하는 기다리지 않는 좌표 누름 테스트 ${REQUIRED_E2E_TESTS.length}개 가운데 ${REQUIRED_E2E_TESTS.length - missingE2e.length}개 통과`,
+      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인. 꼭 있어야 하는 기다리지 않는 좌표 누름 테스트 ${REQUIRED_E2E_TESTS.length}개 가운데 ${REQUIRED_E2E_TESTS.length - missingE2e.length}개 통과. 빠진 누름 채우기 테스트(e2e/fill.spec.ts) ${fillTests.length}개 가운데 ${fillTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.fillTests}개). 아이폰에서 찾은 보기 문제 테스트(e2e/iosweb.spec.ts) ${iosWebTests.length}개 가운데 ${iosWebTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.iosWebTests}개)`,
     ],
     [
       '3',

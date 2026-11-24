@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { href, navigate } from '../router';
 import { S } from '../strings';
 import { markContentShifted, markUiChanged } from '../tapGuard';
@@ -122,11 +122,54 @@ interface ScreenProps {
    * 재풀이의 지금 문항이 다른 문항으로 옮겨 갔을 때 쓴다(옮겨 가기 전 문항에 넣던 숫자가 옮겨 온 문항에 들어가지 않게, 별도 검토 2차 P1).
    */
   shiftStrict?: boolean;
+  /**
+   * 내용이 아래 고정 띠 밑으로 더 이어질 때만 띠 위쪽 경계에 옅은 그림자를 보여 준다(끝까지 내리면 없앤다).
+   * 아래에 내용이 더 있다는 단서다. 표시 화면에서 쓴다(작업 지시서 3-1의 3-5).
+   */
+  moreHint?: boolean;
 }
 
-export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey, shiftKey, shiftStrict }: ScreenProps) {
+/**
+ * 내용이 아래로 더 이어지는지 본다(스크롤, 크기 바뀜, 내용이 생기거나 빠짐). 남은 높이가 1px 이하면 끝까지 내린 것으로 본다.
+ * 나중에 생긴 내용(채점한 뒤의 안내 등)도 보도록 자식이 바뀌면 새 자식까지 다시 지켜본다(별도 검토 F6).
+ */
+function useMoreBelow(ref: React.RefObject<HTMLElement | null>, on: boolean): boolean {
+  const [more, setMore] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!on || !el) return undefined;
+    const check = () => setMore(el.scrollHeight - el.clientHeight - el.scrollTop > 1);
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(check) : null;
+    const watch = () => {
+      if (!ro) return;
+      ro.disconnect();
+      ro.observe(el);
+      for (const child of Array.from(el.children)) ro.observe(child);
+    };
+    check();
+    watch();
+    el.addEventListener('scroll', check, { passive: true });
+    const mo =
+      typeof MutationObserver === 'function'
+        ? new MutationObserver(() => {
+            watch();
+            check();
+          })
+        : null;
+    mo?.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => {
+      el.removeEventListener('scroll', check);
+      ro?.disconnect();
+      mo?.disconnect();
+    };
+  }, [ref, on]);
+  return on && more;
+}
+
+export function Screen({ top, children, actions, footer, tabs, layer, bodyClass, guardKey, shiftKey, shiftStrict, moreHint }: ScreenProps) {
   const bodyRef = useRef<HTMLElement>(null);
   const onShown = useContext(ScreenShownContext);
+  const moreBelow = useMoreBelow(bodyRef, moreHint === true);
   // 화면이 새로 그려지거나 guardKey가 바뀌면, 같은 자리를 연달아 누른 것이 새 버튼에 닿지 않게 한다.
   useLayoutEffect(() => {
     markUiChanged();
@@ -155,7 +198,7 @@ export function Screen({ top, children, actions, footer, tabs, layer, bodyClass,
         {children}
       </main>
       {actions || footer || tabs ? (
-        <div className="dock">
+        <div className={`dock${moreBelow ? ' dock--more' : ''}`} data-more={moreHint ? String(moreBelow) : undefined}>
           {footer}
           {actions ? <div className="actions">{actions}</div> : null}
           {tabs ? <TabBar active={tabs} /> : null}
@@ -299,11 +342,18 @@ export function Chip({ checked, onSelect, children, testId }: { checked: boolean
 }
 
 export function Progress({ value, max, label }: { value: number; max: number; label: string }) {
-  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  const frac = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+  // 채움은 막대의 바탕으로 그린다(src/styles/app.css 의 .progress, 둥근 끝의 1픽셀 틈을 없앤다).
   return (
-    <div className="progress" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={max} aria-valuenow={value}>
-      <div className="progress__fill" style={{ width: `${pct}%` }} />
-    </div>
+    <div
+      className="progress"
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={value}
+      style={{ '--progress': String(frac) } as React.CSSProperties}
+    />
   );
 }
 

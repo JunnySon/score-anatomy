@@ -158,6 +158,8 @@ function cleanRun(raw: unknown): TestRun | null {
     examReselects: typeof raw.examReselects === 'number' && Number.isFinite(raw.examReselects) ? raw.examReselects : 0,
     // 1.1에서 더한 칸. 없는 옛 측정 기록은 0으로 읽는다.
     discardedTaps: typeof raw.discardedTaps === 'number' && Number.isInteger(raw.discardedTaps) && raw.discardedTaps >= 0 ? raw.discardedTaps : 0,
+    // 0.3.1에서 더한 칸. 없는 옛 측정 기록은 0으로 읽는다.
+    filledTaps: typeof raw.filledTaps === 'number' && Number.isInteger(raw.filledTaps) && raw.filledTaps >= 0 ? raw.filledTaps : 0,
     parts,
     answerKeyText: typeof raw.answerKeyText === 'string' ? raw.answerKeyText : '',
   };

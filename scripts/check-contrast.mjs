@@ -61,6 +61,21 @@ const PAIRS = [
   ['warn', 'surface', '안내문 왼쪽 띠와 표면', 3],
 ];
 
+/**
+ * 아래 고정 띠 위쪽의 옅은 그림자(--shade, 작업 지시서 3-1의 3-5). 반투명 색이라 그 밑의 글자와 바탕이 함께 섞인다.
+ * 그림자가 가장 짙은 줄(띠 바로 위)에서도 모든 조합이 기준을 지키는지 본다. 섞은 색은 화면과 같이 sRGB 값으로 섞는다.
+ */
+function readShade(block) {
+  const m = /--shade:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)\s*;/.exec(block);
+  return m ? { rgb: [Number(m[1]), Number(m[2]), Number(m[3])], a: Number(m[4]) } : null;
+}
+const shades = { '밝은 화면': readShade(css.slice(0, darkStart)), '어두운 화면': readShade(css.slice(darkStart)) };
+function underShade(hex, shade) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v, i) => Math.round(v * (1 - shade.a) + shade.rgb[i] * shade.a));
+  return `#${ch.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
+}
+
 const rows = [];
 let ok = true;
 for (const [theme, vars] of Object.entries(themes)) {
@@ -74,6 +89,23 @@ for (const [theme, vars] of Object.entries(themes)) {
     const pass = ratio >= min;
     if (!pass) ok = false;
     rows.push({ theme, use, fg: vars[fg], bg: vars[bg], ratio, min, pass });
+  }
+}
+for (const [theme, vars] of Object.entries(themes)) {
+  const shade = shades[theme];
+  if (!shade) {
+    console.error(`${theme}: --shade 색이 없어요.`);
+    ok = false;
+    continue;
+  }
+  for (const [fg, bg, use, min] of PAIRS) {
+    if (!vars[fg] || !vars[bg]) continue;
+    const f = underShade(vars[fg], shade);
+    const b = underShade(vars[bg], shade);
+    const ratio = Math.floor(contrast(f, b) * 100) / 100;
+    const pass = ratio >= min;
+    if (!pass) ok = false;
+    rows.push({ theme, use: `${use}(아래 단서 그림자가 가장 짙은 줄)`, fg: f, bg: b, ratio, min, pass });
   }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { platform } from '#platform';
 import { RemoteNotice, RemoteRefresh } from '../components/RemoteNotice';
 import { Badge, Message, Option, Screen, TopBar } from '../components/ui';
@@ -20,6 +20,25 @@ export function heldText(examDate: string | undefined) {
       {S.exams.held(d.y, d.m, d.d)}
     </span>
   ) : null;
+}
+
+/**
+ * 시험 설명("1~21번 5지선다, 22~30번 단답형"). 쉼표로 나뉜 조각은 조각 안에서 끊기지 않고 통째로 다음 줄로 내려가게 한다.
+ * 조각마다 줄 안 덩어리(inline-block)로 두어서, 조각 하나가 한 줄보다 길면 그 안에서 평소대로 끊긴다(작업 지시서 3-1의 3-5).
+ * 글자는 시험 파일 그대로다. 선택지 버튼 안이라 화면 낭독기는 버튼 이름으로 한 번에 읽는다.
+ */
+export function noteChunks(note: string) {
+  // 쉼표 뒤의 빈칸에서 나누고 쉼표는 앞 조각에 붙여 둔다(뒤를 보는 정규식은 옛 사파리가 읽지 못해서 쓰지 않는다).
+  const parts = note.split(/, +/).map((part, i, all) => (i < all.length - 1 ? `${part},` : part));
+  if (parts.length < 2) return note;
+  return parts.map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 ? ' ' : null}
+      <span className="keep" data-testid="note-chunk">
+        {part}
+      </span>
+    </Fragment>
+  ));
 }
 
 export function ExamSelect() {
@@ -99,7 +118,9 @@ export function ExamSelect() {
             }
           >
             <span>{e.title}</span>
-            <span className="sub">{e.note}</span>
+            <span className="sub" data-testid="note-line">
+              {noteChunks(e.note)}
+            </span>
             {heldText(e.examDate)}
           </Option>
         ))}

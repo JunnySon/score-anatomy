@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { exampleAnswers } from '../src/logic/example';
 import { openBundle, BUNDLES } from './appBridge';
 import { waitSettled } from './audit';
-import { addMetric, expect, loadExam, openApp, seedStore, test } from './helpers';
+import { addMetric, expect, expectHash, loadExam, openApp, seedStore, test } from './helpers';
 import { sessionRecord, storeOf } from './remoteData';
 
 // 가로 넘침 확인(작업 지시서 4-1 의 2-2). 맥이 iOS 18.4 에서 본 두 번 눌러 확대의 원인 후보 하나는 내용이 화면보다 넓게 놓여
@@ -43,7 +43,8 @@ async function measure(page: Page): Promise<Overflow> {
   });
 }
 
-function check(o: Overflow, at: string): void {
+function check(o: Overflow, width: number, at: string): void {
+  expect.soft(o.vw, at).toBe(width);
   expect.soft(o.docW, `${at}: 문서(html)의 스크롤 폭`).toBeLessThanOrEqual(o.vw);
   expect.soft(o.bodyW, `${at}: 본문(body)의 스크롤 폭`).toBeLessThanOrEqual(o.vw);
   expect.soft(o.offenders, `${at}: 화면 밖으로 나간 요소`).toEqual([]);
@@ -71,11 +72,21 @@ const STATES: State[] = [
     hash: '/exams',
     prepare: async (page) => {
       await page.getByTestId('exam-sample-a').click();
+      await expect(page.getByTestId('graded-not_yet')).toBeVisible();
     },
   },
-  { name: '답 넣기, 객관식(키패드)', store: ungraded({}), hash: '/input?input=keypad' },
-  { name: '답 넣기, 단답형(키패드)', store: ungraded(firstAnswers(21)), hash: '/input?input=keypad' },
-  { name: '답 넣기, 5행 방식', store: ungraded({}), hash: '/input?input=rows' },
+  {
+    name: '답 넣기, 객관식(키패드)', store: ungraded({}), hash: '/input?input=keypad',
+    prepare: async (page) => { await expect(page.getByTestId('section-name')).toHaveText('객관식 1~21번'); },
+  },
+  {
+    name: '답 넣기, 단답형(키패드)', store: ungraded(firstAnswers(21)), hash: '/input?input=keypad',
+    prepare: async (page) => { await expect(page.getByTestId('now-no')).toHaveText('22번'); },
+  },
+  {
+    name: '답 넣기, 5행 방식', store: ungraded({}), hash: '/input?input=rows',
+    prepare: async (page) => { await expect(page.getByTestId('rows-next')).toBeVisible(); },
+  },
   { name: '입력 확인', store: ungraded(exampleAnswers(examA)), hash: '/review' },
   {
     name: '입력 확인, 답 고치기 바텀시트',
@@ -100,7 +111,10 @@ const STATES: State[] = [
     },
   },
   { name: '계단', store: graded, hash: '/steps' },
-  { name: '재풀이', store: graded, hash: '/retry/t03' },
+  {
+    name: '재풀이', store: graded, hash: '/retry/t03',
+    prepare: async (page) => { await expect(page.getByTestId('retry-no')).toHaveText('15번'); },
+  },
   { name: '기록', store: graded, hash: '/history' },
   { name: '진행자 화면', store: null, hash: '/test' },
 ];
@@ -110,6 +124,7 @@ async function open(page: Page, s: State): Promise<void> {
   await seedStore(page, s.store ?? { version: 1, sessions: [], currentId: null, inputMode: 'keypad', testRuns: [], activeRunId: null });
   await page.reload();
   await openApp(page, s.hash);
+  await expectHash(page, s.hash.split('?')[0]!);
   if (s.prepare) await s.prepare(page);
 }
 
@@ -120,7 +135,7 @@ for (const width of WIDTHS) {
       await open(page, s);
       const o = await measure(page);
       addMetric({ kind: 'overflow', bundle: 'web', width, state: s.name, ...o });
-      check(o, `${width}px ${s.name}`);
+      check(o, width, `${width}px ${s.name}`);
     }
     // 대조: 화면보다 40px 넓은 요소를 넣으면 검사가 넘침을 잡아내야 한다(검사가 늘 통과로 끝나지 않는지).
     await page.evaluate(() => {
@@ -151,10 +166,10 @@ test('가로 넘침: 앱 시험용 묶음과 배포용 묶음도 폭 일곱 가�
       await page.setViewportSize({ width, height: HEIGHT });
       for (const [name, hash] of hashes) {
         await openBundle(page, b, { bridge: 1, store: storeOf([record]) }, hash);
-        await page.locator('.app').first().waitFor();
+        await expectHash(page, hash);
         const o = await measure(page);
         addMetric({ kind: 'overflow', bundle: b, width, state: name, ...o });
-        check(o, `${b} ${width}px ${name}`);
+        check(o, width, `${b} ${width}px ${name}`);
       }
     }
   }

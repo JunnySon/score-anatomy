@@ -52,6 +52,8 @@ final class ShellController {
     private var pageReady = false
     /// 웹이 마지막으로 알고 있는 글자 크기 배율(넣어 준 값이나 마지막으로 보낸 값).
     private var lastFontScale = FontScale.minimum
+    /// 새 문서의 시작 스크립트에 담은 시험 자료. 다시 싣는 도중 받아들인 새 자료를 찾을 때 쓴다.
+    private var injectedRemoteSeq: Int?
     /// 웹 화면 프로세스가 끝난 시각들. 짧은 동안 거듭 끝나면 실패 안내를 띄운다.
     private var webProcessEnds: [Date] = []
     private var loadWatchdog: Task<Void, Never>?
@@ -99,6 +101,7 @@ final class ShellController {
         #endif
 
         observeSystem()
+        if UIApplication.shared.applicationState == .background { remote.appDidEnterBackground() }
         start()
     }
 
@@ -185,7 +188,9 @@ final class ShellController {
         lastFontScale = scale
         // 받은 저장을 모두 마친 뒤의 내용을 읽는다(다시 읽는 문서가 예전 기록으로 덮어쓰지 않게).
         // 시험 자료는 지금 가진 것(보관해 둔 것이나 이 실행에서 마지막으로 받아들인 것)을 넣는다.
-        let source = AppInfoScript.source(appVersion: appVersion, store: store.read(), fontScale: scale, remote: remote.snapshot)
+        let saved = remote.snapshotForWeb
+        injectedRemoteSeq = saved?.seq
+        let source = AppInfoScript.source(appVersion: appVersion, store: store.read(), fontScale: scale, remote: saved)
         let controller = webView.configuration.userContentController
         controller.removeAllUserScripts()
         controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: .page))
@@ -229,8 +234,13 @@ final class ShellController {
 
     func pageDidFinish() {
         pageReady = true
+        var deliveredSeq = injectedRemoteSeq
         for message in outbox.drain() {
+            if case .remote(let saved) = message { deliveredSeq = saved.seq }
             deliver(message)
+        }
+        if let saved = remote.snapshotForWeb, saved.seq != deliveredSeq {
+            deliver(.remote(saved))
         }
         // 읽는 동안 바뀐 글자 크기는 지금 다시 보낸다.
         let scale = FontScale.current()
@@ -373,6 +383,9 @@ final class ShellController {
         observers.append(center.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             // 앱이 끝나기 전에 쓰던 저장을 마친다.
             MainActor.assumeIsolated { self?.store.flush() }
+        })
+        observers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.remote.appDidEnterBackground() }
         })
         observers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             // 앞으로 돌아오면 마지막 시도에서 5분이 지났을 때 시험 자료를 다시 받는다(뒤에서는 받지 않는다).

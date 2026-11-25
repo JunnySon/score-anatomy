@@ -33,8 +33,8 @@ struct ExamServer {
         guard let url = URL(string: base + path) else { return nil }
         let done = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: Data?
-        URLSession(configuration: .ephemeral).dataTask(with: url) { data, _, _ in
-            result = data
+        URLSession(configuration: .ephemeral).dataTask(with: url) { data, response, error in
+            if error == nil, (response as? HTTPURLResponse)?.statusCode == 200 { result = data }
             done.signal()
         }.resume()
         _ = done.wait(timeout: .now() + 10)
@@ -51,8 +51,15 @@ struct ExamServer {
 
     /// 받은 요청(시각, 방법, 경로, 머리글).
     func log(session name: String? = nil) -> [[String: Any]] {
-        guard let data = request("/control/\(name ?? session)/log") else { return [] }
-        return ((try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]) ?? []
+        readLog("/control/\(name ?? session)/log")
+    }
+
+    func readLog(_ path: String) -> [[String: Any]] {
+        guard let data = request(path), let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            XCTFail("시험 서버 요청 기록을 읽지 못했다")
+            return []
+        }
+        return rows
     }
 
     func paths(session name: String? = nil) -> [String] {
@@ -116,6 +123,7 @@ final class RemoteFetchTests: XCTestCase {
         let server = try ExamServer.make("first")
         server.set("pub=test-only-valid")
         let handle = AppHandle(name: "remote-first")
+        let baseline = server.readLog("/control/requests").count
         handle.launch(extra: server.launchArguments)
         let notes = remoteNotes(handle, count: 1)
         XCTAssertEqual(notes.first?["trigger"] as? String, "launch", "화면이 뜬 뒤 한 번 받는다")
@@ -126,6 +134,8 @@ final class RemoteFetchTests: XCTestCase {
         let prefix = "/s/\(server.session)/"
         XCTAssertEqual(log.compactMap { $0["path"] as? String }, [prefix + "index.json", prefix + "index.json.sig", prefix + "files/test-only-exam.2.json"])
         XCTAssertTrue(log.allSatisfy { ($0["query"] as? String) == "" && ($0["method"] as? String) == "GET" }, "쿼리 없이 GET 만")
+        let allPaths = server.readLog("/control/requests").dropFirst(baseline).compactMap { $0["path"] as? String }
+        XCTAssertEqual(allPaths, log.compactMap { $0["path"] as? String }, "시험 서버 전체에서도 지정된 세 경로만 받는다")
         // 머리글은 정해 둔 일곱 개뿐이고 값이 고정이다.
         let headers = (log.first?["headers"] as? [[String]]) ?? []
         var byName: [String: String] = [:]
@@ -138,7 +148,8 @@ final class RemoteFetchTests: XCTestCase {
             let names = ((entry["headers"] as? [[String]]) ?? []).map { $0[0].lowercased() }.sorted()
             XCTAssertEqual(names, byName.keys.sorted(), "세 요청의 머리글이 같다")
         }
-        let ms = notes.first?["ms"] as? Int ?? -1
+        let ms = try XCTUnwrap(notes.first?["ms"] as? Int)
+        XCTAssertGreaterThanOrEqual(ms, 0)
         recordMetric(["kind": "remoteFetch", "device": TestEnv.deviceTag, "ms": ms, "requests": log.count, "headers": headers,
                       "paths": log.compactMap { $0["path"] as? String }.map { $0.replacingOccurrences(of: prefix, with: "") }])
         XCTAssertLessThan(ms, 9000, "받기와 확인이 9초 안에 끝난다")
@@ -164,6 +175,8 @@ final class RemoteFetchTests: XCTestCase {
         _ = remoteNotes(handle, count: 1)
         openExamSelect(handle)
         XCTAssertTrue(handle.element(labelContains: Self.notice).waitForExistence(timeout: 8))
+        let dataURL = handle.storeDirectory.appendingPathComponent("remote/remote.json")
+        let acceptedBytes = try Data(contentsOf: dataURL)
         // 새 자료 없음.
         tapRefresh(handle)
         var notes = remoteNotes(handle, count: 2)
@@ -193,9 +206,22 @@ final class RemoteFetchTests: XCTestCase {
         waitResult(handle, Self.failed)
         XCTAssertEqual(storedSeq(handle), 2, "보관한 자료는 seq 2 그대로")
         XCTAssertTrue(handle.element(labelContains: Self.issued).exists, "받은 자료 기준도 그대로")
+        XCTAssertEqual(try Data(contentsOf: dataURL), acceptedBytes, "거부한 정정 판은 이미 보관한 시험 바이트를 바꾸지 않는다")
         let body = handle.evaluate("return document.body.innerText;") as? String ?? ""
         XCTAssertFalse(body.contains("오후 8시 10분"), "틀린 발행물의 issuedAt(2030-01-02T20:10)이 화면에 없다")
         XCTAssertFalse(body.contains("테스트 전용 정정 안내예요."), "rev 3(정정 판)으로 바뀌지 않았다")
+    }
+
+    func testCanOpenExamListWhileFetching() throws {
+        let server = try ExamServer.make("pending")
+        server.set("pub=test-only-valid&mode=slow&only=index.json&delay=6")
+        let handle = AppHandle(name: "remote-pending")
+        defer { handle.terminate() }
+        handle.launch(extra: server.launchArguments)
+        openExamSelect(handle)
+        XCTAssertTrue((handle.shellStats()["remote"] as? [[String: Any]])?.isEmpty == true, "받기 결과가 오기 전에 시험 목록을 열었다")
+        _ = remoteNotes(handle, count: 1)
+        XCTAssertTrue(handle.element(labelContains: Self.notice).waitForExistence(timeout: 8))
     }
 
     // MARK: 3. 통신 없이 다시 켜기

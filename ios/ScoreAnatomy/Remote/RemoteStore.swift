@@ -56,6 +56,35 @@ struct RemoteSnapshot: Equatable, Sendable {
     }
 }
 
+/// 디스크의 마지막 이름 바꾸기와 마감 판정 사이의 순서를 정한다.
+/// 바이트 쓰기, fsync, 정리는 이 잠금 밖에서 한다.
+final class RemoteCommit: @unchecked Sendable {
+    private let lock = NSLock()
+    private let deadline: ContinuousClock.Instant?
+    private var closed = false
+    private var accepted: RemoteSnapshot?
+
+    init(until deadline: ContinuousClock.Instant? = nil) { self.deadline = deadline }
+
+    func publish(_ snapshot: RemoteSnapshot, whileCurrent: () -> Bool, replace: () throws -> Void) rethrows -> Bool {
+        try lock.withLock {
+            guard !closed, whileCurrent(), deadline.map({ ContinuousClock.now < $0 }) ?? true else { return false }
+            try replace()
+            accepted = snapshot
+            closed = true
+            return true
+        }
+    }
+
+    /// 먼저 원자 교체했다면 그 판으로 답한다. 마감이 먼저라면 뒤늦은 교체를 막는다.
+    func close() -> RemoteSnapshot? {
+        lock.withLock {
+            closed = true
+            return accepted
+        }
+    }
+}
+
 /// 받아들인 시험 자료를 기기에 보관한다(docs/시험_배포_규격.md 3장의 7번).
 ///
 /// - 시스템이 마음대로 지우는 곳(Caches)이 아니라 기록 파일과 같은 Application Support 아래 remote 폴더에 둔다.
@@ -106,7 +135,7 @@ final class RemoteStore: @unchecked Sendable {
     }
 
     /// 자료를 보관한다. 실패하면 원래 파일을 건드리지 않고 false.
-    func save(_ snapshot: RemoteSnapshot) -> Bool {
+    func save(_ snapshot: RemoteSnapshot, receipt: RemoteCommit = RemoteCommit(), whileCurrent: () -> Bool = { true }) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         guard let data = Self.encode(snapshot) else { return false }
@@ -114,11 +143,51 @@ final class RemoteStore: @unchecked Sendable {
         do {
             try disk.makeDirectory(directory)
             try disk.writeNew(data, to: temporary)
-            try disk.replace(fileURL, with: temporary)
+            // 디스크에 쓰는 동안에도 취소되거나 마감이 지날 수 있다. 원본을 바꾸기 직전에 검사한다.
+            let published = try receipt.publish(snapshot, whileCurrent: whileCurrent) { try disk.replace(fileURL, with: temporary) }
+            guard published else {
+                try? disk.remove(temporary)
+                return false
+            }
             return true
         } catch {
             try? disk.remove(temporary)
             return false
+        }
+    }
+
+    /// 아직 전부 받지 못한 발행물의 확인된 파일. 이 폴더의 파일을 웹에 직접 넘기지는 않는다.
+    private var staging: URL { directory.appendingPathComponent("staging", isDirectory: true) }
+
+    func keepStaged(_ digests: Set<String>) {
+        lock.withLock {
+            for url in disk.list(staging) where !digests.contains(url.lastPathComponent) {
+                try? disk.remove(url)
+            }
+        }
+    }
+
+    func staged(_ entry: ReleaseEntry) -> [UInt8]? {
+        lock.withLock {
+            let url = staging.appendingPathComponent(entry.sha256)
+            guard let data = try? disk.read(url) else { return nil }
+            let bytes = Array(data)
+            if case .success = ReleaseCheck.examFile(bytes, for: entry) { return bytes }
+            try? disk.remove(url)
+            return nil
+        }
+    }
+
+    func stage(_ bytes: [UInt8], for entry: ReleaseEntry) {
+        lock.withLock {
+            let url = staging.appendingPathComponent(entry.sha256)
+            // 쓰기 도중 종료된 파일은 다음 읽기에서 SHA-256과 내용이 모두 맞아야 쓴다.
+            do {
+                try disk.makeDirectory(staging)
+                try disk.writeNew(Data(bytes), to: url)
+            } catch {
+                try? disk.remove(url)
+            }
         }
     }
 

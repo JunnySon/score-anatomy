@@ -39,6 +39,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOCK = threading.Lock()
 SESSIONS = {}
+REQUESTS = []
+PUBLICATIONS = {"test-only-valid", "test-only-older-seq", "test-only-bad-signature", "test-only-changed-byte"}
 DEFAULTS = {"pub": None, "mode": "normal", "only": None, "status": 404, "delay": 0.0, "target": None, "size": 6 * 1024 * 1024}
 TESTDATA = None
 LOG_FILE = None
@@ -74,7 +76,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        if "Cache-Control" not in (extra or {}):
+            self.send_header("Cache-Control", "no-store")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -91,8 +94,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # noqa: N802
         parsed = urllib.parse.urlsplit(self.path)
+        if self.headers.get("Host") != f"127.0.0.1:{self.server.server_port}":
+            self.record("_other", parsed)
+            return self.send_plain(400, "시험 서버의 주소가 달라요.")
         parts = parsed.path.split("/")
         try:
+            if parsed.path == "/control/requests":
+                with LOCK:
+                    entries = list(REQUESTS)
+                return self.send_json(entries)
             if parsed.path == "/control/ping":
                 return self.send_plain(200, "ok")
             if len(parts) >= 4 and parts[1] == "control":
@@ -104,11 +114,17 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             self.close_connection = True
 
+    def send_error(self, code, message=None, explain=None):
+        # BaseHTTPRequestHandler가 지원하지 않는 메서드도 시험 서버의 전체 기록에 남긴다.
+        if code == 501:
+            self.record("_other", urllib.parse.urlsplit(self.path))
+        super().send_error(code, message, explain)
+
     def do_HEAD(self):  # noqa: N802
+        self.record("_other", urllib.parse.urlsplit(self.path))
         self.send_plain(405, "GET 만 받아요.", {"Allow": "GET"})
 
-    def do_POST(self):  # noqa: N802
-        self.send_plain(405, "GET 만 받아요.", {"Allow": "GET"})
+    do_POST = do_HEAD
 
     def record(self, name, parsed):
         entry = {
@@ -122,6 +138,7 @@ class Handler(BaseHTTPRequestHandler):
         s = session(name)
         with LOCK:
             s["log"].append(entry)
+            REQUESTS.append(entry)
 
     def control(self, name, action, query):
         s = session(name)
@@ -133,6 +150,8 @@ class Handler(BaseHTTPRequestHandler):
             for key, cast in (("status", int), ("delay", float), ("size", int)):
                 if key in query:
                     config[key] = cast(query[key][0])
+            if config["pub"] is not None and config["pub"] not in PUBLICATIONS:
+                return self.send_plain(400, "알려진 시험용 발행물을 골라 주세요.")
             with LOCK:
                 s["config"] = config
             write_log(f"set {name} {config}")
@@ -148,11 +167,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.send_plain(404, "모르는 명령이에요.")
 
     def file_bytes(self, config, rest):
-        if not config["pub"] or not rest:
+        if config["pub"] not in PUBLICATIONS or not rest:
             return None
         root = os.path.realpath(os.path.join(TESTDATA, config["pub"]))
         path = os.path.realpath(os.path.join(root, *rest.split("/")))
-        if not path.startswith(root + os.sep) or not os.path.isfile(path):
+        if os.path.dirname(root) != TESTDATA or not path.startswith(root + os.sep) or not os.path.isfile(path):
             return None
         with open(path, "rb") as f:
             return f.read()
@@ -173,6 +192,10 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 return self.send_plain(404, "없어요.")
             return self.send_body(body, rest)
+        if mode == "cookie":
+            return self.send_plain(200, "시험 응답", {"Set-Cookie": "fixture=one; Path=/", "Cache-Control": "public, max-age=600"})
+        if mode == "auth":
+            return self.send_plain(401, "인증이 필요해요.", {"WWW-Authenticate": 'Basic realm="test-only"'})
         if mode == "status":
             return self.send_plain(config["status"], f"상태 {config['status']}")
         if mode == "redirect":
@@ -202,7 +225,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Connection", "close")
             self.end_headers()
-            self.stream(config["size"])
+            if config["delay"] > 0:
+                # 마지막 바이트만 늦춘다. 클라이언트가 본문 끝까지 기다렸는지 시험할 수 있다.
+                self.stream(max(0, config["size"] - 1))
+                time.sleep(config["delay"])
+                self.stream(1)
+            else:
+                self.stream(config["size"])
             self.close_connection = True
             return None
         if mode == "cut":

@@ -153,18 +153,10 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
 
     private func update(_ task: URLSessionTask, _ change: (inout Pending) -> Void) {
         lock.lock()
-        if var item = pending[task.taskIdentifier] {
-            change(&item)
-            pending[task.taskIdentifier] = item
+        if let index = pending.index(forKey: task.taskIdentifier) {
+            change(&pending.values[index])
         }
         lock.unlock()
-    }
-
-    private func fail(_ task: URLSessionTask, _ failure: ReleaseFetchSession.Failure) {
-        update(task) { item in
-            if item.failure == nil { item.failure = failure }
-        }
-        task.cancel()
     }
 
     // 다른 주소로 넘기는 응답은 따라가지 않는다. nil 을 주면 3xx 응답이 그대로 와서 아래에서 실패로 본다.
@@ -177,7 +169,7 @@ private final class FetchDelegate: NSObject, URLSessionDataDelegate, @unchecked 
         if challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust {
             completionHandler(.performDefaultHandling, nil)
         } else {
-            completionHandler(.cancelAuthenticationChallenge, nil)
+            completionHandler(.rejectProtectionSpace, nil)
         }
     }
 

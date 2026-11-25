@@ -23,7 +23,7 @@ xcodebuild -project ios/ScoreAnatomy.xcodeproj -scheme ScoreAnatomy -configurati
 | --- | --- |
 | `project.yml` | XcodeGen 설정. 프로젝트 파일은 이것으로 만들어요 |
 | `ScoreAnatomy.xcodeproj` | 만든 프로젝트 파일(커밋함, 손으로 고치지 않음) |
-| `Config/Shared.xcconfig` | 번들 ID(SA_BUNDLE_ID), 서명 팀(DEVELOPMENT_TEAM, 비어 있음), 시험 자료를 받는 주소(SA_EXAM_BASE_URL, 비어 있음). `Signing.local.xcconfig` 가 있으면 그 값으로 덮어써요 |
+| `Config/Shared.xcconfig` | 번들 ID(SA_BUNDLE_ID), 서명 팀(DEVELOPMENT_TEAM, 비어 있음), 시험 자료를 받는 주소(SA_EXAM_BASE_URL, 비어 있음). `Signing.local.xcconfig` 가 있으면 서명 팀과 번들 ID를 덮어써요 |
 | `ScoreAnatomy/App` | 앱 시작점(SwiftUI), 배경색, 불러오기 실패 안내 |
 | `ScoreAnatomy/Shell` | 웹뷰를 만들고 싣는 껍데기의 중심(ShellController), 웹뷰의 통신 차단(NetworkGuard) |
 | `ScoreAnatomy/Bridge` | 다리 규격 번호, 웹이 보낸 메시지 읽기, 웹에 알리는 글자, `window.__SA_APP__` 스크립트 |

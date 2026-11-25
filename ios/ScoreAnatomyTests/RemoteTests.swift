@@ -413,36 +413,43 @@ final class ReleaseRunTests: XCTestCase {
         try await expectRejected(index: replaced(examsObject, "  ],\n  \"format\"", "  ]},\n  \"format\""), because: "exams")
     }
 
+    private func expectEntryRejected(index: String, because reason: String, file: StaticString = #filePath, line: UInt = #line) async throws {
+        let (result, asked) = await run(try signed(index: Array(index.utf8)), current: nil)
+        failed(result, containing: reason, file: file, line: line)
+        XCTAssertEqual(store.load(), .none, file: file, line: line)
+        XCTAssertEqual(asked, ["index.json", "index.json.sig"], "목록 검사에서 거부하면 시험 파일을 요청하지 않는다", file: file, line: line)
+    }
+
     func testRejectsBadEntries() async throws {
         let text = try validIndexText()
         let entry = "    {\n      \"file\": \"files/test-only-exam.2.json\",\n      \"id\": \"test-only-exam\",\n      \"rev\": 2,\n      \"sha256\": \"b5c482cf24759d67ebc7263fc7bafc60ce23bded7b880b1ab96e19ee6ef59241\"\n    }"
         XCTAssertTrue(text.contains(entry))
         // 겹친 id(파일 이름은 다르게).
         let second = entry.replacingOccurrences(of: "files/test-only-exam.2.json", with: "files/copy.json")
-        try await expectRejected(index: replaced(text, entry, entry + ",\n" + second), because: "id 가 앞의 항목과 겹쳐요")
+        try await expectEntryRejected(index: replaced(text, entry, entry + ",\n" + second), because: "id 가 앞의 항목과 겹쳐요")
         // 겹친 file.
         let third = entry.replacingOccurrences(of: "\"test-only-exam\"", with: "\"other-exam\"")
-        try await expectRejected(index: replaced(text, entry, entry + ",\n" + third), because: "file 이 앞의 항목과 겹쳐요")
+        try await expectEntryRejected(index: replaced(text, entry, entry + ",\n" + third), because: "file 이 앞의 항목과 겹쳐요")
         // 빈 id 와 자바스크립트가 지우는 빈칸만 있는 id.
         for id in ["", "   ", "\\u3000"] {
-            try await expectRejected(index: replaced(text, "\"id\": \"test-only-exam\"", "\"id\": \"\(id)\""), because: "id 가 비어 있어요")
+            try await expectEntryRejected(index: replaced(text, "\"id\": \"test-only-exam\"", "\"id\": \"\(id)\""), because: "id 가 비어 있어요")
         }
         // 안전하지 않은 경로.
         let longPath = "files/" + String(repeating: "a", count: 200) + ".json"
         for path in ["../files/test-only-exam.2.json", "/files/test-only-exam.2.json", "files/./test-only-exam.2.json", "files\\\\test-only-exam.2.json",
                      "files/%2e%2e/x.json", "files/x.json?a=1", "files/.hidden.json", "files//x.json", "index.json", "index.json.sig",
                      "C:/x.json", "", "https://example.com/x.json", "files/한글.json", longPath] {
-            try await expectRejected(index: replaced(text, "\"files/test-only-exam.2.json\"", "\"\(path)\""), because: "file")
+            try await expectEntryRejected(index: replaced(text, "\"files/test-only-exam.2.json\"", "\"\(path)\""), because: "file")
         }
         // rev 와 sha256 모양.
         for rev in ["0", "\"2\"", "2.5", "null"] {
-            try await expectRejected(index: replaced(text, "\"rev\": 2,", "\"rev\": \(rev),"), because: "rev")
+            try await expectEntryRejected(index: replaced(text, "\"rev\": 2,", "\"rev\": \(rev),"), because: "rev")
         }
         for sha in ["B5C482CF24759D67EBC7263FC7BAFC60CE23BDED7B880B1AB96E19EE6EF59241", "b5c482", "zz" + String(repeating: "0", count: 62)] {
-            try await expectRejected(index: replaced(text, "b5c482cf24759d67ebc7263fc7bafc60ce23bded7b880b1ab96e19ee6ef59241", sha), because: "sha256")
+            try await expectEntryRejected(index: replaced(text, "b5c482cf24759d67ebc7263fc7bafc60ce23bded7b880b1ab96e19ee6ef59241", sha), because: "sha256")
         }
         // 항목이 객체가 아님.
-        try await expectRejected(index: replaced(text, entry, "    \"files/test-only-exam.2.json\""), because: "객체가 아니에요")
+        try await expectEntryRejected(index: replaced(text, entry, "    \"files/test-only-exam.2.json\""), because: "객체가 아니에요")
     }
 
     func testRejectsExamFileProblems() async throws {
@@ -591,6 +598,18 @@ final class RemoteStoreTests: XCTestCase {
         XCTAssertEqual(store.load(), .unreadable)
         // 기록 파일(store.json)은 건드리지 않는다.
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("store.json").path))
+    }
+
+    func testUnreadableRemotePreservesExistingRecordBytes() throws {
+        let directory = RemoteFixtures.temporaryDirectory()
+        let store = RemoteStore(storeDirectory: directory)
+        XCTAssertTrue(store.save(try snapshot()))
+        let record = directory.appendingPathComponent("store.json")
+        let existing = Data("{\"records\":[]}".utf8)
+        try existing.write(to: record)
+        try Data("{".utf8).write(to: store.fileURL)
+        XCTAssertEqual(store.load(), .unreadable)
+        XCTAssertEqual(try Data(contentsOf: record), existing)
     }
 
     func testFailedSaveKeepsTheOldFile() throws {
@@ -889,6 +908,92 @@ final class ReleaseNetworkTests: XCTestCase {
     }
 
     /// 새로 확인: 처음 받아들이면 remote 하나, 다시 확인하면 지금 자료를 remote 로, 받지 못하면 remoteFailed.
+    func testGzipChecksDecodedByteCount() async throws {
+        try await set("pub=test-only-valid&mode=gzip")
+        let file = "files/test-only-exam.2.json"
+        let bytes = try RemoteFixtures.bytes("test-only-valid", file)
+        let session = ReleaseFetchSession(limit: 9, maxBytes: bytes.count - 1)
+        defer { session.close() }
+        let result = await NetworkReleaseSource(location: location, session: session).get(file)
+        XCTAssertEqual(result, .failure(.tooBig))
+    }
+
+    func testStopsBeforeTheEndOfAnOversizedResponse() async throws {
+        try await set("pub=test-only-valid&mode=bigstream&size=\(ReleaseRules.maxFileBytes + 2)&delay=4")
+        let result = await fetch("index.json", limit: 2)
+        XCTAssertEqual(result, .failure(.tooBig), "마지막 바이트가 오기 전에 크기 초과를 판정한다")
+    }
+
+    func testCumulativeFetchDeadlineAndClosedSession() async throws {
+        try await set("pub=test-only-valid&mode=slow&delay=0.8")
+        let session = ReleaseFetchSession(limit: 1.35)
+        defer { session.close() }
+        let source = NetworkReleaseSource(location: location, session: session)
+        let first = await source.get("index.json")
+        XCTAssertNotNil(first.successValue)
+        let second = await source.get("index.json.sig")
+        XCTAssertEqual(second, .failure(.timeout))
+        let third = await source.get("index.json")
+        XCTAssertEqual(third, .failure(.timeout))
+        let closed = ReleaseFetchSession(limit: 9)
+        closed.close()
+        let skipped = await NetworkReleaseSource(location: location, session: closed).get("index.json")
+        XCTAssertEqual(skipped, .failure(.network(URLError.cancelled.rawValue)))
+    }
+
+    func testRejectsAuthenticationAndReusesNeitherCookiesNorResponses() async throws {
+        let session = ReleaseFetchSession(limit: 9)
+        defer { session.close() }
+        let source = NetworkReleaseSource(location: location, session: session)
+        try await set("pub=test-only-valid&mode=cookie")
+        for _ in 0..<2 {
+            let result = await source.get("index.json")
+            XCTAssertNotNil(result.successValue)
+        }
+        try await set("pub=test-only-valid&mode=auth")
+        let denied = await source.get("index.json")
+        if case .success = denied { XCTFail("인증 요청은 실패해야 한다") }
+        let rows = try await log()
+        XCTAssertGreaterThanOrEqual(rows.count, 3)
+        for row in rows {
+            let headers = try XCTUnwrap(row["headers"] as? [[String]])
+            let names = headers.compactMap { $0.first?.lowercased() }
+            XCTAssertFalse(names.contains("authorization"))
+            XCTAssertFalse(names.contains("cookie"))
+        }
+    }
+
+    func testSevenPublicationStepsOverLoopback() async throws {
+        let key = try RemoteFixtures.testPublicKey()
+        var store = RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory())
+        func run(_ publication: String, current: RemoteSnapshot?) async throws -> RemoteOutcome {
+            try await set("pub=" + publication)
+            return await RemoteRun(location: location, publicKey: key, current: current, store: store, limit: 9).run()
+        }
+        func failure(_ outcome: RemoteOutcome, _ reason: String) {
+            guard case .failed(let detail) = outcome else { return XCTFail("거부해야 한다") }
+            XCTAssertTrue(detail.contains(reason), detail)
+        }
+        failure(try await run("test-only-bad-signature", current: nil), "서명")
+        failure(try await run("test-only-changed-byte", current: nil), "sha256")
+        XCTAssertEqual(store.load(), .none)
+        guard case .accepted(let valid) = try await run("test-only-valid", current: nil) else { return XCTFail("정상 자료") }
+        XCTAssertEqual(valid.seq, 2)
+        let same = try await run("test-only-valid", current: valid)
+        XCTAssertEqual(same, .unchanged(seq: 2))
+        let past = try await run("test-only-older-seq", current: valid)
+        XCTAssertEqual(past, .unchanged(seq: 1))
+        failure(try await run("test-only-bad-signature", current: valid), "서명")
+        failure(try await run("test-only-changed-byte", current: valid), "sha256")
+        XCTAssertEqual(store.load(), .snapshot(valid))
+        store = RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory())
+        guard case .accepted(let older) = try await run("test-only-older-seq", current: nil),
+              case .accepted(let newer) = try await run("test-only-valid", current: older) else { return XCTFail("구판에서 새판으로 갱신") }
+        XCTAssertEqual(older.seq, 1)
+        XCTAssertEqual(newer, valid)
+        XCTAssertEqual(store.load(), .snapshot(newer))
+    }
+
     @MainActor
     func testUpdaterAnswersRefreshes() async throws {
         let base = serverBase
@@ -918,5 +1023,285 @@ final class ReleaseNetworkTests: XCTestCase {
         await waitFor(3)
         XCTAssertEqual(sent.last, .remoteFailed)
         XCTAssertEqual(updater.snapshot, first, "받지 못해도 가진 자료 그대로")
+    }
+}
+
+// MARK: 여러 파일 받기, 보관과 화면 생명주기
+
+extension ReleaseRunTests {
+    func testVerifiedStagingIsRecheckedAndNeverBecomesTheActiveStoreByItself() async throws {
+        let publication = try RemoteFixtures.publication("test-only-valid")
+        let path = "files/test-only-exam.2.json"
+        let bytes = try XCTUnwrap(publication[path])
+        let entry = ReleaseEntry(id: JSONString("test-only-exam"), rev: 2, file: path, sha256: ReleaseCheck.sha256Hex(bytes))
+        var incomplete = publication
+        incomplete.removeValue(forKey: path)
+        store.stage(bytes, for: entry)
+        XCTAssertEqual(store.load(), .none)
+        let (outcome, asked) = await run(incomplete, current: nil)
+        let value = try XCTUnwrap(accepted(outcome))
+        XCTAssertEqual(asked, ["index.json", "index.json.sig"])
+        XCTAssertEqual(value.exams.first?.bytes, bytes)
+        XCTAssertNil(store.staged(entry), "반영한 뒤 중간 파일을 정리한다")
+
+        let secondStore = RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory())
+        secondStore.stage([0], for: entry)
+        let source = MemorySource(publication)
+        let retried = await RemoteRun.evaluate(source: source, publicKey: key, current: nil, store: secondStore, limit: 9)
+        XCTAssertEqual(try XCTUnwrap(accepted(retried)), value)
+        XCTAssertEqual(source.requested, ["index.json", "index.json.sig", path], "손상된 중간 파일은 서버에서 다시 받는다")
+    }
+}
+
+extension RemoteStoreTests {
+    func testDeadlineBeforeAtomicReplacePreservesCurrentStore() throws {
+        let store = RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory())
+        let old = try snapshot()
+        let new = RemoteSnapshot(keyFingerprint: old.keyFingerprint, seq: old.seq + 1, issuedAt: old.issuedAt,
+                                 locks: old.locks, exams: old.exams)
+        XCTAssertTrue(store.save(old))
+        var checkedAfterWrite = false
+        XCTAssertFalse(store.save(new, whileCurrent: {
+            checkedAfterWrite = (try? FileManager.default.contentsOfDirectory(atPath: store.directory.path))?
+                .contains(where: { $0.hasPrefix(RemoteStore.temporaryPrefix) }) == true
+            return false
+        }))
+        XCTAssertTrue(checkedAfterWrite)
+        XCTAssertEqual(store.load(), .snapshot(old))
+    }
+
+    @MainActor
+    func testBlankAddressKeepsDiskAndExposesNullUntilAddressIsConfigured() throws {
+        let store = RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory())
+        let value = try snapshot()
+        let key = try RemoteFixtures.testPublicKey()
+        XCTAssertTrue(store.save(value))
+        let disabled = RemoteUpdater(settings: RemoteSettings(location: nil, publicKey: key), store: store)
+        XCTAssertNil(disabled.snapshotForWeb)
+        XCTAssertEqual(store.load(), .snapshot(value))
+        let location = try XCTUnwrap(RemoteLocation("http://127.0.0.1/", allowLoopbackHTTP: true))
+        let enabled = RemoteUpdater(settings: RemoteSettings(location: location, publicKey: key), store: store)
+        XCTAssertEqual(enabled.snapshotForWeb, value, "주소가 설정된 다음 시작에는 같은 키의 보관 자료를 바로 넘긴다")
+    }
+}
+
+extension ReleaseNetworkTests {
+    @MainActor
+    func testBackgroundInterruptsFetchAndForegroundRetriesWithoutWaitingFiveMinutes() async throws {
+        let base = serverBase
+        let session = sessionName
+        _ = try await Self.control(base: base, session: session, "set?pub=test-only-valid&mode=slow&only=index.json&delay=3")
+        let updater = RemoteUpdater(settings: RemoteSettings(location: location, publicKey: try RemoteFixtures.testPublicKey()),
+                                    store: RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory()))
+        var messages: [ToWeb] = []
+        var outcomes: [RemoteOutcome] = []
+        updater.deliver = { messages.append($0) }
+        updater.onFinish = { _, result, _ in outcomes.append(result) }
+        func paths() async throws -> [String] {
+            let log = try await Self.control(base: base, session: session, "log")
+            let rows = try XCTUnwrap(JSONSerialization.jsonObject(with: log) as? [[String: Any]])
+            return rows.compactMap { $0["path"] as? String }
+        }
+        updater.appDidEnterBackground()
+        updater.pageRendered()
+        updater.refreshRequested()
+        try await Task.sleep(for: .milliseconds(150))
+        let beforeStart = try await paths()
+        XCTAssertEqual(beforeStart, [])
+        updater.appWillEnterForeground()
+        for _ in 0..<80 {
+            if !(try await paths()).isEmpty { break }
+            try await Task.sleep(for: .milliseconds(30))
+        }
+        let started = try await paths()
+        XCTAssertEqual(started, ["/s/\(session)/index.json"])
+        updater.appDidEnterBackground()
+        for _ in 0..<80 where outcomes.isEmpty { try await Task.sleep(for: .milliseconds(30)) }
+        guard case .failed? = outcomes.first else { return XCTFail("진행 중인 받기가 취소돼야 한다") }
+        XCTAssertNil(updater.snapshot)
+        XCTAssertTrue(messages.isEmpty)
+        _ = try await Self.control(base: base, session: session, "set?pub=test-only-valid")
+        updater.appWillEnterForeground()
+        for _ in 0..<150 where messages.isEmpty { try await Task.sleep(for: .milliseconds(30)) }
+        guard case .remote(let value)? = messages.first else { return XCTFail("앞으로 돌아오자 다시 받은 결과가 와야 한다") }
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(value.seq, 2)
+    }
+}
+
+// MARK: 전경의 새로 확인과 응답 마감
+
+extension ReleaseNetworkTests {
+    @MainActor
+    func testManualRefreshWaitingInBackgroundBypassesRecentForegroundInterval() async throws {
+        _ = try await Self.control(base: serverBase, session: sessionName, "set?pub=test-only-valid")
+        let updater = RemoteUpdater(settings: RemoteSettings(location: location, publicKey: try RemoteFixtures.testPublicKey()),
+                                    store: RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory()))
+        var sent: [ToWeb] = []
+        updater.deliver = { sent.append($0) }
+        updater.pageRendered()
+        for _ in 0..<100 where sent.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        guard case .remote(let first)? = sent.first else { return XCTFail("첫 발행물을 받는다") }
+        updater.appDidEnterBackground()
+        updater.refreshRequested()
+        XCTAssertEqual(sent.count, 1)
+        updater.appWillEnterForeground()
+        for _ in 0..<100 where sent.count < 2 { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertEqual(sent, [.remote(first), .remote(first)], "5분 안이어도 대기하던 새로 확인에는 같은 seq로 응답한다")
+    }
+
+    func testCancellingSiblingAbortsInFlightNetworkRequest() async throws {
+        enum Rejected: Error { case sibling }
+        actor Observation {
+            var result: Result<[UInt8], ReleaseFetchSession.Failure>?
+            func record(_ value: Result<[UInt8], ReleaseFetchSession.Failure>) { result = value }
+        }
+        try await set("pub=test-only-valid&mode=slow&delay=4")
+        let client = ReleaseFetchSession(limit: 9)
+        defer { client.close() }
+        let source = NetworkReleaseSource(location: location, session: client)
+        let base = serverBase
+        let session = sessionName
+        let seen = Observation()
+        do {
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { await seen.record(await source.get("index.json")) }
+                group.addTask {
+                    // 실제 서버에 도착한 뒤 형제 작업이 실패한다.
+                    for _ in 0..<100 {
+                        let data = try await Self.control(base: base, session: session, "log")
+                        let log = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+                        if !log.isEmpty { throw Rejected.sibling }
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
+                    XCTFail("형제 요청을 거부하기 전에 받기가 시작돼야 한다")
+                }
+                while try await group.next() != nil {}
+            }
+        } catch Rejected.sibling {}
+        let result = await seen.result
+        XCTAssertEqual(result, .failure(.network(URLError.cancelled.rawValue)), "서버가 정상 본문을 쓸 때까지 기다리지 않는다")
+    }
+
+    private final class DelayedPublishDisk: StoreDisk, @unchecked Sendable {
+        enum Phase { case beforeReplace, afterReplace }
+        let phase: Phase
+        let real = FileStoreDisk()
+        let release = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var committed = false
+        private var paused = false
+        var reachedPause: Bool { lock.withLock { paused } }
+
+        init(_ phase: Phase) { self.phase = phase }
+        private func pauseOnce() {
+            let wait = lock.withLock {
+                guard !paused else { return false }
+                paused = true
+                return true
+            }
+            if wait { _ = release.wait(timeout: .now() + 10) }
+        }
+
+        func exists(_ url: URL) -> Bool { real.exists(url) }
+        func read(_ url: URL) throws -> Data { try real.read(url) }
+        func list(_ url: URL) -> [URL] {
+            if phase == .afterReplace, url.lastPathComponent == "staging", lock.withLock({ committed }) { pauseOnce() }
+            return real.list(url)
+        }
+        func makeDirectory(_ url: URL) throws { try real.makeDirectory(url) }
+        func writeNew(_ data: Data, to url: URL) throws {
+            try real.writeNew(data, to: url)
+            if phase == .beforeReplace, url.lastPathComponent.hasPrefix(RemoteStore.temporaryPrefix) { pauseOnce() }
+        }
+        func replace(_ destination: URL, with source: URL) throws {
+            try real.replace(destination, with: source)
+            if destination.lastPathComponent == RemoteStore.fileName { lock.withLock { committed = true } }
+        }
+        func moveWithoutReplacing(_ source: URL, to destination: URL) throws { try real.moveWithoutReplacing(source, to: destination) }
+        func remove(_ url: URL) throws { try real.remove(url) }
+    }
+
+    @MainActor
+    private func delayedPublish(_ phase: DelayedPublishDisk.Phase) async throws -> (RemoteUpdater, DelayedPublishDisk) {
+        _ = try await Self.control(base: serverBase, session: sessionName, "set?pub=test-only-valid")
+        let disk = DelayedPublishDisk(phase)
+        let store = RemoteStore(storeDirectory: RemoteFixtures.temporaryDirectory(), disk: disk)
+        let updater = RemoteUpdater(settings: RemoteSettings(location: location, publicKey: try RemoteFixtures.testPublicKey()),
+                                    store: store, requestLimit: 2)
+        return (updater, disk)
+    }
+
+    @MainActor
+    func testSlowCleanupDoesNotHoldManualReplyOrSendLateReplyToNextRefresh() async throws {
+        let (updater, disk) = try await delayedPublish(.afterReplace)
+        defer { disk.release.signal() }
+        var sent: [ToWeb] = []
+        var outcomes: [RemoteOutcome] = []
+        updater.deliver = { sent.append($0) }
+        updater.onFinish = { _, result, _ in outcomes.append(result) }
+        updater.refreshRequested()
+        for _ in 0..<90 where sent.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(disk.reachedPause)
+        let value = try XCTUnwrap(updater.snapshotForWeb)
+        XCTAssertEqual(sent, [.remote(value)], "기한 내에 저장한 판은 정리 중에도 첫 요청에 성공으로 한 번 답한다")
+        XCTAssertTrue(outcomes.isEmpty)
+        updater.refreshRequested()
+        XCTAssertEqual(sent, [.remote(value), .remoteFailed], "만료된 작업에 다음 요청을 붙이지 않는다")
+        disk.release.signal()
+        for _ in 0..<100 where outcomes.isEmpty { try await Task.sleep(for: .milliseconds(30)) }
+        XCTAssertEqual(outcomes, [.accepted(value)])
+        XCTAssertEqual(sent, [.remote(value), .remoteFailed], "옛 작업이 다음 요청에 늦은 응답을 보내지 않는다")
+        updater.refreshRequested()
+        for _ in 0..<100 where sent.count < 3 { try await Task.sleep(for: .milliseconds(30)) }
+        XCTAssertEqual(sent, [.remote(value), .remoteFailed, .remote(value)])
+    }
+
+    @MainActor
+    func testSlowCleanupAnnouncesFirstAutomaticAcceptanceExactlyOnce() async throws {
+        let (updater, disk) = try await delayedPublish(.afterReplace)
+        defer { disk.release.signal() }
+        var sent: [ToWeb] = []
+        var outcomes: [RemoteOutcome] = []
+        updater.deliver = { sent.append($0) }
+        updater.onFinish = { _, result, _ in outcomes.append(result) }
+        XCTAssertNil(updater.snapshotForWeb)
+        updater.pageRendered()
+        for _ in 0..<90 where sent.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(disk.reachedPause)
+        let value = try XCTUnwrap(updater.snapshotForWeb)
+        XCTAssertEqual(value.seq, 2)
+        XCTAssertEqual(sent, [.remote(value)], "새로 확인이 없는 첫 화면에도 받은 판을 알린다")
+        XCTAssertTrue(outcomes.isEmpty)
+        disk.release.signal()
+        for _ in 0..<100 where outcomes.isEmpty { try await Task.sleep(for: .milliseconds(30)) }
+        XCTAssertEqual(outcomes, [.accepted(value)])
+        XCTAssertEqual(sent, [.remote(value)])
+    }
+
+    @MainActor
+    func testManualDeadlineBeforeRenameCannotPublishAfterTheFailure() async throws {
+        let (updater, disk) = try await delayedPublish(.beforeReplace)
+        defer { disk.release.signal() }
+        var sent: [ToWeb] = []
+        var outcomes: [RemoteOutcome] = []
+        updater.deliver = { sent.append($0) }
+        updater.onFinish = { _, result, _ in outcomes.append(result) }
+        updater.refreshRequested()
+        for _ in 0..<90 where sent.isEmpty { try await Task.sleep(for: .milliseconds(50)) }
+        XCTAssertTrue(disk.reachedPause)
+        XCTAssertNil(updater.snapshotForWeb)
+        XCTAssertEqual(sent, [.remoteFailed])
+        updater.refreshRequested()
+        XCTAssertEqual(sent, [.remoteFailed, .remoteFailed])
+        disk.release.signal()
+        for _ in 0..<100 where outcomes.isEmpty { try await Task.sleep(for: .milliseconds(30)) }
+        guard case .failed? = outcomes.first else { return XCTFail("마감이 먼저라서 저장하지 않아야 한다") }
+        XCTAssertNil(updater.snapshot)
+        XCTAssertEqual(sent, [.remoteFailed, .remoteFailed])
+        updater.refreshRequested()
+        for _ in 0..<100 where sent.count < 3 { try await Task.sleep(for: .milliseconds(30)) }
+        let value = try XCTUnwrap(updater.snapshotForWeb)
+        XCTAssertEqual(sent, [.remoteFailed, .remoteFailed, .remote(value)])
     }
 }

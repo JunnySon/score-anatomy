@@ -469,7 +469,7 @@ const REQUIRED = {
   shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  overflowTests: 8, // 가로 넘침 화면 테스트(e2e/overflow.spec.ts, 작업 지시서 4-1 의 2-2) 수: 폭 일곱 가지와 앱용 묶음 하나
+  overflowTests: 8, // 가로 넘침 화면 테스트(e2e/horizontal-width.spec.ts, 작업 지시서 4-1 의 2-2) 수: 폭 일곱 가지와 앱용 묶음 하나
   overflowChecks: 203, // 가로 넘침을 잰 수의 최소: 폭 7가지마다 일반 빌드 화면 17개(119)와 앱용 묶음 둘의 화면 6개(84)
   e2eTests: 263, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22). 표시 화면의 자리 밀림(별도 검토 C10)에서 2개 늘었다(rhythm 1, fill 1). 작업 지시서 4의 2-2에서 27개, 그 별도 검토에서 6개 늘었다(fill 5, appRemote 1). 0.3.3(작업 지시서 4-1)에서 22개 늘었다(fill 14, overflow 8).
   unitTests: 462, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기). 작업 지시서 4의 2-2에서 1개 늘었다(누르는 동안 온 dblclick 으로 채운 누름 세기).
@@ -561,8 +561,8 @@ const fillOk = allOk(fillTests) && fillTests.length === REQUIRED.fillTests;
 const iosWebOk = allOk(iosWebTests) && iosWebTests.length === REQUIRED.iosWebTests;
 const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0 && fillOk && iosWebOk;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
-// 가로 넘침(작업 지시서 4-1 의 2-2): 폭 일곱 가지에서 모든 화면의 문서 폭과 화면 밖으로 나간 요소를 잰다(e2e/overflow.spec.ts).
-const overflowTests = byFile('overflow.spec.ts');
+// 가로 넘침(작업 지시서 4-1 의 2-2): 폭 일곱 가지에서 모든 화면의 문서 폭과 화면 밖으로 나간 요소를 잰다(e2e/horizontal-width.spec.ts).
+const overflowTests = byFile('horizontal-width.spec.ts');
 const overflowRows = metrics.filter((m) => m.kind === 'overflow');
 const overflowWide = overflowRows.filter((r) => r.docW > r.vw || r.bodyW > r.vw);
 const overflowOut = overflowRows.filter((r) => Array.isArray(r.offenders) && r.offenders.length > 0);

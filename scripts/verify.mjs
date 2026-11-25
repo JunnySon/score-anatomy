@@ -469,7 +469,9 @@ const REQUIRED = {
   shots: 79, // 화면 코스의 캡처 장수(밝은 화면, 어두운 화면, 작은 화면 묶음마다)
   auditStates: 374, // 화면 검사를 거친 화면 상태 수의 최소
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
-  e2eTests: 241, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22). 표시 화면의 자리 밀림(별도 검토 C10)에서 2개 늘었다(rhythm 1, fill 1). 작업 지시서 4의 2-2에서 27개, 그 별도 검토에서 6개 늘었다(fill 5, appRemote 1).
+  overflowTests: 8, // 가로 넘침 화면 테스트(e2e/horizontal-width.spec.ts, 작업 지시서 4-1 의 2-2) 수: 폭 일곱 가지와 앱용 묶음 하나
+  overflowChecks: 203, // 가로 넘침을 잰 수의 최소: 폭 7가지마다 일반 빌드 화면 17개(119)와 앱용 묶음 둘의 화면 6개(84)
+  e2eTests: 263, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22). 표시 화면의 자리 밀림(별도 검토 C10)에서 2개 늘었다(rhythm 1, fill 1). 작업 지시서 4의 2-2에서 27개, 그 별도 검토에서 6개 늘었다(fill 5, appRemote 1). 0.3.3(작업 지시서 4-1)에서 22개 늘었다(fill 14, overflow 8).
   unitTests: 462, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기). 작업 지시서 4의 2-2에서 1개 늘었다(누르는 동안 온 dblclick 으로 채운 누름 세기).
   toolTests: 104, // 통과한 발행 도구(scripts/exams) 단위 테스트 수의 최소(13번)
   leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
@@ -481,7 +483,8 @@ const REQUIRED = {
   appStyleTests: 3, // 배포용 묶음과 시험용 묶음의 모양 비교 화면 테스트(e2e/appStyle.spec.ts) 수
   // 빠진 누름 채우기 화면 테스트(e2e/fill.spec.ts, 작업 지시서 3-1의 3-1) 수. 별도 검토 C10 에서 1개 늘었다(채점한 기록에서 처음 바꾸는 표시 칸).
   // 작업 지시서 4의 2-2(누르는 동안 온 dblclick 으로 채우기)에서 27개, 그 별도 검토에서 5개 늘었다(같은 결과 14, 채우는 경우와 채우지 않는 경우 15, 세 번 누름 2, 측정 1).
-  fillTests: 67,
+  // 0.3.3(작업 지시서 4-1 의 2-1)에서 독립 검토의 회귀 4개를 포함해 14개 늘었다(채운 곳의 장부, 꼭 넣을 테스트 1~8, 10, 11. 9번은 고치기 전 코드로 1번을 돌려 본 것).
+  fillTests: 81,
   iosWebTests: 22, // 아이폰에서 찾은 보기 문제 화면 테스트(e2e/iosweb.spec.ts, 작업 지시서 3-1의 3-2 ~ 3-5) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
@@ -558,7 +561,19 @@ const fillOk = allOk(fillTests) && fillTests.length === REQUIRED.fillTests;
 const iosWebOk = allOk(iosWebTests) && iosWebTests.length === REQUIRED.iosWebTests;
 const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0 && fillOk && iosWebOk;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
+// 가로 넘침(작업 지시서 4-1 의 2-2): 폭 일곱 가지에서 모든 화면의 문서 폭과 화면 밖으로 나간 요소를 잰다(e2e/horizontal-width.spec.ts).
+const overflowTests = byFile('horizontal-width.spec.ts');
+const overflowRows = metrics.filter((m) => m.kind === 'overflow');
+const overflowWide = overflowRows.filter((r) => r.docW > r.vw || r.bodyW > r.vw);
+const overflowOut = overflowRows.filter((r) => Array.isArray(r.offenders) && r.offenders.length > 0);
+const overflowOk =
+  allOk(overflowTests) &&
+  overflowTests.length === REQUIRED.overflowTests &&
+  overflowRows.length >= REQUIRED.overflowChecks &&
+  overflowWide.length === 0 &&
+  overflowOut.length === 0;
 const smallOk =
+  overflowOk &&
   allOk(smallTests) &&
   smallEnough &&
   fitEnough &&
@@ -725,7 +740,7 @@ function buildReport(textOk, textResult) {
       '3',
       '작은 화면(360x640)',
       smallOk,
-      `화면 상태 ${smallAudits.length}개 검사(스크롤 없이 들어와야 하는 답 입력 상태 ${fitAudits.length}개 포함). 겹침 ${count(smallAudits, (a) => a.overlaps)}곳, 가려짐 ${count(smallAudits, (a) => a.obscured)}곳, 옆으로 잘림 ${count(smallAudits, (a) => a.clippedSide)}곳, 답 입력 화면에서 화면 밖 ${count(fitAudits, (a) => a.outside)}곳, 스크롤 생김 ${fitAudits.filter((a) => a.scrolls).length}곳${short('작은 화면 상태', smallAudits.length, REQUIRED.smallStates)}${short('스크롤 없이 들어와야 하는 상태', fitAudits.length, REQUIRED.fitStates)}${incomplete(auditsComplete, '화면 검사 기록')}`,
+      `화면 상태 ${smallAudits.length}개 검사(스크롤 없이 들어와야 하는 답 입력 상태 ${fitAudits.length}개 포함). 겹침 ${count(smallAudits, (a) => a.overlaps)}곳, 가려짐 ${count(smallAudits, (a) => a.obscured)}곳, 옆으로 잘림 ${count(smallAudits, (a) => a.clippedSide)}곳, 답 입력 화면에서 화면 밖 ${count(fitAudits, (a) => a.outside)}곳, 스크롤 생김 ${fitAudits.filter((a) => a.scrolls).length}곳${short('작은 화면 상태', smallAudits.length, REQUIRED.smallStates)}${short('스크롤 없이 들어와야 하는 상태', fitAudits.length, REQUIRED.fitStates)}${incomplete(auditsComplete, '화면 검사 기록')}. 가로 넘침(폭 360, 375, 390, 393, 402, 414, 430, 일반 빌드 화면 17개와 앱용 묶음 둘의 화면 6개): ${overflowRows.length}번 잼, 문서나 본문의 스크롤 폭이 화면 폭을 넘은 곳 ${overflowWide.length}곳, 화면 밖으로 나간 요소가 있던 곳 ${overflowOut.length}곳, 테스트 ${overflowTests.length}개 가운데 ${overflowTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.overflowTests}개)${short('가로 넘침을 잰 수', overflowRows.length, REQUIRED.overflowChecks, '번')}`,
     ],
     [
       '4',

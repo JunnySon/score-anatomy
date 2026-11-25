@@ -1292,3 +1292,266 @@ test('측정 중 누르는 동안 온 dblclick 으로 채운 누름은 filled_ta
   expect(row[head.indexOf('filled_taps')]).toBe('2');
   expect(row[head.indexOf('filled_held_taps')]).toBe('1');
 });
+
+test.describe('채운 곳의 장부: 채운 뒤 늦게 온 진짜 click 버리기(작업 지시서 4-1 의 2-1, 맥의 iOS 18.4 에서 잰 차례)', () => {
+  // 맥의 iOS 18.4 시뮬레이터(웹 0.3.2): 표시 칸을 아주 빠르게 두 번 누르자 click 2(손가락), 손뗌 수 규칙이 채운 click 1, dblclick 2 뒤에
+  // 첫 누름의 click 1 이 늦게(click 2 의 5ms 뒤) 와서 두 번 누름이 세 번 들어갔다. 채운 곳에서는 받아들인 입력 수가 뗀 누름 수를 넘지 않게 한다.
+  // 표시 칸(5지선다 3번)과 답 키(3)에서 같은 차례를 돌린다. "들어간 수"는 표시 칸이면 표시가 바뀐 수(표시 없음, 고민, 찍음 차례로 돈다),
+  // 답 키면 3이 들어간 문항 수다.
+  interface Target {
+    name: string;
+    /** 그 화면을 열고 누를 요소와 그 가운데를 돌려준다. */
+    open: (page: Page) => Promise<{ el: string; p: Pt }>;
+    /** 이웃한 같은 종류 요소 둘(안드로이드의 옆 요소 이어 누름). */
+    neighbors: string[];
+    expectEntered: (page: Page, n: number) => Promise<void>;
+  }
+  const MARKS = ['none', 'doubt', 'guess'];
+  const TARGETS: Target[] = [
+    {
+      name: '표시 칸',
+      open: async (page) => {
+        await seedAndOpen(page, all, '/marks');
+        await countFills(page);
+        return { el: '[data-mark-cell="3"]', p: await centerOf(page, '[data-mark-cell="3"]') };
+      },
+      neighbors: ['[data-mark-cell="4"]', '[data-mark-cell="5"]'],
+      expectEntered: async (page, n) => {
+        await expect(page.locator('[data-mark-cell="3"]')).toHaveAttribute('data-mark', MARKS[n % 3]!);
+      },
+    },
+    {
+      name: '답 키',
+      open: async (page) => {
+        await seedAndOpen(page, {}, '/input?input=keypad');
+        await expect(page.getByTestId('now-no')).toHaveText('1번');
+        await countFills(page);
+        return { el: '[data-key="3"]', p: await centerOf(page, '[data-key="3"]') };
+      },
+      neighbors: ['[data-key="4"]', '[data-key="5"]'],
+      expectEntered: async (page, n) => {
+        const a = await answersOf(page);
+        expect(Object.values(a).filter((v) => v === 3).length).toBe(n);
+      },
+    },
+  ];
+
+  /** 그 요소에 그 좌표로 click 하나를 보낸다(좌표 아래의 요소가 아니라 그 요소로. 확대 중에 좌표가 어긋난 click 을 흉내 낸다). */
+  async function clickOn(page: Page, selector: string, at: Pt, detail: number): Promise<void> {
+    await page.evaluate(
+      ({ selector, at, detail }) => {
+        const el = document.querySelector(selector)!;
+        const ev = new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window, detail, clientX: at.x, clientY: at.y });
+        (ev as MouseEvent & { __test?: boolean }).__test = true;
+        el.dispatchEvent(ev);
+      },
+      { selector, at, detail },
+    );
+  }
+
+  /** 끝난 뒤 공통으로 보는 것: 늦은 click 을 버린 수, 버린 누름 알림이 없음. */
+  async function expectDrops(page: Page, n: number, label: string): Promise<void> {
+    await page.waitForTimeout(150);
+    expect(await traced(page, 'late-drop'), `${label}: 버린 늦은 click`).toBe(n);
+    await expect(page.locator('[data-testid="tap-notice"]'), `${label}: 알림 없음`).toHaveCount(0);
+  }
+
+  test('1. 맥이 잰 차례(누름, 손뗌, 누름, 손뗌, click 2, dblclick 2, click 1): 두 번 들어가고 하나를 버리며 알림이 없다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      // 누름 시작 사이 70ms 안팎(앞 누름 뒤 60ms 기다림), 마지막 click 1 은 click 2 의 몇 ms 뒤.
+      await playIos(page, p, ['p', { wait: 60 }, 'p', 2, 'dbl', { wait: 5 }, 1]);
+      expect(await fills(page), t.name).toEqual([1]);
+      await expectDrops(page, 1, t.name);
+      await t.expectEntered(page, 2);
+    }
+  });
+
+  test('2. 세 번 누름(누름 둘, click 2, dblclick 2, 셋째 누름과 손뗌, click 1): 세 번 들어간다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2, 'dbl', 'p', 1]);
+      await expectDrops(page, 0, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('3. 세 번 누름인데 셋째 손뗌이 click 2 보다 먼저 옴(누름 셋, click 2, dblclick 2, click 1): 셋째 누름의 click 을 받아 세 번 들어간다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 'p', 2, 'dbl', 1]);
+      await expectDrops(page, 0, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('4. 채운 뒤 1초 안에 같은 자리를 보통 빠르기로 한 번 더 누르면 받는다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2, 'dbl', { wait: 300 }, 'p', 1]);
+      await expectDrops(page, 0, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('5. 채운 누름의 늦은 click 이 새 누름의 손뗌 뒤에 와도 들어간 수가 누른 수와 같다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2, 'dbl']);
+      // 셋째 누름을 뗀 뒤 첫 누름의 늦은 click 1 과 셋째 누름의 click 1 이 차례로 온다(누른 수 3).
+      await iosPress(page, p, { clicks: [1] });
+      await clickAt(page, p, 1);
+      await expectDrops(page, 1, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('6. detail 3 인 click 하나로 둘을 채운 뒤 손뗌 없이 click 이 둘 더 오면 둘 다 버린다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 'p', 3, 1, 2]);
+      expect(await fills(page), t.name).toEqual([1, 2]);
+      await expectDrops(page, 2, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('7. 마우스 더블클릭과 안드로이드 크롬의 차례(결정기록 7.1, 7.8)는 채움 0, 버림 0 이다', async ({ page }) => {
+    for (const t of TARGETS) {
+      // 마우스 더블클릭: 누름마다 click 이 오고 dblclick 은 둘째 click 뒤에 온다.
+      const { p } = await t.open(page);
+      await iosPress(page, p, { mouse: true, thenClick: 1 });
+      await iosPress(page, p, { mouse: true, thenClick: 2 });
+      await dblclickAt(page, p);
+      expect(await fills(page), `${t.name} 마우스`).toEqual([]);
+      await expectDrops(page, 0, `${t.name} 마우스`);
+      await t.expectEntered(page, 2);
+      expect(await traced(page, 'ledger'), `${t.name} 마우스: 장부를 열지 않음`).toBe(0);
+      // 안드로이드 크롬: 같은 요소 두 번(click 1, click 2, dblclick 2), 그 뒤 옆 요소 둘을 빠르게 이어 누름(detail 이 오름).
+      const again = await t.open(page);
+      await playIos(page, again.p, ['p', 1, 'p', 2, 'dbl']);
+      await page.waitForTimeout(600);
+      await playIos(page, await centerOf(page, t.neighbors[0]!), ['p', 1]);
+      await playIos(page, await centerOf(page, t.neighbors[1]!), ['p', 2, 'dbl']);
+      expect(await fills(page), `${t.name} 안드로이드`).toEqual([]);
+      await expectDrops(page, 0, `${t.name} 안드로이드`);
+      await t.expectEntered(page, 2);
+      expect(await traced(page, 'ledger'), `${t.name} 안드로이드: 장부를 열지 않음`).toBe(0);
+    }
+  });
+
+  test('8. 채운 곳에서 1초 안에 키보드(Enter, Space)나 스크립트로 낸 click 은 받는다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { el, p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2]);
+      expect(await traced(page, 'ledger'), t.name).toBe(1);
+      await page.locator(el).focus();
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Space');
+      await page.evaluate((s) => (document.querySelector(s) as HTMLElement).click(), el);
+      await expectDrops(page, 0, t.name);
+      await t.expectEntered(page, 5);
+    }
+  });
+
+  test('10. 1번과 같은데 마지막 click 1 의 좌표가 채운 자리에서 가로 74px, 세로 96px 어긋나고 대상은 같은 버튼이면 버린다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { el, p } = await t.open(page);
+      await playIos(page, p, ['p', { wait: 60 }, 'p', 2, 'dbl']);
+      // 맥의 기록처럼 확대가 시작돼 click 의 좌표가 어긋났다(197,255 에서 123,159). 대상은 같은 버튼이다.
+      await clickOn(page, el, { x: p.x - 74, y: p.y - 96 }, 1);
+      await expectDrops(page, 1, t.name);
+      await t.expectEntered(page, 2);
+    }
+  });
+
+  test('11. 채운 뒤 1초 안에 같은 버튼의 다른 자리(24px 밖)를 새로 누르면 받는다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { el, p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2, 'dbl']);
+      const box = (await page.locator(el).boundingBox())!;
+      const q = { x: box.x + box.width - 3, y: p.y };
+      expect(Math.abs(q.x - p.x), `${t.name}: 24px 밖`).toBeGreaterThan(24);
+      await iosPress(page, q, { thenClick: 1 });
+      await expectDrops(page, 0, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('이미 채운 두 버튼에 늦은 click이 하나씩 오면 각각 버린다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      const other = await centerOf(page, t.neighbors[0]!);
+      await playIos(page, p, ['p', 'p', 2]);
+      await playIos(page, other, ['p', 'p', 2]);
+      await clickAt(page, p, 1);
+      await clickAt(page, other, 1);
+      await expectDrops(page, 2, t.name);
+      await t.expectEntered(page, 2);
+      if (t.name === '표시 칸') await expect(page.locator(t.neighbors[0]!)).toHaveAttribute('data-mark', 'guess');
+      else expect(Object.values(await answersOf(page)).filter((v) => v === 4)).toHaveLength(2);
+    }
+  });
+
+  test('같은 버튼을 연달아 채워도 앞서 뗀 셋째 누름과 두 번의 버림 횟수가 남는다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 'p', 2, 'p', 'p', 2, 1, 1, 1]);
+      await expectDrops(page, 2, t.name);
+      await t.expectEntered(page, 5);
+    }
+  });
+
+  test('손가락으로 채운 뒤 같은 버튼을 실제 마우스로 누르면 즉시 받고 늦은 손가락 click만 버린다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2]);
+      await page.mouse.click(p.x, p.y);
+      await t.expectEntered(page, 3);
+      expect(await traced(page, 'late-drop'), t.name).toBe(0);
+      await clickAt(page, p, 1);
+      await expectDrops(page, 1, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('인접한 두 버튼의 가장자리에서는 각 버튼의 손뗌과 늦은 click을 구분한다', async ({ page }) => {
+    for (const t of TARGETS) {
+      for (const scenario of ['lift-near', 'click-near', 'two-fills']) {
+        const fillNeighbor = scenario === 'two-fills';
+        const { el } = await t.open(page);
+        const next = t.neighbors[0]!;
+        const a = (await page.locator(el).boundingBox())!;
+        const b = (await page.locator(next).boundingBox())!;
+        // 답 키 3과 4는 줄이 다르므로 수평으로 이웃한 2를 쓴다.
+        const neighbor = Math.abs(a.y - b.y) < 1 ? next : '[data-key="2"]';
+        const near = (await page.locator(neighbor).boundingBox())!;
+        const dir = near.x > a.x ? 1 : -1;
+        const edge = dir === 1 ? a.x + a.width : a.x;
+        const otherEdge = dir === 1 ? near.x : near.x + near.width;
+        const p = { x: edge - dir * 2, y: a.y + a.height / 2 };
+        const q = { x: p.x + dir * 26, y: p.y };
+        const close = { x: p.x + dir * 22, y: p.y };
+        expect((close.x - otherEdge) * dir).toBeGreaterThan(0);
+        await playIos(page, p, ['p', 'p', 2]);
+        if (fillNeighbor) {
+          await playIos(page, q, ['p', 'p', 2]);
+          await clickOn(page, neighbor, close, 1);
+          await clickAt(page, p, 1);
+        } else if (scenario === 'click-near') {
+          await iosPress(page, q);
+          await clickOn(page, neighbor, close, 1);
+          await clickAt(page, p, 1);
+        } else {
+          await iosPress(page, close);
+          await clickAt(page, p, 1);
+          await clickOn(page, neighbor, close, 1);
+        }
+        await expectDrops(page, fillNeighbor ? 2 : 1, t.name);
+        await t.expectEntered(page, 2);
+        if (t.name === '표시 칸') await expect(page.locator(neighbor)).toHaveAttribute('data-mark', fillNeighbor ? 'guess' : 'doubt');
+        else expect(Object.values(await answersOf(page)).filter((v) => v === (neighbor === next ? 4 : 2))).toHaveLength(fillNeighbor ? 2 : 1);
+      }
+    }
+  });
+});

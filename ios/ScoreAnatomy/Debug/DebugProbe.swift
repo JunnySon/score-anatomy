@@ -154,6 +154,20 @@ final class DebugProbe {
 
     private func run(_ body: String, writeTo fileName: String) async {
         guard let directory, let webView else { return }
+        if body == "// native-scroll-metrics" {
+            let scroll = webView.scrollView
+            let bounds = scroll.bounds
+            let metrics: [String: Any] = [
+                "zoomScale": scroll.zoomScale,
+                "minimumZoomScale": scroll.minimumZoomScale,
+                "maximumZoomScale": scroll.maximumZoomScale,
+                "contentSize": ["width": scroll.contentSize.width, "height": scroll.contentSize.height],
+                "bounds": ["x": bounds.minX, "y": bounds.minY, "width": bounds.width, "height": bounds.height],
+            ]
+            let data = try? JSONSerialization.data(withJSONObject: ["ok": true, "value": metrics])
+            try? data?.write(to: directory.appendingPathComponent(fileName), options: .atomic)
+            return
+        }
         let wrapped = "const __v = await (async () => {\n\(body)\n})();\nreturn JSON.stringify(__v === undefined ? null : __v);"
         // Swift 전용 함수(libswiftWebKit)를 쓰지 않으려고 Objective-C 기본 API 를 그대로 부른다(iOS 18 에서도 켜지게).
         let output: String = await withCheckedContinuation { continuation in

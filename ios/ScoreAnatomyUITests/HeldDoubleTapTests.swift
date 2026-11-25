@@ -224,3 +224,212 @@ final class HeldDoubleTapTests: XCTestCase {
         try firstTouchTrials(slug: "double-first", target: "표시 칸 아주 빠르게 두 번(켠 뒤 첫 누름)", taps: 2)
     }
 }
+
+/// 부록 A 3-1. 각 경우를 새 프로세스에서 열고 실제 손가락 이벤트와 화면 상태를 기록한다.
+@MainActor
+final class ZoomDiagnosticsTests: XCTestCase {
+    private enum Scenario: String, CaseIterable {
+        case A, B, C, D, E, F, Gkey, Ggrade, H, I
+
+        var selector: String {
+            switch self {
+            case .Gkey: "[data-key='3']"
+            case .Ggrade: "[data-testid='grade-1']"
+            default: "[data-mark-cell='3']"
+            }
+        }
+
+        @MainActor
+        func open(_ handle: AppHandle) throws -> XCUIElement {
+            let key = self == .Gkey
+            let grade = self == .Ggrade
+            handle.seedSession(answers: key ? [:] : ExampleA.answers,
+                               gradedAt: grade ? "2026-11-22T11:00:00.000Z" : nil)
+            handle.launch(extra: ["-SAEventLog"])
+            // WKWebView가 먼저 보이고 시험용 문서와 라우터는 잠시 뒤에 준비될 수 있다.
+            guard handle.waitForStats(timeout: 35, { ($0["rendered"] as? Int ?? 0) > 0 && $0["failure"] == nil }) else {
+                throw NSError(domain: "ZoomDiagnostics", code: 1, userInfo: [NSLocalizedDescriptionKey: "시작 화면 준비 실패: \(handle.shellStats())"])
+            }
+            handle.waitForRoute("/", timeout: 10)
+            if grade {
+                handle.open("/anatomy", route: "/anatomy")
+                let found = handle.evaluate("const e = document.querySelector('[data-testid=grade-1]'); if (e) e.scrollIntoView({block:'center', behavior:'instant'}); return Boolean(e);")
+                XCTAssertEqual(found as? Bool, true)
+                return handle.any("1등급")
+            }
+            if key {
+                handle.open("/input?input=keypad", route: "/input")
+                return handle.key("3")
+            }
+            handle.open("/marks", route: "/marks")
+            return handle.markCell(3)
+        }
+    }
+
+    private func viewport(_ handle: AppHandle) throws -> [String: Any] {
+        var result = try XCTUnwrap(handle.evaluate("""
+        const root = document.documentElement, body = document.body, v = window.visualViewport;
+        const outside = [];
+        let outsideCount = 0;
+        for (const e of document.querySelectorAll('*')) {
+          const r = e.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) continue;
+          if (r.left < 0 || r.right > window.innerWidth + 0.5) {
+            outsideCount++;
+            if (outside.length < 10) outside.push({tag:e.localName, cls:e.getAttribute('class') || '', left:r.left, right:r.right});
+          }
+        }
+        return {innerWidth:window.innerWidth, clientWidth:root.clientWidth, scrollWidth:root.scrollWidth,
+                bodyScrollWidth:body.scrollWidth, visualWidth:v.width, scale:v.scale, offsetLeft:v.offsetLeft,
+                offsetTop:v.offsetTop, outside, outsideCount};
+        """) as? [String: Any])
+        result["native"] = try XCTUnwrap(handle.evaluate("// native-scroll-metrics") as? [String: Any])
+        return result
+    }
+
+    /// 대상의 React 처리까지 도달한 click을 센다. capture 단계에서 보호가 잘라 낸 click은 여기에 오지 않는다.
+    private func observe(_ handle: AppHandle, scenario: Scenario) throws {
+        let result = handle.evaluate("""
+        const sel = \(handle.jsString(scenario.selector));
+        if (document.querySelector(sel) === null) return false;
+        window.__saZoomInputs = [];
+        window.addEventListener('click', e => {
+          const el = e.composedPath().find(n => n instanceof Element && n.matches(sel));
+          if (el) window.__saZoomInputs.push({at:performance.now(), detail:e.detail, trusted:e.isTrusted});
+        }, {passive:true});
+        return true;
+        """)
+        XCTAssertEqual(try XCTUnwrap(result as? Bool), true)
+    }
+
+    private func configure(_ handle: AppHandle, scenario: Scenario) {
+        switch scenario {
+        case .C:
+            _ = handle.evaluate("document.documentElement.style.overflowX = 'hidden'; document.body.style.overflowX = 'hidden'; return true;")
+            Thread.sleep(forTimeInterval: 0.5)
+        case .D:
+            _ = handle.evaluate("document.documentElement.style.touchAction = 'manipulation'; return true;")
+        case .H, .I:
+            let type = scenario == .H ? "mousedown" : "click"
+            _ = handle.evaluate("""
+            window.__saZoomPrevented = 0;
+            window.addEventListener('\(type)', e => {
+              const b = e.target instanceof Element && e.target.closest('button');
+              if (b && b.closest('a') === null) { e.preventDefault(); window.__saZoomPrevented++; }
+            }, {capture:true, passive:false});
+            return true;
+            """)
+        default:
+            break
+        }
+    }
+
+    /// 표시 칸의 CSS 중심과 XCUITest 중심을 기준 삼아 글자와 버튼이 없는 본문 지점을 한 번 누른다.
+    private func tapBlank(_ handle: AppHandle, cell: XCUIElement) throws {
+        let value = try XCTUnwrap(handle.evaluate("""
+        const m = document.querySelector('[data-mark-cell="3"]').getBoundingClientRect();
+        const main = document.querySelector('main');
+        const words = [];
+        const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          if (walker.currentNode.textContent.trim()) {
+            const range = document.createRange();
+            range.selectNodeContents(walker.currentNode);
+            words.push(...range.getClientRects());
+          }
+        }
+        for (let y = Math.ceil(main.getBoundingClientRect().top + 8); y < m.top; y += 6) {
+          for (let x = window.innerWidth - 16; x >= 16; x -= 12) {
+            const el = document.elementFromPoint(x,y);
+            if (el && main.contains(el) && el.closest('button,a,[role=button],[role=radio],input,label') === null
+                && words.every(r => x < r.left - 2 || x > r.right + 2 || y < r.top - 2 || y > r.bottom + 2)) {
+              return {dx:x-m.x-m.width/2, dy:y-m.y-m.height/2};
+            }
+          }
+        }
+        return null;
+        """) as? [String: Double])
+        let dx = try XCTUnwrap(value["dx"])
+        let dy = try XCTUnwrap(value["dy"])
+        let p = center(cell)
+        try TouchSynth.tap(at: CGPoint(x: p.x + dx, y: p.y + dy))
+    }
+
+    private func record(_ scenario: Scenario, index: Int, folder: URL) throws {
+        let handle = AppHandle(name: "zoom-\(scenario.rawValue)-\(index)")
+        defer { handle.terminate() }
+        let target = try scenario.open(handle)
+        guard target.waitForExistence(timeout: 5) else {
+            throw NSError(domain: "ZoomDiagnostics", code: 2, userInfo: [NSLocalizedDescriptionKey: "대상 요소가 없음"])
+        }
+        try observe(handle, scenario: scenario)
+        let fresh = try viewport(handle)
+        configure(handle, scenario: scenario)
+        let before = (scenario == .C || scenario == .D) ? try viewport(handle) : fresh
+        var preparation: [[String: Any]] = []
+        TapTimeline.clearLogs(handle)
+        if scenario == .E {
+            try tapBlank(handle, cell: target)
+            Thread.sleep(forTimeInterval: 1)
+            preparation = TapTimeline.takeLogs(handle).0
+            XCTAssertEqual(preparation.filter { $0["type"] as? String == "pointerdown" }.count, 1)
+        }
+        let start = Date().timeIntervalSince1970
+        if scenario == .F {
+            try TouchSynth.spacedTaps(at: center(target), interval: 0)
+        } else {
+            target.doubleTap()
+        }
+        let end = Date().timeIntervalSince1970
+        Thread.sleep(forTimeInterval: 1.4)
+        let settled = Date().timeIntervalSince1970
+        let (events, trace) = TapTimeline.takeLogs(handle)
+        let after = try viewport(handle)
+        let inputs = try XCTUnwrap(handle.evaluate("return window.__saZoomInputs;") as? [[String: Any]])
+        let state: String
+        let targetName: String
+        switch scenario {
+        case .Gkey:
+            targetName = "button:3"
+            state = "답 \(handle.answerMap().count)개"
+        case .Ggrade:
+            targetName = "button:1등급"
+            state = try XCTUnwrap(handle.evaluate("return Array.from(document.querySelectorAll('[data-testid^=grade-][aria-checked=true]'), e=>e.dataset.testid).join(',');") as? String)
+        default:
+            targetName = "mark-cell:3"
+            state = try XCTUnwrap(handle.markOf(3))
+        }
+        let sample = TapTimeline.classify(index: index, events: events, trace: trace, endState: state)
+        let presses = events.filter { $0["type"] as? String == "pointerdown" && $0["target"] as? String == targetName }.count
+        let prevented = try XCTUnwrap(handle.evaluate("return window.__saZoomPrevented || 0;") as? Int)
+        let result: [String: Any] = [
+            "case": scenario.rawValue, "trial": index, "os": TapTimeline.os, "device": TestEnv.deviceTag,
+            "gestureStart": start, "gestureEnd": end, "settledAt": settled,
+            "fresh": fresh, "before": before, "after": after, "preparationEvents": preparation,
+            "entered": inputs.count, "presses": presses, "allPresses": sample.presses, "inputs": inputs,
+            "endState": state, "gapMs": sample.pressGapMs as Any? ?? NSNull(), "prevented": prevented,
+            "events": events, "trace": trace,
+        ]
+        let url = folder.appendingPathComponent(String(format: "%@-%02d.json", scenario.rawValue, index))
+        try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]).write(to: url, options: .atomic)
+        XCTAssertGreaterThan(sample.presses, 0, "손가락 이벤트 기록이 있어야 한다")
+    }
+
+    func testZoomDiagnostics() throws {
+        guard let raw = ProcessInfo.processInfo.environment["SA_ZOOM_CASES"] else {
+            throw XCTSkip("선택한 확대 진단에서 기록해요")
+        }
+        let scenarios = try raw.split(separator: ",").map { try XCTUnwrap(Scenario(rawValue: String($0))) }
+        XCTAssertFalse(scenarios.isEmpty)
+        let folder = TestEnv.outDirectory.appendingPathComponent("zoom", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = Int(ProcessInfo.processInfo.environment["SA_ZOOM_FIRST"] ?? "1") ?? 0
+        guard (1...10).contains(first) else { throw NSError(domain: "ZoomDiagnostics", code: 3) }
+        for scenario in scenarios {
+            for index in (scenario == scenarios.first ? first : 1)...10 {
+                do { try record(scenario, index: index, folder: folder) }
+                catch { XCTFail("\(scenario.rawValue) \(index)회 측정 실패: \(error)") }
+            }
+        }
+    }
+}

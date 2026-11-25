@@ -1514,4 +1514,39 @@ test.describe('채운 곳의 장부: 채운 뒤 늦게 온 진짜 click 버리�
       await t.expectEntered(page, 3);
     }
   });
+
+  test('인접한 두 버튼의 가장자리에서는 각 버튼의 손뗌과 늦은 click을 구분한다', async ({ page }) => {
+    for (const t of TARGETS) {
+      for (const fillNeighbor of [false, true]) {
+        const { el } = await t.open(page);
+        const next = t.neighbors[0]!;
+        const a = (await page.locator(el).boundingBox())!;
+        const b = (await page.locator(next).boundingBox())!;
+        // 답 키 3과 4는 줄이 다르므로 수평으로 이웃한 2를 쓴다.
+        const neighbor = Math.abs(a.y - b.y) < 1 ? next : '[data-key="2"]';
+        const near = (await page.locator(neighbor).boundingBox())!;
+        const dir = near.x > a.x ? 1 : -1;
+        const edge = dir === 1 ? a.x + a.width : a.x;
+        const otherEdge = dir === 1 ? near.x : near.x + near.width;
+        const p = { x: edge - dir * 2, y: a.y + a.height / 2 };
+        const q = { x: p.x + dir * 26, y: p.y };
+        const close = { x: p.x + dir * 22, y: p.y };
+        expect((close.x - otherEdge) * dir).toBeGreaterThan(0);
+        await playIos(page, p, ['p', 'p', 2]);
+        if (fillNeighbor) {
+          await playIos(page, q, ['p', 'p', 2]);
+          await clickOn(page, neighbor, close, 1);
+          await clickAt(page, p, 1);
+        } else {
+          await iosPress(page, close);
+          await clickAt(page, p, 1);
+          await clickOn(page, neighbor, close, 1);
+        }
+        await expectDrops(page, fillNeighbor ? 2 : 1, t.name);
+        await t.expectEntered(page, 2);
+        if (t.name === '표시 칸') await expect(page.locator(neighbor)).toHaveAttribute('data-mark', fillNeighbor ? 'guess' : 'doubt');
+        else expect(Object.values(await answersOf(page)).filter((v) => v === (neighbor === next ? 4 : 2))).toHaveLength(fillNeighbor ? 2 : 1);
+      }
+    }
+  });
 });

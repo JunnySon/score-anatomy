@@ -1071,7 +1071,7 @@ test.describe('누르는 동안 온 dblclick 으로 채우기: 채우는 경우�
     await playIos(page, await k(3), ['p', 1, 'h', { wait: AFTER_HELD_WAIT }, 2]);
     await page.waitForTimeout(700);
     expect(await fills(page)).toEqual([2]);
-    expect(await traced(page, 'late-drop')).toBe(1);
+    expect(await traced(page, 'held-late-drop')).toBe(1);
     expect(await answersOf(page)).toEqual({ 1: 3, 2: 3 });
     // 늦게 온 click 은 보호가 버린 누름이 아니라서 알림을 띄우지 않는다.
     await expect(page.getByTestId('tap-notice')).toHaveCount(0);
@@ -1146,7 +1146,7 @@ test.describe('누르는 동안 온 dblclick 으로 채우기: 채우는 경우�
       expect(await answersOf(page), `${name}: 채움`).toEqual({ 1: 3, 2: 3 });
       await press(page, p);
       await page.waitForTimeout(300);
-      expect(await traced(page, 'late-drop'), name).toBe(0);
+      expect(await traced(page, 'held-late-drop'), name).toBe(0);
       expect(await answersOf(page), name).toEqual(want);
     }
   });
@@ -1158,7 +1158,7 @@ test.describe('누르는 동안 온 dblclick 으로 채우기: 채우는 경우�
     // 셋째 누름을 뗀 뒤에 채운 누름의 늦은 click 2 와 셋째 누름의 click 1 이 차례로 온다. 둘 가운데 하나만 들어간다.
     await iosPress(page, p, { clicks: [2, 1] });
     await page.waitForTimeout(300);
-    expect(await traced(page, 'late-drop')).toBe(1);
+    expect(await traced(page, 'held-late-drop')).toBe(1);
     expect(await answersOf(page)).toEqual({ 1: 3, 2: 3, 3: 3 });
   });
 
@@ -1360,7 +1360,7 @@ test.describe('채운 곳의 장부: 채운 뒤 늦게 온 진짜 click 버리�
     for (const t of TARGETS) {
       const { p } = await t.open(page);
       // 누름 시작 사이 70ms 안팎(앞 누름 뒤 60ms 기다림), 마지막 click 1 은 click 2 의 몇 ms 뒤.
-      await playIos(page, p, ['p', { wait: 60 }, 'p', 2, 'dbl', 1]);
+      await playIos(page, p, ['p', { wait: 60 }, 'p', 2, 'dbl', { wait: 5 }, 1]);
       expect(await fills(page), t.name).toEqual([1]);
       await expectDrops(page, 1, t.name);
       await t.expectEntered(page, 2);
@@ -1474,6 +1474,43 @@ test.describe('채운 곳의 장부: 채운 뒤 늦게 온 진짜 click 버리�
       expect(Math.abs(q.x - p.x), `${t.name}: 24px 밖`).toBeGreaterThan(24);
       await iosPress(page, q, { thenClick: 1 });
       await expectDrops(page, 0, t.name);
+      await t.expectEntered(page, 3);
+    }
+  });
+
+  test('이미 채운 두 버튼에 늦은 click이 하나씩 오면 각각 버린다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      const other = await centerOf(page, t.neighbors[0]!);
+      await playIos(page, p, ['p', 'p', 2]);
+      await playIos(page, other, ['p', 'p', 2]);
+      await clickAt(page, p, 1);
+      await clickAt(page, other, 1);
+      await expectDrops(page, 2, t.name);
+      await t.expectEntered(page, 2);
+      if (t.name === '표시 칸') await expect(page.locator(t.neighbors[0]!)).toHaveAttribute('data-mark', 'guess');
+      else expect(Object.values(await answersOf(page)).filter((v) => v === 4)).toHaveLength(2);
+    }
+  });
+
+  test('같은 버튼을 연달아 채워도 앞서 뗀 셋째 누름과 두 번의 버림 횟수가 남는다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 'p', 2, 'p', 'p', 2, 1, 1, 1]);
+      await expectDrops(page, 2, t.name);
+      await t.expectEntered(page, 5);
+    }
+  });
+
+  test('손가락으로 채운 뒤 같은 버튼을 실제 마우스로 누르면 즉시 받고 늦은 손가락 click만 버린다', async ({ page }) => {
+    for (const t of TARGETS) {
+      const { p } = await t.open(page);
+      await playIos(page, p, ['p', 'p', 2]);
+      await page.mouse.click(p.x, p.y);
+      await t.expectEntered(page, 3);
+      expect(await traced(page, 'late-drop'), t.name).toBe(0);
+      await clickAt(page, p, 1);
+      await expectDrops(page, 1, t.name);
       await t.expectEntered(page, 3);
     }
   });

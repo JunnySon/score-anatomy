@@ -85,7 +85,7 @@
 // - 그 뒤 FILL_LATE_MS 동안 거기서 새로 뗀 누름을 더하고(취소 빼고, 셀 수 없는 누름도), 거기로 온 click 이 그 수를 넘기면
 //   채운 누름의 진짜 click 이 늦게 온 것으로 보고 버린다(알림과 버린 누름 셈 없음, 판단 기록 late-drop). 버리는 수는 채운 수까지이고
 //   다 버리면 장부를 닫는다. 키보드나 스크립트의 click(detail 0)은 건드리지 않는다. 채운 적이 없는 곳에서는 아무것도 버리지 않는다.
-// - 새로 채우면 장부를 새로 연다(앞 장부는 닫음). DROP_LATE_CLICKS 를 false 로 하면 이 버림만 꺼진다.
+// - 채움마다 남은 횟수와 만료 시각을 따로 둔다. 겹치는 장부는 같은 입력을 함께 반영한다. DROP_LATE_CLICKS 를 false 로 하면 이 버림만 꺼진다.
 
 /** 화면이 바뀐 뒤, 그 화면을 바꾼 누름의 자리를 다시 누른 것을 받지 않는 시간(ms). */
 export const TAP_GUARD_MS = 500;
@@ -187,6 +187,8 @@ interface Lift extends Spot {
   held: Held | null;
   /** 취소된 누름(pointercancel, touchcancel)인지. 취소된 누름은 click 이 없다. */
   cancel?: boolean;
+  /** touchend와 짝지을 필요가 없는 마우스나 펜의 pointerup. */
+  pointerOnly?: boolean;
 }
 /** 마지막으로 받은 click(보호가 버린 것도 센다) 뒤의 손뗌. pointer 와 touch 를 따로 모은다. */
 const lifts: { pointer: Lift[]; touch: Lift[] } = { pointer: [], touch: [] };
@@ -220,12 +222,12 @@ interface Ledger extends Spot {
   control: Element | null;
   until: number;
   base: number;
-  added: { pointer: number; touch: number };
+  added: { pointer: number; touch: number; pointerOnly: number };
   used: number;
   owed: number;
   rule: FillRule;
 }
-let ledger: Ledger | null = null;
+let ledgers: Ledger[] = [];
 /** 지금 막고 있는 자리. strict 면 단답형 숫자 키(data-tap-safe)도 버린다. */
 let guard: GuardRecord | null = null;
 /**
@@ -464,6 +466,7 @@ function onPointerUp(e: PointerEvent): void {
     y: e.clientY,
     t: now,
     ok: e.isPrimary && liftOk(press, e.clientX, e.clientY, now),
+    pointerOnly: e.pointerType === 'mouse' || e.pointerType === 'pen',
     control: press?.control ?? null,
     held: press?.held ?? null,
   };
@@ -535,66 +538,62 @@ function fewerSeen(counts: { pointer: number; touch: number }): number {
   return seen.length === 0 ? 0 : Math.min(...seen);
 }
 
-/** 마지막으로 받은 click 뒤 그곳(자리나 요소)에서 뗀 누름 수. 취소는 빼고 셀 수 없는 누름도 센다(받은 쪽 가운데 적은 쪽). */
+/** 마지막으로 받은 click 뒤 그곳에서 뗀 누름 수. 마우스와 펜은 touchend 없이도 한 번 센다. */
 function liftsAt(spot: Spot, control: Element | null): number {
-  const count = (list: Lift[]) => list.filter((l) => !l.cancel && samePlace(l, l.control, spot, control)).length;
-  return fewerSeen({ pointer: count(lifts.pointer), touch: count(lifts.touch) });
+  const here = (l: Lift) => !l.cancel && samePlace(l, l.control, spot, control);
+  const pointers = lifts.pointer.filter(here);
+  const pointerOnly = pointers.filter((l) => l.pointerOnly).length;
+  return pointerOnly + fewerSeen({ pointer: pointers.length - pointerOnly, touch: lifts.touch.filter(here).length });
 }
 
-/** 장부가 열려 있으면(채운 뒤 FILL_LATE_MS 안) 거기서 뗀 누름을 센다. 셀 수 없는 누름도 센다(그 누름도 click 을 낼 수 있다). */
+/** 만료 시각과 남은 버림 수는 채움마다 독립이다. 자리나 요소가 겹치는 장부에는 같은 손뗌과 입력이 보인다. */
+function ledgersAt(spot: Spot, control: Element | null): Ledger[] {
+  const now = performance.now();
+  ledgers = ledgers.filter((l) => l.owed > 0 && now <= l.until);
+  return ledgers.filter((l) => samePlace(spot, control, l, l.control));
+}
+
+function availableLifts(l: Ledger): number {
+  return Math.max(0, l.base + l.added.pointerOnly + fewerSeen(l.added) - l.used);
+}
+
 function countOwedLift(kind: 'pointer' | 'touch', lift: Lift): void {
-  const l = ledger;
-  if (!l) return;
-  if (performance.now() > l.until) {
-    ledger = null;
-    return;
-  }
-  if (samePlace(lift, lift.control, l, l.control)) l.added[kind] += 1;
+  for (const l of ledgersAt(lift, lift.control)) l.added[lift.pointerOnly ? 'pointerOnly' : kind] += 1;
 }
 
-/**
- * 장부를 새로 연다(앞 장부는 닫음). lifted 는 손뗌 목록을 비우기 전에 센 그곳의 손뗌 수(liftsAt), entered 는 이번에 들어간 수
- * (채운 수와 지금 click), owed 는 버릴 수 있는 수(채운 수)다. DROP_LATE_CLICKS 가 false 면 열지 않는다.
- */
+/** 새로 채운 횟수만큼 빚을 더한다. 앞 장부의 남은 손뗌과 빚의 만료 시각을 보존한다. */
 function openLedger(spot: Spot, control: Element | null, lifted: number, entered: number, owed: number, rule: FillRule): void {
   if (!DROP_LATE_CLICKS || owed <= 0) return;
-  ledger = {
-    x: spot.x,
-    y: spot.y,
-    control,
-    until: performance.now() + FILL_LATE_MS,
-    base: Math.max(0, lifted - entered),
-    added: { pointer: 0, touch: 0 },
-    used: 0,
-    owed,
-    rule,
-  };
-  trace('ledger', { rule, base: ledger.base, owed, x: Math.round(spot.x), y: Math.round(spot.y) });
+  let base = Math.max(0, lifted - entered);
+  for (const prior of ledgersAt(spot, control)) {
+    // 진짜 click은 dropLateClick에서 이미 셌다. 이번에 보낸 합성 click도 앞 장부에 한 번만 반영한다.
+    prior.used += Math.min(owed, availableLifts(prior));
+    // 같은 버튼의 앞 손뗌은 두 장부가 함께 본 것이다. 합치면 같은 손뗌을 두 번 세게 된다.
+    if (prior.control === control && control !== null) base = Math.max(base, availableLifts(prior));
+  }
+  ledgers.push({
+    x: spot.x, y: spot.y, control, until: performance.now() + FILL_LATE_MS,
+    base, added: { pointer: 0, touch: 0, pointerOnly: 0 }, used: 0, owed, rule,
+  });
+  trace('ledger', { rule, base, owed, x: Math.round(spot.x), y: Math.round(spot.y) });
 }
 
-/**
- * 장부로 늦게 온 진짜 click 인지 본다. 그렇다면 버리고 true. 아니면 그곳의 click 이면 장부에 센다.
- * 받아들인 수가 그곳에서 뗀 누름 수(base 와 연 뒤 뗀 누름)를 넘기는 click 만 버리고, 버릴 수 있는 수(owed)를 다 쓰면 장부를 닫는다.
- */
+/** 새 손뗌이 보인 장부마다 같은 입력을 한 번 기록한다. 모두 소진됐으면 가장 오래된 채움 한 번만 갚는다. */
 function dropLateClick(e: MouseEvent): boolean {
-  const l = ledger;
-  if (!l) return false;
-  if (performance.now() > l.until) {
-    ledger = null;
+  const control = e.target instanceof Element ? controlOf(e.target) : null;
+  const matching = ledgersAt({ x: e.clientX, y: e.clientY }, control);
+  const oldest = matching[0];
+  if (!oldest) return false;
+  const available = matching.filter((l) => availableLifts(l) > 0);
+  if (available.length > 0) {
+    for (const l of available) l.used += 1;
     return false;
   }
-  const control = e.target instanceof Element ? controlOf(e.target) : null;
-  if (!samePlace({ x: e.clientX, y: e.clientY }, control, l, l.control)) return false;
-  if (l.used + 1 > l.base + fewerSeen(l.added)) {
-    l.owed -= 1;
-    if (l.owed <= 0) ledger = null;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    trace('late-drop', { rule: l.rule, detail: e.detail, x: Math.round(e.clientX), y: Math.round(e.clientY) });
-    return true;
-  }
-  l.used += 1;
-  return false;
+  oldest.owed -= 1;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  trace(oldest.rule === 'held' ? 'held-late-drop' : 'late-drop', { rule: oldest.rule, detail: e.detail, x: Math.round(e.clientX), y: Math.round(e.clientY) });
+  return true;
 }
 
 /**

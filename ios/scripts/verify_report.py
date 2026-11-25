@@ -821,13 +821,44 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("## 3-2: 누르는 동안 온 dblclick 규칙을 잰 것(기록용)")
     lines.append("")
-    lines.append(f"TouchSynth 로 따로 보낸 누름의 가장 짧은 간격(누름 시작 사이 0.28~0.30초)으로 같은 자리를 두 번 눌렀어요. 사라짐은 둘째 누름의 손가락 click 이 오지 않은 것, 채움은 웹이 click 을 만들어 보낸 것(누르는 동안 온 dblclick 규칙과 손뗌 수 규칙), 늦은 click 버림은 채운 뒤 그 누름의 진짜 click 이 늦게 와서 웹이 버린 것이에요. 사라진 경우와 채운 경우의 이벤트 기록(시각 차례, 결정기록 7.8 의 형식)은 {held_path} 에 있어요.")
+    lines.append(f"표시 칸, 답 키, 점수 해부의 같은 자리를 누르는 세 실험에서는 0.29초를 목표로 TouchSynth가 두 번의 누름을 따로 보냈어요. 누름 시작 사이의 실측 최솟값과 최댓값은 표에 적었어요. 사라짐은 둘째 누름의 손가락 click 이 오지 않은 것, 채움은 웹이 click 을 만들어 보낸 것(누르는 동안 온 dblclick 규칙과 손뗌 수 규칙), 늦은 click 버림은 채운 뒤 그 누름의 진짜 click 이 늦게 와서 웹이 버린 것이에요. 사라진 경우와 채운 경우의 이벤트 기록(시각 차례, 결정기록 7.8 의 형식)은 {held_path} 에 있어요.")
     lines.append("")
     lines.append("| iOS | 경우 | 되풀이 | 사라짐(그 가운데 누르는 동안 dblclick) | 채움(누르는 동안 온 dblclick 으로) | 사라졌는데 채우지 않음 | 늦은 click 버림 | 누른 수보다 많이 들어감 | 확대 | 끝 상태 차이(첫 누름과 세 번) | 누름 시작 사이(ms) | 손뗌에서 click 까지 가장 긴 것(ms, 20ms 넘은 수) | 끝 상태 |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for r in held:
         ends = "; ".join(f"{k} {v}번" for k, v in sorted((r.get("endStates") or {}).items()))
-        lines.append(f"| {r.get('os')} | {esc(r.get('target'))} | {r.get('trials')} | {r.get('lost')}({r.get('dblclickWhileHeld')}) | {r.get('filled')}({r.get('heldFilled')}) | {r.get('lostNotFilled')} | {r.get('lateDropped')} | {r.get('over')} | {r.get('zoom')} | {r.get('wrongEnd')} | {r.get('gapMin')}~{r.get('gapMax')} | {r.get('liftToClickMax')}({r.get('liftToClickOver20')}) | {esc(ends)[:400]} |")
+        wrong_end = "해당 없음" if r.get("slug") in ("marks", "key", "anatomy") else r.get("wrongEnd", "확인하지 못함")
+        lines.append(f"| {r.get('os')} | {esc(r.get('target'))} | {r.get('trials')} | {r.get('lost')}({r.get('dblclickWhileHeld')}) | {r.get('filled')}({r.get('heldFilled')}) | {r.get('lostNotFilled')} | {r.get('lateDropped')} | {r.get('over')} | {r.get('zoom')} | {wrong_end} | {r.get('gapMin')}~{r.get('gapMax')} | {r.get('liftToClickMax')}({r.get('liftToClickOver20')}) | {esc(ends)[:400]} |")
+    # 전체 요약 전에 멈춘 경우도 저장된 파일과 시도별 측정에서 확인할 수 있다.
+    complete = {(r.get("device"), r.get("slug")) for r in held}
+    names = {"marks": "표시 칸 두 번", "key": "답 키 두 번", "anatomy": "점수 해부 두 번", "triple": "표시 칸 세 번",
+             "double-first": "표시 칸 첫 두 번", "triple-first": "표시 칸 첫 세 번",
+             "key-double-first": "답 키 첫 두 번", "key-triple-first": "답 키 첫 세 번"}
+    partial = []
+    for folder, device, runtime, result in (("held18", "iphone16", env.get("ios18Runtime"), held18_ui),
+                                            ("held26", "iphone17", env.get("mainRuntime"), held26_ui)):
+        attempts = pick(rows, "heldTrial", device=device)
+        if not attempts and not result:
+            continue
+        runtime = next((r["os"] for r in attempts if r.get("os")), runtime)
+        directory = os.path.join(out_dir, "runs", folder, "held")
+        files = set(os.listdir(directory)) if os.path.isdir(directory) else set()
+        for slug, label in names.items():
+            if (device, slug) in complete:
+                continue
+            records = [r for r in attempts if r.get("slug") == slug]
+            raw = sorted(f for f in files if re.fullmatch(re.escape(f"{device}-ios{runtime}-{slug}-") + r"\d+\.txt", f)
+                         and os.path.getsize(os.path.join(directory, f)) > 0)
+            available = [r for r in records if r.get("file") in raw]
+            scales = [r for r in available if min(r.get("before", -1), r.get("after", -1)) > 0]
+            zooms = sum(r["after"] - r["before"] > 0.01 for r in scales)
+            excess = [f"{r['index']}회차 `{r['file']}`" for r in records if r.get("over") is True]
+            over_text = ", ".join(excess) or ("관측 0회" if available else "확인하지 못함")
+            partial.append(f"| {runtime or '?'} | {label} | {len(raw)} | {zooms}/{len(scales)} | {over_text} |")
+    if partial:
+        lines.extend(["", "전체 요약이 없는 경우에는 저장된 시도까지만 적었어요.", "",
+                      "| iOS | 경우 | 확보한 원본 파일 수 | 확대 / 앞뒤 배율이 있는 시도 | 초과 입력 회차와 파일 |",
+                      "| --- | --- | --- | --- | --- |", *partial])
     lines.append("")
     lines.append("## Release 와 Debug 의 화면 모양(3-3)")
     lines.append("")
@@ -865,7 +896,7 @@ def cmd_render(out_dir, doc_path):
     for ch in FORBIDDEN:
         text = text.replace(ch, " ")
     with open(doc_path, "w", encoding="utf-8") as f:
-        f.write(text)
+        f.writelines(line.rstrip() + "\n" for line in text.splitlines())
     print(json.dumps({"items": [(i["no"], i["status"]) for i in items]}, ensure_ascii=False))
     sys.exit(0 if not total_fail and held_status == "통과" else 1)
 

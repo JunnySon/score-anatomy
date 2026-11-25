@@ -523,11 +523,6 @@ function onTouchCancel(e: TouchEvent): void {
   }
 }
 
-/** 자리(24px 안)나 요소 가운데 하나만 맞아도 같은 곳이다. 요소는 둘 다 있을 때만 견준다. */
-function samePlace(a: Spot, aControl: Element | null, b: Spot, bControl: Element | null): boolean {
-  return sameSpot(a, b) || (aControl !== null && bControl !== null && aControl === bControl);
-}
-
 /** 채운 지 1초 지난 빚과 오래된 손뗌을 없앤다. 다른 빚이 먼저 만료돼도 새 손뗌은 보존한다. */
 function pruneLedgers(): void {
   const now = performance.now();

@@ -97,6 +97,11 @@ extension AppHandle {
 
     /// 웹 화면 주소(# 뒤)를 바꿔 연다. 화면이 그려지고 처음 막기(0.5초)가 끝날 때까지 기다린다.
     func open(_ path: String, route: String, file: StaticString = #filePath, line: UInt = #line) {
+        // 앱의 첫 WKWebView는 묶음이 로드되기 전에도 보인다. 시작 문서가 준비된 뒤에만 hash를 바꾼다.
+        guard waitForStats(timeout: 30, { ($0["rendered"] as? Int ?? 0) > 0 && $0["failure"] == nil }) else {
+            XCTFail("화면 이동 전 시작 문서가 준비되지 않았다: \(shellStats())", file: file, line: line)
+            return
+        }
         _ = evaluate("location.hash = \(jsString("#" + path)); return true;")
         waitForRoute(route, file: file, line: line)
         Thread.sleep(forTimeInterval: 0.7)

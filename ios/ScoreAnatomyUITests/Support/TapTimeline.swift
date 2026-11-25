@@ -24,13 +24,31 @@ enum TapTimeline {
         var entered = 0
         /// 누른 수(pointerdown 수).
         var presses = 0
+        var pressedByElement: [String: Int] = [:]
+        var enteredByElement: [String: Int] = [:]
+        var overAt: [Double] = []
+        var firstDownTarget: String? {
+            events.first { $0["type"] as? String == "observed-down" }?["control"] as? String
+        }
+        var scaleBefore: Double?
+        var scaleAfter: Double?
+        var wrongEnd: Bool?
         var endState = ""
+
+        var elementOver: Bool {
+            enteredByElement.contains { key, count in count > pressedByElement[key, default: 0] }
+        }
+
+        var zoomed: Bool {
+            guard let scaleBefore, let scaleAfter else { return false }
+            return scaleAfter - scaleBefore > 0.01
+        }
         var pressGapMs: Double?
         /// 손을 뗀 뒤 그 누름의 손가락 click 이 오기까지(ms).
         var liftToClick: [Double] = []
 
         /// 누른 수보다 많이 들어갔다.
-        var over: Bool { entered > presses }
+        var over: Bool { entered > presses || elementOver || !overAt.isEmpty }
 
         var kind: String {
             var parts: [String] = []
@@ -50,6 +68,81 @@ enum TapTimeline {
         const out = { events: l.slice(), trace: t.slice() }; l.length = 0; t.length = 0; return out;
         """) as? [String: Any] ?? [:]
         return (value["events"] as? [[String: Any]] ?? [], value["trace"] as? [[String: Any]] ?? [])
+    }
+
+    /// 창의 capture에서 tapGuard를 통과한 click만 센다. 글이나 빈 곳은 입력으로 세지 않는다.
+    /// 같은 이름의 다른 버튼과 그 자리에 새로 생긴 요소를 구별하려고 실제 DOM 요소마다 번호를 붙인다.
+    static func beginHeld(_ handle: AppHandle) {
+        let ready = handle.evaluate("""
+        if (!Array.isArray(window.__saEventLog)) return false;
+        // 첫 판단 때 만드는 배열이라 아직 누른 적이 없는 화면에는 없을 수 있다.
+        if (window.__saTapTrace === undefined) window.__saTapTrace = [];
+        if (!Array.isArray(window.__saTapTrace)) return false;
+        window.__saEventLog.length = 0;
+        window.__saTapTrace.length = 0;
+        const rows = window.__saEventLog;
+        const ids = new WeakMap();
+        let next = 0;
+        const controller = new AbortController();
+        const track = (type, event) => {
+          const hit = event.target?.closest?.('button, a[href], input, select, textarea, summary, label, [role="radio"], [role="button"], [role="switch"]');
+          let target = '';
+          if (hit && !hit.matches(':disabled,[aria-disabled="true"]')) {
+            if (!ids.has(hit)) {
+              const name = hit.dataset.markCell || hit.dataset.testid || hit.getAttribute('aria-label') || hit.textContent.trim();
+              ids.set(hit, hit.tagName + ':' + name.slice(0, 48) + '#' + (++next));
+            }
+            target = ids.get(hit);
+          }
+          let control = '';
+          if (hit?.hasAttribute('data-mark-cell')) control = 'mark:' + hit.dataset.markCell;
+          else if (hit?.matches('[aria-label="답 키패드"] button[data-key]')) control = 'key:' + hit.dataset.key;
+          else if (hit?.dataset.testid?.startsWith('grade-')) control = 'grade:' + hit.dataset.testid.slice(6);
+          rows.push({type, now: performance.now(), target, control, trusted: event.isTrusted, detail: event.detail,
+                     x: event.clientX, y: event.clientY});
+        };
+        const options = {capture: true, passive: true, signal: controller.signal};
+        window.addEventListener('pointerdown', e => track('observed-down', e), options);
+        document.addEventListener('click', e => track('accepted-click', e), options);
+        window.__saHeldCapture = { controller, scale: window.visualViewport.scale };
+        return true;
+        """) as? Bool
+        XCTAssertEqual(ready, true, "손가락 이벤트와 웹 판단 기록이 모두 있어야 한다")
+    }
+
+    static func endHeld(_ handle: AppHandle, index: Int, expected: Int, endState: String) -> Trial {
+        let bounds = handle.evaluate("""
+        const capture = window.__saHeldCapture;
+        if (!capture) return null;
+        capture.controller.abort();
+        delete window.__saHeldCapture;
+        return [capture.scale, window.visualViewport.scale];
+        """) as? [NSNumber]
+        let (events, trace) = takeLogs(handle)
+        var trial = classify(index: index, events: events, trace: trace, endState: endState)
+        if let bounds, bounds.count == 2 {
+            trial.scaleBefore = bounds[0].doubleValue
+            trial.scaleAfter = bounds[1].doubleValue
+        }
+        let observed = events.filter { $0["type"] as? String == "observed-down" }
+        for event in events {
+            guard let key = event["target"] as? String, !key.isEmpty else { continue }
+            switch event["type"] as? String {
+            case "observed-down":
+                trial.pressedByElement[key, default: 0] += 1
+            case "accepted-click":
+                trial.enteredByElement[key, default: 0] += 1
+                if trial.enteredByElement[key, default: 0] > trial.pressedByElement[key, default: 0] {
+                    trial.overAt.append(number(event["now"]) ?? 0)
+                }
+            default: break
+            }
+        }
+        trial.entered = trial.enteredByElement.values.reduce(0, +)
+        XCTAssertEqual(observed.count, expected, "실제 누름 수가 빠졌어요")
+        XCTAssertEqual(trial.presses, expected, "원본 pointerdown 수가 빠졌어요")
+        XCTAssertNotNil(trial.scaleAfter, "앞뒤 배율이 있어야 한다")
+        return trial
     }
 
     private static func number(_ value: Any?) -> Double? {
@@ -88,7 +181,7 @@ enum TapTimeline {
         trial.heldFill = trace.filter { what($0) == "held-fill" }.count
         trial.liftFill = trace.filter { what($0) == "fill" }.count
         trial.discard = trace.filter { what($0) == "discard" }.count
-        trial.lateDrop = trace.filter { what($0) == "held-late-drop" }.count
+        trial.lateDrop = trace.filter { what($0).hasSuffix("late-drop") }.count
         trial.entered = clicks.count - trial.discard - trial.lateDrop
         return trial
     }
@@ -117,7 +210,8 @@ enum TapTimeline {
             }
             let point = "\((e["x"] as? NSNumber)?.intValue ?? 0),\((e["y"] as? NSNumber)?.intValue ?? 0)"
             let text = pad(String(format: "%.1f", at), 10) + pad(type, 13) + pad(detail, 8) + pad(trusted, 9) + pad(finger, 8) + pad(point, 9) + (e["target"] as? String ?? "")
-            lines.append(Line(at: at, text: text))
+            let marker = (type == "observed-down") ? " [대상 " + (e["control"] as? String ?? "") + "]" : ""
+            lines.append(Line(at: at, text: text + marker))
         }
         for t in trial.trace {
             let at = number(t["at"]) ?? 0
@@ -133,6 +227,9 @@ enum TapTimeline {
         out += pad("시각(ms)", 10) + pad("종류", 13) + pad("detail", 8) + pad("trusted", 9) + pad("손가락", 8) + pad("x,y", 9) + "대상 또는 웹 판단\n"
         out += lines.map(\.text).joined(separator: "\n") + "\n"
         out += "끝 상태: \(trial.endState). 받아들인 누름 \(trial.entered), 웹이 만든 click \(trial.made)(누르는 동안 온 dblclick 으로 채움 \(trial.heldFill), 손뗌 수로 채움 \(trial.liftFill)), 버림 \(trial.discard), 늦은 click 버림 \(trial.lateDrop)\n"
+        if let before = trial.scaleBefore, let after = trial.scaleAfter {
+            out += "배율 " + String(before) + " -> " + String(after) + ", 요소별 누름 " + String(describing: trial.pressedByElement) + ", 요소별 입력 " + String(describing: trial.enteredByElement) + ", 초과 시각 " + String(describing: trial.overAt) + "\n"
+        }
         return out
     }
 

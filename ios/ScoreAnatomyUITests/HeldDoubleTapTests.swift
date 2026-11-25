@@ -1,12 +1,12 @@
 import XCTest
 
-/// 작업 지시서 4의 3-2: 웹 0.3.2 의 새 채우기 규칙(누르는 동안 온 dblclick, 결정기록 7.8)을 시뮬레이터에서 잰다. 기록용이다(판정에 넣지 않음).
+/// 작업 지시서 4의 3-2와 부록 A 3-4: 손가락 click, 채움, 실제 요소에 들어간 입력을 시뮬레이터에서 잰다.
 ///
 /// - 0.29초 안팎 두 번 누름(TouchSynth 로 따로 보낸 누름의 가장 짧은 간격)을 표시 칸, 답 키, 점수 해부의 같은 자리에서 되풀이한다.
 /// - 경우마다 껍데기의 이벤트 기록(window.__saEventLog)과 웹의 판단 기록(window.__saTapTrace)을 같은 시계(performance.now)로 합쳐,
 ///   사라진 경우(둘째 누름의 손가락 click 이 오지 않음), 채운 경우(웹이 click 을 만들어 보냄), 두 번을 넘겨 들어간 경우를 센다.
 /// - 사라진 경우와 채운 경우, 세 번 누름은 결정기록 7.8 의 형식으로 글자 파일을 남긴다(verify.sh 가 docs/ios_누름기록 에 옮긴다).
-/// - 두 번을 넘겨 들어간 경우가 하나라도 있으면 실패다(작업 지시서 4의 3-2). 그 밖에는 실패로 보지 않는다.
+/// - 한 요소에서 누른 수를 넘긴 입력은 실패다. 입력 증거가 빠진 실행은 통과하지 않는다. 확대와 끝 상태 차이도 기록한다.
 @MainActor
 final class HeldDoubleTapTests: XCTestCase {
     /// 경우마다 되풀이하는 수(verify.sh 가 TEST_RUNNER_SA_HELD_REPEATS 로 바꿀 수 있다).
@@ -18,14 +18,7 @@ final class HeldDoubleTapTests: XCTestCase {
 
     private var os: String { TapTimeline.os }
 
-    private func save(_ trials: [Trial], target: String, slug: String, logAll: Bool = false) {
-        let folder = TestEnv.outDirectory.appendingPathComponent("held", isDirectory: true)
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let device = "\(TestEnv.deviceTag)-ios\(os)"
-        for trial in trials where logAll || trial.lost || trial.made > 0 || trial.over || trial.lateDrop > 0 {
-            let name = "\(device)-\(slug)-\(String(format: "%02d", trial.index)).txt"
-            try? TapTimeline.timeline(trial, title: "\(target) \(trial.index)번째").write(to: folder.appendingPathComponent(name), atomically: true, encoding: .utf8)
-        }
+    private func save(_ trials: [Trial], target: String, slug: String) {
         let gaps = trials.compactMap(\.pressGapMs)
         let lifts = trials.flatMap(\.liftToClick)
         recordMetric([
@@ -33,6 +26,7 @@ final class HeldDoubleTapTests: XCTestCase {
             "lost": trials.filter(\.lost).count, "dblclickWhileHeld": trials.filter(\.dblclickWhileHeld).count,
             "filled": trials.filter { $0.made > 0 }.count, "heldFilled": trials.filter { $0.heldFill > 0 }.count,
             "liftFilled": trials.filter { $0.liftFill > 0 }.count, "lostNotFilled": trials.filter { $0.lost && $0.made == 0 }.count,
+            "zoom": trials.filter(\.zoomed).count, "wrongEnd": trials.filter { $0.wrongEnd == true }.count,
             "over": trials.filter(\.over).count, "discarded": trials.filter { $0.discard > 0 }.count,
             "lateDropped": trials.filter { $0.lateDrop > 0 }.count,
             "gapMin": gaps.min() ?? -1, "gapMax": gaps.max() ?? -1,
@@ -44,6 +38,26 @@ final class HeldDoubleTapTests: XCTestCase {
                  "made": t.made, "held": t.heldFill, "lift": t.liftFill, "discard": t.discard, "late": t.lateDrop, "dblHeld": t.dblclickWhileHeld, "end": t.endState]
             },
         ])
+    }
+
+    /// 다음 시도에 들어가기 전에 별도 파일에 결과를 남겨 중단된 테스트의 초과 입력도 확인할 수 있게 한다.
+    private func append(_ trial: Trial, slug: String, intended: String, to trials: inout [Trial]) throws {
+        let folder = TestEnv.outDirectory.appendingPathComponent("held", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let basename = "\(TestEnv.deviceTag)-ios\(os)-\(slug)-\(String(format: "%02d", trial.index))"
+        let file = folder.appendingPathComponent(basename + ".txt")
+        try TapTimeline.timeline(trial, title: "\(slug) \(trial.index)번째").write(to: file, atomically: true, encoding: .utf8)
+        recordMetric(["kind": "heldTrial", "slug": slug, "device": TestEnv.deviceTag, "os": os, "index": trial.index,
+                      "presses": trial.presses, "observed": trial.events.filter { $0["type"] as? String == "observed-down" }.count,
+                      "firstDownTarget": trial.firstDownTarget ?? "", "intended": intended,
+                      "entered": trial.entered, "over": trial.over, "before": trial.scaleBefore ?? -1, "after": trial.scaleAfter ?? -1,
+                      "pressedByElement": trial.pressedByElement, "enteredByElement": trial.enteredByElement, "file": file.lastPathComponent])
+        trials.append(trial)
+        XCTAssertEqual(trial.firstDownTarget, intended, "첫 pointerdown이 지정한 요소에 닿아야 한다: " + basename)
+        if trial.over {
+            throw NSError(domain: "HeldDoubleTapTests", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "누른 수보다 많이 들어감: " + basename])
+        }
     }
 
     // MARK: 1. 표시 칸
@@ -69,12 +83,11 @@ final class HeldDoubleTapTests: XCTestCase {
             XCTAssertTrue(cell.waitForExistence(timeout: 5))
             let point = center(cell)
             Thread.sleep(forTimeInterval: 0.6)
-            _ = TapTimeline.takeLogs(handle)
+            TapTimeline.beginHeld(handle)
             try TouchSynth.spacedTaps(at: point, interval: 0)
             Thread.sleep(forTimeInterval: 1.4)
-            let (events, trace) = TapTimeline.takeLogs(handle)
             let state = "\(no)번 칸 data-mark \(handle.markOf(no) ?? "?"), 버린 누름 알림 \(handle.noticeCount())"
-            trials.append(TapTimeline.classify(index: index, events: events, trace: trace, endState: state))
+            try append(TapTimeline.endHeld(handle, index: index, expected: 2, endState: state), slug: "marks", intended: "mark:\(no)", to: &trials)
         }
         handle?.terminate()
         save(trials, target: "표시 칸 0.29초 두 번", slug: "marks")
@@ -102,16 +115,15 @@ final class HeldDoubleTapTests: XCTestCase {
             XCTAssertTrue(key.waitForExistence(timeout: 5))
             let point = center(key)
             Thread.sleep(forTimeInterval: 0.6)
-            _ = TapTimeline.takeLogs(handle)
+            TapTimeline.beginHeld(handle)
             try TouchSynth.spacedTaps(at: point, interval: 0)
             Thread.sleep(forTimeInterval: 1.4)
-            let (events, trace) = TapTimeline.takeLogs(handle)
             _ = handle.waitForStore(timeout: 1.5) { _ in handle.answerMap().count >= before + 1 }
             let added = handle.answerMap().count - before
-            var trial = TapTimeline.classify(index: index, events: events, trace: trace, endState: "답 키 3 으로 들어간 문항 \(added)개(모두 \(handle.answerMap().count)개), 버린 누름 알림 \(handle.noticeCount())")
+            var trial = TapTimeline.endHeld(handle, index: index, expected: 2, endState: "답 키 3 으로 들어간 문항 \(added)개(모두 \(handle.answerMap().count)개), 버린 누름 알림 \(handle.noticeCount())")
             // 답 키는 들어간 문항 수가 곧 받아들인 누름 수다(기록 파일로 다시 본다).
             trial.entered = max(trial.entered, added)
-            trials.append(trial)
+            try append(trial, slug: "key", intended: "key:3", to: &trials)
         }
         handle?.terminate()
         save(trials, target: "답 키 0.29초 두 번", slug: "key")
@@ -147,12 +159,11 @@ final class HeldDoubleTapTests: XCTestCase {
             let chip1 = handle.any("1등급")
             XCTAssertTrue(chip1.waitForExistence(timeout: 5))
             let point = center(chip1)
-            _ = TapTimeline.takeLogs(handle)
+            TapTimeline.beginHeld(handle)
             try TouchSynth.spacedTaps(at: point, interval: 0)
             Thread.sleep(forTimeInterval: 1.4)
-            let (events, trace) = TapTimeline.takeLogs(handle)
             let state = "고른 칩 \(handle.evaluate(checked) as? String ?? "?"), 버린 누름 알림 \(handle.noticeCount()), 화면 \(handle.route() ?? "?")"
-            trials.append(TapTimeline.classify(index: index, events: events, trace: trace, endState: state))
+            try append(TapTimeline.endHeld(handle, index: index, expected: 2, endState: state), slug: "anatomy", intended: "grade:1", to: &trials)
         }
         handle.terminate()
         save(trials, target: "점수 해부 같은 자리 0.29초 두 번", slug: "anatomy")
@@ -179,14 +190,17 @@ final class HeldDoubleTapTests: XCTestCase {
                     Thread.sleep(forTimeInterval: 0.8)
                 }
             }
-            _ = TapTimeline.takeLogs(handle)
+            TapTimeline.beginHeld(handle)
             cell.tap(withNumberOfTaps: 3, numberOfTouches: 1)
             Thread.sleep(forTimeInterval: 1.4)
-            let (events, trace) = TapTimeline.takeLogs(handle)
-            trials.append(TapTimeline.classify(index: index, events: events, trace: trace, endState: "\(no)번 칸 data-mark \(handle.markOf(no) ?? "?"), 버린 누름 알림 \(handle.noticeCount())"))
+            let mark = handle.markOf(no)
+            XCTAssertNotNil(mark)
+            var trial = TapTimeline.endHeld(handle, index: index, expected: 3, endState: "\(no)번 칸 data-mark \(mark ?? "?"), 버린 누름 알림 \(handle.noticeCount())")
+            trial.wrongEnd = mark != "none"
+            try append(trial, slug: "triple", intended: "mark:\(no)", to: &trials)
         }
         handle.terminate()
-        save(trials, target: "표시 칸 세 번 빠르게", slug: "triple", logAll: true)
+        save(trials, target: "표시 칸 세 번 빠르게", slug: "triple")
         XCTAssertEqual(trials.filter(\.over).map(\.index), [], "누른 수보다 많이 들어간 경우가 없어야 한다")
     }
 
@@ -194,26 +208,50 @@ final class HeldDoubleTapTests: XCTestCase {
 
     /// iOS 18.4 의 FastTapTests 에서 세 번 빠르게 누른 끝 상태가 "표시 없음" 대신 "찍음"이 된 적이 있다(이벤트 열은 같음).
     /// 그 테스트는 앱을 켜고 표시 화면을 연 뒤 첫 누름이라, 같은 차례를 되풀이해 시각과 웹 판단, 화면 확대(visualViewport)를 남긴다.
-    private func firstTouchTrials(slug: String, target: String, taps: Int) throws {
+    private func firstTouchTrials(slug: String, target: String, taps: Int, answerKey: Bool = false) throws {
         var trials: [Trial] = []
         for index in 1...10 {
             let handle = AppHandle(name: "held-\(slug)-\(index)")
-            handle.seedSession(answers: ExampleA.answers)
+            defer { handle.terminate() }
+            handle.seedSession(answers: answerKey ? [:] : ExampleA.answers)
             handle.launch(extra: ["-SAEventLog"])
-            handle.open("/marks", route: "/marks")
-            let cell = handle.markCell(3)
-            XCTAssertTrue(cell.waitForExistence(timeout: 5))
-            TapTimeline.clearLogs(handle)
-            if taps == 2 { cell.doubleTap() } else { cell.tap(withNumberOfTaps: taps, numberOfTouches: 1) }
+            if answerKey { handle.open("/input?input=keypad", route: "/input") }
+            else { handle.open("/marks", route: "/marks") }
+            let element = answerKey ? handle.key("3") : handle.markCell(3)
+            XCTAssertTrue(element.waitForExistence(timeout: 5))
+            TapTimeline.beginHeld(handle)
+            if taps == 2 { element.doubleTap() }
+            else { element.tap(withNumberOfTaps: taps, numberOfTouches: 1) }
             Thread.sleep(forTimeInterval: 1.4)
-            let (events, trace) = TapTimeline.takeLogs(handle)
-            let viewport = handle.evaluate("const v = window.visualViewport; const b = document.querySelector('main.body') || document.querySelector('.body'); return 'visualViewport 배율 ' + (v ? v.scale.toFixed(3) : '?') + ', 밀림 ' + (v ? Math.round(v.offsetLeft) + ',' + Math.round(v.offsetTop) : '?') + ', 본문 스크롤 ' + (b ? Math.round(b.scrollTop) : '?') + ', 문서 스크롤 ' + Math.round(window.scrollY);") as? String ?? "?"
-            trials.append(TapTimeline.classify(index: index, events: events, trace: trace, endState: "3번 칸 data-mark \(handle.markOf(3) ?? "?"), 버린 누름 알림 \(handle.noticeCount()), \(viewport)"))
+            let actual: String
+            let expected: String
+            if answerKey {
+                XCTAssertNotNil(handle.storeJSON(), "답을 넣기 전의 기록도 있어야 한다")
+                actual = String(handle.answerMap().count)
+                expected = String(taps)
+            } else {
+                let mark = handle.markOf(3)
+                XCTAssertNotNil(mark)
+                actual = mark ?? "?"
+                expected = taps == 3 ? "none" : "guess"
+            }
+            var trial = TapTimeline.endHeld(handle, index: index, expected: taps,
+                                            endState: "\(target) 끝 상태 \(actual), 기대 \(expected), 버린 누름 알림 \(handle.noticeCount())")
+            if answerKey { trial.entered = max(trial.entered, Int(actual) ?? 0) }
+            trial.wrongEnd = actual != expected
+            try append(trial, slug: slug, intended: answerKey ? "key:3" : "mark:3", to: &trials)
             handle.capture("\(slug)-\(index)", theme: "light")
-            handle.terminate()
         }
-        save(trials, target: target, slug: slug, logAll: true)
+        save(trials, target: target, slug: slug)
         XCTAssertEqual(trials.filter(\.over).map(\.index), [], "누른 수보다 많이 들어간 경우가 없어야 한다")
+    }
+
+    func testDoubleTapAnswerKeyAsFirstTouch() throws {
+        try firstTouchTrials(slug: "key-double-first", target: "답 키 첫 두 번", taps: 2, answerKey: true)
+    }
+
+    func testTripleTapAnswerKeyAsFirstTouch() throws {
+        try firstTouchTrials(slug: "key-triple-first", target: "답 키 첫 세 번", taps: 3, answerKey: true)
     }
 
     func testTripleTapAsFirstTouchAfterLaunch() throws {

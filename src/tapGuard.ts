@@ -528,21 +528,22 @@ function samePlace(a: Spot, aControl: Element | null, b: Spot, bControl: Element
   return sameSpot(a, b) || (aControl !== null && bControl !== null && aControl === bControl);
 }
 
-/** 만료된 채움과 거기서만 쓰던 손뗌을 없앤다. */
+/** 채운 지 1초 지난 빚과 오래된 손뗌을 없앤다. 다른 빚이 먼저 만료돼도 새 손뗌은 보존한다. */
 function pruneLedgers(): void {
   const now = performance.now();
-  if (!ledgers.some((l) => l.owed === 0 || now > l.until)) return;
+  if (!ledgers.length) return;
   ledgers = ledgers.filter((l) => l.owed > 0 && now <= l.until);
   for (const source of sources) {
     for (const lift of available[source]) {
-      if (!ledgers.some((l) => samePlace(lift, lift.control, l, l.control))) available[source].delete(lift);
+      if (!ledgers.length || now - lift.t > FILL_LATE_MS) available[source].delete(lift);
     }
   }
 }
 
 function countOwedLift(source: LiftSource, lift: Lift): void {
   pruneLedgers();
-  if (ledgers.some((l) => samePlace(lift, lift.control, l, l.control))) available[source].add(lift);
+  // 손뗌이 24px 밖에 있어도 같은 버튼의 click은 경계 안으로 올 수 있다.
+  if (ledgers.length) available[source].add(lift);
 }
 
 /** 같은 요소를 먼저 찾는다. 서로 다른 버튼이 모두 남아 있으면 이웃 버튼의 손뗌을 빌리지 않는다. */
@@ -551,8 +552,8 @@ function pickLift(source: LiftSource, spot: Spot, control: Element | null, point
   for (const lift of available[source]) {
     if (Boolean(lift.pointerOnly) !== pointerOnly) continue;
     if (control && lift.control === control) return lift;
-    if (!bySpot && sameSpot(lift, spot) && !(control?.matches(INTERACTIVE_SELECTOR) &&
-        lift.control?.isConnected && lift.control.matches(INTERACTIVE_SELECTOR))) bySpot = lift;
+    const differentButtons = control?.matches(INTERACTIVE_SELECTOR) && lift.control?.isConnected && lift.control.matches(INTERACTIVE_SELECTOR);
+    if (!differentButtons && !bySpot && sameSpot(lift, spot)) bySpot = lift;
   }
   return bySpot;
 }
@@ -584,7 +585,7 @@ function openLedger(spot: Spot, control: Element | null, recent: typeof lifts, e
   ledgers.push({ x: spot.x, y: spot.y, control, until: performance.now() + FILL_LATE_MS, owed, rule });
   for (const source of sources) {
     for (const lift of recent[source]) {
-      if (!lift.cancel && !usedLifts.has(lift) && samePlace(lift, lift.control, spot, control)) available[source].add(lift);
+      if (!lift.cancel && !usedLifts.has(lift)) available[source].add(lift);
     }
   }
   for (let n = 0; n < entered; n += 1) takeLift(spot, control);

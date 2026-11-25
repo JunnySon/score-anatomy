@@ -1517,7 +1517,8 @@ test.describe('채운 곳의 장부: 채운 뒤 늦게 온 진짜 click 버리�
 
   test('인접한 두 버튼의 가장자리에서는 각 버튼의 손뗌과 늦은 click을 구분한다', async ({ page }) => {
     for (const t of TARGETS) {
-      for (const fillNeighbor of [false, true]) {
+      for (const scenario of ['lift-near', 'click-near', 'two-fills']) {
+        const fillNeighbor = scenario === 'two-fills';
         const { el } = await t.open(page);
         const next = t.neighbors[0]!;
         const a = (await page.locator(el).boundingBox())!;
@@ -1535,6 +1536,10 @@ test.describe('채운 곳의 장부: 채운 뒤 늦게 온 진짜 click 버리�
         await playIos(page, p, ['p', 'p', 2]);
         if (fillNeighbor) {
           await playIos(page, q, ['p', 'p', 2]);
+          await clickOn(page, neighbor, close, 1);
+          await clickAt(page, p, 1);
+        } else if (scenario === 'click-near') {
+          await iosPress(page, q);
           await clickOn(page, neighbor, close, 1);
           await clickAt(page, p, 1);
         } else {

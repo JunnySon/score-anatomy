@@ -59,10 +59,18 @@ for (const screen of screens) {
       await openScreen(page, screen.route);
       const target = page.locator(screen.selector);
       await target.scrollIntoViewIfNeeded();
+      await page.evaluate(selector => {
+        const log = document.documentElement.dataset;
+        log.buttonClicks = '0';
+        window.addEventListener('click', e => {
+          if (e.target instanceof Element && e.target.closest(selector)) log.buttonClicks = String(Number(log.buttonClicks) + 1);
+        });
+      }, screen.selector);
       await observe(target);
       if (native) await target.tap();
       else await mimicTouch(target);
       await expectDown(page, true);
+      await expect(page.locator('html')).toHaveAttribute('data-button-clicks', '1');
       if (screen.route === '/marks') await expect(target).toHaveAttribute('data-mark', 'doubt');
       if (screen.route === '/input') await expect(page.getByTestId('now-no')).toHaveText('2번');
       if (screen.route === '/anatomy') await expect(target).toHaveAttribute('aria-checked', 'true');
@@ -190,6 +198,32 @@ test('끄는 값이 0인 별도 빌드는 어느 버튼의 mousedown도 막지 �
   for (const control of await page.locator('#off-controls > *').all()) {
     await observe(control);
     await mimicTouch(control);
+    await expectDown(page, false);
+  }
+});
+
+test('펜과 터치 취소가 다른 이벤트 소스의 손뗌보다 먼저 와도 차단 단서가 되살아나지 않는다', async ({ page }) => {
+  await openScreen(page, '/marks');
+  const target = page.locator('[data-mark-cell="3"]');
+  for (const order of ['pointercancel', 'touchcancel', 'pen-first', 'pen-second']) {
+    await observe(target);
+    await target.evaluate((el, order) => {
+      const pen = order.startsWith('pen');
+      const pointer = (type: string) => el.dispatchEvent(new PointerEvent(type, {
+        bubbles: true, composed: true, pointerId: 2, pointerType: pen ? 'pen' : 'touch', isPrimary: true,
+      }));
+      const finger = new Touch({ identifier: 2, target: el });
+      const touch = (type: string) => el.dispatchEvent(new TouchEvent(type, {
+        bubbles: true, composed: true, changedTouches: [finger], touches: type === 'touchstart' ? [finger] : [],
+      }));
+      if (order === 'pen-second') touch('touchstart');
+      pointer('pointerdown');
+      if (order !== 'pen-second') touch('touchstart');
+      if (order === 'touchcancel') touch('touchcancel');
+      pointer(order === 'pointercancel' ? 'pointercancel' : 'pointerup');
+      if (order !== 'touchcancel') touch('touchend');
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+    }, order);
     await expectDown(page, false);
   }
 });

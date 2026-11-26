@@ -167,8 +167,8 @@ interface Held extends Spot {
 
 /** 누름 하나(누르기 시작부터 뗄 때까지). 시각은 받은 때의 performance.now() 다(보호와 같은 시계). */
 interface Press {
-  /** 펜과 짝인 touchend를 손가락 누름으로 오인하지 않게 한다. */
-  pen?: boolean;
+  /** 펜이나 다른 이벤트 소스에서 취소된 누름은 손가락 mousedown의 근거로 쓰지 않는다. */
+  skipTouchMouseDown?: boolean;
   x0: number;
   y0: number;
   t0: number;
@@ -260,7 +260,7 @@ function zoomButton(target: EventTarget | null): Element | null {
 
 function rememberTouchButton(target: EventTarget | null, press: Press | undefined, now: number): void {
   const element = zoomButton(target);
-  recentTouchButton = element && press?.control === element && !press.pen && !press.multi && !press.moved && now - press.t0 <= FILL_PRESS_MS
+  recentTouchButton = element && press?.control === element && !press.skipTouchMouseDown && !press.multi && !press.moved && now - press.t0 <= FILL_PRESS_MS
     ? { element, at: now }
     : null;
 }
@@ -471,7 +471,8 @@ function onPointerDown(e: PointerEvent): void {
   const now = performance.now();
   dropStale(pointerPresses, now);
   const press = newPress(e.clientX, e.clientY, now, e.target, !e.isPrimary);
-  press.pen = e.pointerType === 'pen';
+  press.skipTouchMouseDown = e.pointerType === 'pen';
+  if (press.skipTouchMouseDown) excludeTouchButtonPair(press, touchPresses);
   if (e.pointerType !== 'mouse' && pointerPresses.size > 0) {
     // 다른 손가락이 눌려 있는 동안 또 눌렀다. 겹친 누름은 모두 세지 않는다.
     press.multi = true;
@@ -506,9 +507,18 @@ function onPointerUp(e: PointerEvent): void {
   armHeld(lift);
 }
 
-function onPointerCancel(e: PointerEvent): void {
+/** 펜과 취소된 누름에서 pointer와 touch가 엇갈려도 남은 손뗌이 mousedown 단서를 다시 만들지 않게 한다. */
+function excludeTouchButtonPair(press: Press | undefined, others: Map<number, Press>): void {
   recentTouchButton = null;
+  if (!press) return;
+  for (const other of others.values()) {
+    if (press.control === other.control) other.skipTouchMouseDown = true;
+  }
+}
+
+function onPointerCancel(e: PointerEvent): void {
   const press = pointerPresses.get(e.pointerId);
+  excludeTouchButtonPair(press, touchPresses);
   pointerPresses.delete(e.pointerId);
   remember(lifts.pointer, { x: press?.x0 ?? e.clientX, y: press?.y0 ?? e.clientY, t: performance.now(), ok: false, control: null, held: null, cancel: true });
 }
@@ -520,7 +530,7 @@ function onTouchStart(e: TouchEvent): void {
   for (const t of Array.from(e.changedTouches)) {
     const press = newPress(t.clientX, t.clientY, now, t.target, false);
     const touchType = (t as Touch & { touchType?: string }).touchType;
-    press.pen = touchType === 'stylus' || Array.from(pointerPresses.values()).some((p) => p.pen);
+    press.skipTouchMouseDown = touchType === 'stylus' || Array.from(pointerPresses.values()).some((p) => p.skipTouchMouseDown);
     touchPresses.set(t.identifier, press);
   }
   // 손가락이 둘 이상 눌려 있다. 겹친 누름은 모두 세지 않는다.
@@ -556,9 +566,9 @@ function onTouchEnd(e: TouchEvent): void {
 }
 
 function onTouchCancel(e: TouchEvent): void {
-  recentTouchButton = null;
   const now = performance.now();
   for (const t of Array.from(e.changedTouches)) {
+    excludeTouchButtonPair(touchPresses.get(t.identifier), pointerPresses);
     touchPresses.delete(t.identifier);
     remember(lifts.touch, { x: t.clientX, y: t.clientY, t: now, ok: false, control: null, held: null, cancel: true });
   }

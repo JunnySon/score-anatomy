@@ -8,6 +8,8 @@
 
 - 웹 0.3.3의 전체 검증에서 iOS 18.4로 답 키 3을 세 번 눌렀을 때 누르지 않은 지우기 버튼에 입력이 한 번 들어갔어요. 이 요소별 초과 입력은 병합과 출시 전에 고쳐야 해요. [검증 원본](ios_누름기록/검증-0.3.3-2026-11-26-1226/iphone16-ios18.4-key-triple-first-04.txt)
 
+- 14:07에 시작한 웹 0.3.3 검증에서는 iOS 18.4의 마지막 빈칸에 답 4가 저장되지 않았고, iOS 26.4.1에서는 HTML에 닿은 누름이 4번 표시 칸의 입력으로 들어갔어요. 후자는 이 칸에서 관찰한 누름 0회, 받아들인 입력 1회로 병합 기준에 걸렸어요. [두 기기의 원본과 재현 조건](ios_확대_진단.md#1407에-다시-시작한-전체-검증)
+
 - TestFlight 전: 유료 Apple Developer Program 회원이어야 TestFlight 를 쓸 수 있어요. 개인 등록은 거주 지역의 성년이어야 하고 한국의 성년은 만 19세라서, 개발자가 만 19세 미만이면 보호자 명의 등록 방법을 Apple 에 먼저 물어야 해요. https://developer.apple.com/programs/enroll/, https://www.law.go.kr/법령/민법/제4조 (확인: 2026-11-24)
 - TestFlight 전: 고등학생은 외부 테스터로 초대하고, 첫 빌드는 TestFlight App Review 를 받아요. 사용권 계약에 '앱이 주로 아동 대상이면 테스터가 성년인지 확인하라'는 조항이 있어서, 이 앱이 여기에 해당하는지 테스트 전에 Apple 에 확인해야 해요. https://developer.apple.com/support/terms/apple-developer-program-license-agreement/ (확인: 2026-11-24)
 - App Store 전: 개인정보 처리방침 URL 과 앱 안 처리방침, 지원 URL, 앱 개인정보 답변, 연령 등급 설문, 스크린샷이 있어야 해요. '예시' 시험만 든 빌드는 TestFlight 로만 보내고, 실제 시험의 정답과 등급컷은 출처의 이용 조건을 사람이 확인한 뒤에 넣어요. https://developer.apple.com/app-store/review/guidelines/ (확인: 2026-11-24)

@@ -1,0 +1,22 @@
+# anatomy 5번째
+# 기기 iphone16, iOS 18.4. 시각은 performance.now()(ms, 이 경우의 첫 이벤트 43248.0).
+# 손가락: pointer 이벤트는 pointerId, touch 이벤트는 그때 닿아 있는 손가락 수. trusted false 는 웹이 만들어 보낸 click.
+# 분류: 보통. 누름 시작 사이 291.0ms, 손뗌에서 click 까지 2.0, 1.0ms
+시각(ms)    종류           detail  trusted  손가락     x,y      대상 또는 웹 판단
+43248.0   pointerdown  0       true     1739042250 72,625   button:1등급
+43248.0   observed-down 0       true     -       72,625   BUTTON:grade-1#1 [대상 grade:1]
+43248.0   touchstart   0       true     1       72,625   button:1등급
+43322.0   pointerup    0       true     1739042250 72,625   button:1등급
+43322.0   touchend     0       true     0       72,625   button:1등급
+43324.0   click        1       true     -       72,625   button:1등급
+43324.0   accepted-click 1       true     -       72,625   BUTTON:grade-1#1
+43539.0   pointerdown  0       true     1739042251 72,625   p:1등급 컷 88~92점
+43539.0   observed-down 0       true     -       72,625    [대상 ]
+43539.0   touchstart   0       true     1       72,625   p:1등급 컷 88~92점
+43605.0   pointerup    0       true     1739042251 72,625   p:1등급 컷 88~92점
+43605.0   touchend     0       true     0       72,625   p:1등급 컷 88~92점
+43606.0   click        2       true     -       72,625   p:1등급 컷 88~92점
+43606.0   dblclick     2       true     -       72,625   p:1등급 컷 88~92점
+43606.0   (웹 판단)       discard(detail 2, filled 0)
+끝 상태: 고른 칩 grade-1 시트 0, 버린 누름 알림 0, 화면 /anatomy. 받아들인 누름 1, 웹이 만든 click 0(누르는 동안 온 dblclick 으로 채움 0, 손뗌 수로 채움 0), 버림 1, 늦은 click 버림 0
+배율 1.0 -> 1.0, 요소별 누름 ["BUTTON:grade-1#1": 1], 요소별 입력 ["BUTTON:grade-1#1": 1], 초과 시각 []

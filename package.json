@@ -1,7 +1,7 @@
 {
   "name": "score-anatomy",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "수능 수학 모고칸 모바일 웹앱 v1 시제품",
   "type": "module",
   "scripts": {

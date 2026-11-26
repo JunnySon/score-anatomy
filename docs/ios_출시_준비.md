@@ -4,7 +4,7 @@
 
 ## 1. 결론
 
-- iOS 18 에서 첫 누름 두 번 누름 확대: 출시 전에 고칠 것. iPhone 16의 iOS 18.4에서 웹 0.3.2 표시 칸의 첫 아주 빠른 두 번 누름은 10회 모두 1.6배로 확대됐어요. 실제 간격 277~313ms인 F는 10회 모두 확대가 없었어요. [확대 진단의 회차별 기록](ios_확대_진단.md)에 조건과 로그가 있어요.
+- iOS 18 에서 첫 누름 두 번 누름 확대: 출시 전에 고칠 것. iPhone 16의 iOS 18.4에서 웹 0.3.2 표시 칸의 첫 아주 빠른 두 번 누름은 10회 모두 1.6배로 확대됐어요. 실제 간격 277~313ms인 F는 10회 모두 확대가 없었어요. 웹 0.3.3으로 다시 잰 첫 두 번 누름도 10회 중 10회 1.6배로 확대됐고, 이 조건의 초과 입력은 0회였어요. [확대 진단의 회차별 기록](ios_확대_진단.md)에 조건과 로그가 있어요.
 
 - TestFlight 전: 유료 Apple Developer Program 회원이어야 TestFlight 를 쓸 수 있어요. 개인 등록은 거주 지역의 성년이어야 하고 한국의 성년은 만 19세라서, 개발자가 만 19세 미만이면 보호자 명의 등록 방법을 Apple 에 먼저 물어야 해요. https://developer.apple.com/programs/enroll/, https://www.law.go.kr/법령/민법/제4조 (확인: 2026-11-24)
 - TestFlight 전: 고등학생은 외부 테스터로 초대하고, 첫 빌드는 TestFlight App Review 를 받아요. 사용권 계약에 '앱이 주로 아동 대상이면 테스터가 성년인지 확인하라'는 조항이 있어서, 이 앱이 여기에 해당하는지 테스트 전에 Apple 에 확인해야 해요. https://developer.apple.com/support/terms/apple-developer-program-license-agreement/ (확인: 2026-11-24)

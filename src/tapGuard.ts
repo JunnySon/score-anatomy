@@ -131,6 +131,9 @@ export const FILL_LATE_MS = 1000;
 /** 채운 곳의 장부로 늦게 온 진짜 click 을 버릴지(작업 지시서 4-1 의 2-1). false 면 이 버림만 꺼지고 채우기는 그대로다. */
 export const DROP_LATE_CLICKS = true;
 
+/** 0으로 빌드하면 손가락 버튼 누름의 mousedown 대책만 끈다. */
+const PREVENT_TOUCH_BUTTON_MOUSEDOWN = import.meta.env.VITE_TOUCH_BUTTON_MOUSEDOWN !== '0';
+
 interface Spot {
   x: number;
   y: number;
@@ -164,6 +167,8 @@ interface Held extends Spot {
 
 /** 누름 하나(누르기 시작부터 뗄 때까지). 시각은 받은 때의 performance.now() 다(보호와 같은 시계). */
 interface Press {
+  /** 펜이나 다른 이벤트 소스에서 취소된 누름은 손가락 mousedown의 근거로 쓰지 않는다. */
+  skipTouchMouseDown?: boolean;
   x0: number;
   y0: number;
   t0: number;
@@ -243,6 +248,31 @@ let guardId = 0;
 /** 누를 수 있는 요소. 버린 누름이 이 위였을 때만 알림을 띄운다. */
 export const INTERACTIVE_SELECTOR =
   'button, a[href], input, select, textarea, summary, label, [role="button"], [role="radio"], [role="link"], [role="tab"], [tabindex]:not([tabindex="-1"])';
+
+/** 같은 버튼에서 방금 끝난 손가락 누름. 좌표는 확대가 시작되면 달라질 수 있다. */
+let recentTouchButton: { element: Element; at: number } | null = null;
+
+function zoomButton(target: EventTarget | null): Element | null {
+  if (!(target instanceof Element) || target.closest('input, select, textarea, a[href], label, summary, [contenteditable]:not([contenteditable="false" i])')) return null;
+  const control = target.closest(INTERACTIVE_SELECTOR);
+  return control?.matches('button, [role="button"], [role="radio"], [role="tab"]') ? control : null;
+}
+
+function rememberTouchButton(target: EventTarget | null, press: Press | undefined, now: number): void {
+  const element = zoomButton(target);
+  recentTouchButton = element && press?.control === element && !press.skipTouchMouseDown && !press.multi && !press.moved && now - press.t0 <= FILL_PRESS_MS
+    ? { element, at: now }
+    : null;
+}
+
+function onButtonMouseDown(e: MouseEvent): void {
+  if (!recentTouchButton || !e.cancelable || e.button !== 0 || performance.now() - recentTouchButton.at >= 1000) return;
+  // Chromium에서는 호환 마우스 이벤트에 손가락 출처가 있다. 이 값이 없는 WebKit에서는 같은 버튼의 손뗌을 쓴다.
+  const source = (e as MouseEvent & { sourceCapabilities?: { firesTouchEvents: boolean } | null }).sourceCapabilities;
+  if (source?.firesTouchEvents === false || zoomButton(e.target) !== recentTouchButton.element) return;
+  e.preventDefault();
+  trace('touch-mousedown');
+}
 
 export interface DiscardInfo {
   /** 버린 누름이 누를 수 있는 요소 위였는지. 빈 바탕을 누른 것이면 false. */
@@ -435,11 +465,14 @@ function dropStale(presses: Map<number, Press>, now: number): void {
 }
 
 function onPointerDown(e: PointerEvent): void {
+  if (e.pointerType !== 'touch' || !e.isPrimary) recentTouchButton = null;
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   pointerSeen = true;
   const now = performance.now();
   dropStale(pointerPresses, now);
   const press = newPress(e.clientX, e.clientY, now, e.target, !e.isPrimary);
+  press.skipTouchMouseDown = e.pointerType === 'pen';
+  if (press.skipTouchMouseDown) excludeTouchButtonPair(press, touchPresses);
   if (e.pointerType !== 'mouse' && pointerPresses.size > 0) {
     // 다른 손가락이 눌려 있는 동안 또 눌렀다. 겹친 누름은 모두 세지 않는다.
     press.multi = true;
@@ -468,13 +501,24 @@ function onPointerUp(e: PointerEvent): void {
     control: press?.control ?? null,
     held: press?.held ?? null,
   };
+  if (PREVENT_TOUCH_BUTTON_MOUSEDOWN && e.pointerType === 'touch' && e.isPrimary) rememberTouchButton(e.target, press, now);
   remember(lifts.pointer, lift);
   countOwedLift('pointer', lift);
   armHeld(lift);
 }
 
+/** 펜과 취소된 누름에서 pointer와 touch가 엇갈려도 남은 손뗌이 mousedown 단서를 다시 만들지 않게 한다. */
+function excludeTouchButtonPair(press: Press | undefined, others: Map<number, Press>): void {
+  recentTouchButton = null;
+  if (!press) return;
+  for (const other of others.values()) {
+    if (press.control === other.control) other.skipTouchMouseDown = true;
+  }
+}
+
 function onPointerCancel(e: PointerEvent): void {
   const press = pointerPresses.get(e.pointerId);
+  excludeTouchButtonPair(press, touchPresses);
   pointerPresses.delete(e.pointerId);
   remember(lifts.pointer, { x: press?.x0 ?? e.clientX, y: press?.y0 ?? e.clientY, t: performance.now(), ok: false, control: null, held: null, cancel: true });
 }
@@ -483,7 +527,12 @@ function onTouchStart(e: TouchEvent): void {
   touchSeen = true;
   const now = performance.now();
   dropStale(touchPresses, now);
-  for (const t of Array.from(e.changedTouches)) touchPresses.set(t.identifier, newPress(t.clientX, t.clientY, now, t.target, false));
+  for (const t of Array.from(e.changedTouches)) {
+    const press = newPress(t.clientX, t.clientY, now, t.target, false);
+    const touchType = (t as Touch & { touchType?: string }).touchType;
+    press.skipTouchMouseDown = touchType === 'stylus' || Array.from(pointerPresses.values()).some((p) => p.skipTouchMouseDown);
+    touchPresses.set(t.identifier, press);
+  }
   // 손가락이 둘 이상 눌려 있다. 겹친 누름은 모두 세지 않는다.
   if (e.touches.length > 1 || touchPresses.size > 1) for (const p of touchPresses.values()) p.multi = true;
 }
@@ -509,6 +558,7 @@ function onTouchEnd(e: TouchEvent): void {
       control: press?.control ?? null,
       held: press?.held ?? null,
     };
+    if (PREVENT_TOUCH_BUTTON_MOUSEDOWN && e.changedTouches.length === 1 && e.touches.length === 0) rememberTouchButton(t.target, press, now);
     remember(lifts.touch, lift);
     countOwedLift('touch', lift);
     armHeld(lift);
@@ -518,6 +568,7 @@ function onTouchEnd(e: TouchEvent): void {
 function onTouchCancel(e: TouchEvent): void {
   const now = performance.now();
   for (const t of Array.from(e.changedTouches)) {
+    excludeTouchButtonPair(touchPresses.get(t.identifier), pointerPresses);
     touchPresses.delete(t.identifier);
     remember(lifts.touch, { x: t.clientX, y: t.clientY, t: now, ok: false, control: null, held: null, cancel: true });
   }
@@ -984,6 +1035,10 @@ export function installTapGuard(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('click', onClick, true);
+  if (PREVENT_TOUCH_BUTTON_MOUSEDOWN) {
+    window.addEventListener('mousedown', onButtonMouseDown, { capture: true, passive: false });
+    window.addEventListener('keydown', () => { recentTouchButton = null; }, true);
+  }
   // 빠진 누름 채우기가 누름과 손뗌을 센다. 누름을 받거나 막지 않고 세기만 한다.
   window.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true });
   window.addEventListener('pointermove', onPointerMove, { capture: true, passive: true });

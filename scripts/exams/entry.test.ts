@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { validateExam } from '../../src/exams/validate.ts';
@@ -6,7 +6,6 @@ import { ROOT, makeDataDir, removeDir, runTool } from './testkit.ts';
 
 const ID = 'suneung-2027-math-probstat';
 const HEADER = 'no,kind,choices,points,answer,typeId,memo';
-const template = (sheet: number) => join(ROOT, 'exam-data', 'entry', ID + '.' + sheet + '.csv');
 let dir: string;
 const sheetPath = (sheet: number) => join(dir, 'entry', ID + '.' + sheet + '.csv');
 const output = () => join(dir, 'src', ID + '.json');
@@ -33,21 +32,17 @@ function save(sheet: number, rows: string[][], header = HEADER) {
 }
 
 describe('수능 두 번 입력 원본 만들기', () => {
-  it('저장소의 두 입력지는 같은 30문항이고 필수 세 칸이 모두 비어 있어 원본이 생기지 않는다', () => {
-    expect(readFileSync(template(1))).toEqual(readFileSync(template(2)));
-    const lines = readFileSync(template(1), 'utf8').replace(/^\uFEFF/, '').trimEnd().split(/\r?\n/);
-    expect(lines.shift()).toBe(HEADER);
-    expect(lines).toHaveLength(30);
-    for (const [i, line] of lines.entries()) {
-      const no = i + 1;
-      const mc = no <= 15 || (no >= 23 && no <= 28);
-      expect(line.split(',')).toEqual([String(no), mc ? 'mc' : 'short', mc ? '5' : '', '', '', '', '']);
-    }
-    copyFileSync(template(1), sheetPath(1));
-    copyFileSync(template(2), sheetPath(2));
+  it('필수 세 칸이 모두 빈 두 입력지에서는 90개 누락을 알리고 원본을 만들지 않는다', () => {
+    const blank = fixture().map(row => [...row.slice(0, 3), '', '', '', '']);
+    save(1, blank);
+    save(2, blank);
     const r = run();
     expect(r.status).toBe(1);
-    for (const field of ['points', 'answer', 'typeId']) expect(r.stderr).toContain('30번 자리 ' + field);
+    const issues = r.stderr.trim().split(/\r?\n/);
+    expect(issues).toHaveLength(90);
+    for (let no = 1; no <= 30; no += 1) {
+      for (const field of ['points', 'answer', 'typeId']) expect(issues.some(line => line.startsWith('두 입력지: ' + no + '번 자리 ' + field))).toBe(true);
+    }
     expect(existsSync(output())).toBe(false);
   });
 
@@ -58,6 +53,8 @@ describe('수능 두 번 입력 원본 만들기', () => {
     rows[0][6] = '확실하지 않음, "재확인"\n검사 전용';
     save(1, rows);
     save(2, rows);
+    // 서로 다른 편집기로 저장해 BOM과 줄바꿈이 달라도 셀 내용이 같으면 통과한다.
+    writeFileSync(sheetPath(2), readFileSync(sheetPath(2), 'utf8').replace(/^\uFEFF/, '').replace(/\r\n/g, '\n'));
     const state = readFileSync(join(dir, 'state.json'));
     const r = run('짝수형');
     expect(r.status, r.stderr).toBe(0);

@@ -72,7 +72,7 @@ enum TapTimeline {
 
     /// 창의 capture에서 tapGuard를 통과한 click만 센다. 글이나 빈 곳은 입력으로 세지 않는다.
     /// 같은 이름의 다른 버튼과 그 자리에 새로 생긴 요소를 구별하려고 실제 DOM 요소마다 번호를 붙인다.
-    static func beginHeld(_ handle: AppHandle) {
+    static func beginHeld(_ handle: AppHandle, web034Diagnostics: Bool = false) {
         let ready = handle.evaluate("""
         if (!Array.isArray(window.__saEventLog)) return false;
         // 첫 판단 때 만드는 배열이라 아직 누른 적이 없는 화면에는 없을 수 있다.
@@ -98,12 +98,20 @@ enum TapTimeline {
           if (hit?.hasAttribute('data-mark-cell')) control = 'mark:' + hit.dataset.markCell;
           else if (hit?.matches('[aria-label="답 키패드"] button[data-key]')) control = 'key:' + hit.dataset.key;
           else if (hit?.dataset.testid?.startsWith('grade-')) control = 'grade:' + hit.dataset.testid.slice(6);
-          rows.push({type, now: performance.now(), target, control, trusted: event.isTrusted, detail: event.detail,
-                     x: event.clientX, y: event.clientY});
+          const row = {type, now: performance.now(), target, control, trusted: event.isTrusted, detail: event.detail,
+                       x: event.clientX, y: event.clientY};
+          if (type === 'observed-mousedown') row.defaultPrevented = event.defaultPrevented;
+          rows.push(row);
         };
         const options = {capture: true, passive: true, signal: controller.signal};
         window.addEventListener('pointerdown', e => track('observed-down', e), options);
         document.addEventListener('click', e => track('accepted-click', e), options);
+        if (\(web034Diagnostics ? "true" : "false")) {
+          document.addEventListener('mousedown', e => track('observed-mousedown', e), options);
+          window.visualViewport.addEventListener('resize', () => {
+            rows.push({type:'viewport-resize', now:performance.now(), scale:window.visualViewport.scale});
+          }, options);
+        }
         window.__saHeldCapture = { controller, scale: window.visualViewport.scale };
         return true;
         """) as? Bool
@@ -111,6 +119,16 @@ enum TapTimeline {
     }
 
     static func endHeld(_ handle: AppHandle, index: Int, expected: Int, endState: String) -> Trial {
+        let trial = collectHeld(handle, index: index, endState: endState)
+        let observed = trial.events.filter { $0["type"] as? String == "observed-down" }
+        XCTAssertEqual(observed.count, expected, "실제 누름 수가 빠졌어요")
+        XCTAssertEqual(trial.presses, expected, "원본 pointerdown 수가 빠졌어요")
+        XCTAssertNotNil(trial.scaleAfter, "앞뒤 배율이 있어야 한다")
+        return trial
+    }
+
+    /// 판정 전에 회차 원본을 보존해야 하는 진단도 같은 이벤트와 요소별 셈을 쓴다.
+    static func collectHeld(_ handle: AppHandle, index: Int, endState: String) -> Trial {
         let bounds = handle.evaluate("""
         const capture = window.__saHeldCapture;
         if (!capture) return null;
@@ -124,7 +142,6 @@ enum TapTimeline {
             trial.scaleBefore = bounds[0].doubleValue
             trial.scaleAfter = bounds[1].doubleValue
         }
-        let observed = events.filter { $0["type"] as? String == "observed-down" }
         for event in events {
             guard let key = event["target"] as? String, !key.isEmpty else { continue }
             switch event["type"] as? String {
@@ -139,9 +156,6 @@ enum TapTimeline {
             }
         }
         trial.entered = trial.enteredByElement.values.reduce(0, +)
-        XCTAssertEqual(observed.count, expected, "실제 누름 수가 빠졌어요")
-        XCTAssertEqual(trial.presses, expected, "원본 pointerdown 수가 빠졌어요")
-        XCTAssertNotNil(trial.scaleAfter, "앞뒤 배율이 있어야 한다")
         return trial
     }
 

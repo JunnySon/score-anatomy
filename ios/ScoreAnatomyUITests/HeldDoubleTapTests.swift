@@ -470,4 +470,131 @@ final class ZoomDiagnosticsTests: XCTestCase {
             }
         }
     }
+
+    /// 웹 0.3.4는 묶음 자체의 손가락 mousedown 처리를 잰다. 실험용 기본 동작 차단은 넣지 않는다.
+    func testWeb034FirstGestures() throws {
+        guard ProcessInfo.processInfo.environment["SA_ZOOM_034"] == "1" else {
+            throw XCTSkip("지시서 5의 첫 누름 재측정에서 실행해요")
+        }
+        let plan: [(name: String, screen: Scenario, taps: Int)] = [
+            ("A", .A, 2), ("Gkey", .Gkey, 2), ("Ggrade", .Ggrade, 2), ("F", .F, 2),
+            ("mark-triple", .A, 3), ("key-triple", .Gkey, 3),
+        ]
+        let folder = TestEnv.outDirectory.appendingPathComponent("zoom034", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var incomplete: [String] = []
+        for group in plan {
+            for index in 1...10 {
+                let complete = try recordWeb034(group.name, screen: group.screen, taps: group.taps, index: index, folder: folder)
+                if !complete { incomplete.append("\(group.name) \(index)회") }
+            }
+        }
+        XCTAssertEqual(incomplete, [], "측정 증거가 빠진 회차")
+    }
+
+    private func recordWeb034(_ name: String, screen: Scenario, taps: Int, index: Int, folder: URL) throws -> Bool {
+        let basename = String(format: "%@-%02d", name, index)
+        let url = folder.appendingPathComponent(basename + ".json")
+        guard !FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(domain: "ZoomDiagnostics", code: 4, userInfo: [NSLocalizedDescriptionKey: "기존 회차가 있어 중단: " + basename])
+        }
+        let handle = AppHandle(name: "zoom034-" + basename)
+        defer { handle.terminate() }
+        let target = try screen.open(handle)
+        guard target.waitForExistence(timeout: 5) else {
+            throw NSError(domain: "ZoomDiagnostics", code: 2, userInfo: [NSLocalizedDescriptionKey: "대상 요소가 없음: " + basename])
+        }
+        let intended: String
+        let rawTarget: String
+        switch screen {
+        case .Gkey: (intended, rawTarget) = ("key:3", "button:3")
+        case .Ggrade: (intended, rawTarget) = ("grade:1", "button:1등급")
+        default: (intended, rawTarget) = ("mark:3", "mark-cell:3")
+        }
+        let before = try viewport(handle)
+        let prep = TapTimeline.takeLogs(handle).0
+        TapTimeline.beginHeld(handle, web034Diagnostics: true)
+        let start = Date().timeIntervalSince1970
+        var gestureError: String?
+        if screen == .F {
+            do { try TouchSynth.spacedTaps(at: center(target), interval: 0) }
+            catch { gestureError = String(describing: error) }
+        } else if taps == 3 {
+            target.tap(withNumberOfTaps: 3, numberOfTouches: 1)
+        } else {
+            target.doubleTap()
+        }
+        let end = Date().timeIntervalSince1970
+        Thread.sleep(forTimeInterval: 1.4)
+        let settled = Date().timeIntervalSince1970
+        let sample = TapTimeline.collectHeld(handle, index: index, endState: "")
+        let physical = sample.events.filter { $0["type"] as? String == "pointerdown" }
+        let downs = sample.events.filter { $0["type"] as? String == "observed-down" }
+        let clicks = sample.events.filter { $0["type"] as? String == "accepted-click" }
+        let targetPresses = downs.filter { $0["control"] as? String == intended }.count
+        let targetEntered = clicks.filter { $0["control"] as? String == intended }.count
+        let scaleReadings = sample.events.filter { $0["type"] as? String == "viewport-resize" }
+            .compactMap { ($0["scale"] as? NSNumber)?.doubleValue }
+        let peak = (scaleReadings + [sample.scaleBefore, sample.scaleAfter].compactMap { $0 }).max()
+        let zoomed = peak.flatMap { maximum in sample.scaleBefore.map { maximum - $0 > 0.01 } }
+        let elementOver = sample.elementOver || !sample.overAt.isEmpty
+        let precedingDowns = prep.filter { $0["type"] as? String == "pointerdown" }
+        var complete = gestureError == nil && precedingDowns.isEmpty && physical.count == taps && downs.count == taps
+            && sample.firstDownTarget == intended && physical.first?["target"] as? String == rawTarget
+            && sample.scaleBefore != nil && sample.scaleAfter != nil
+        var row: [String: Any] = [
+            "case": name, "trial": index, "device": TestEnv.deviceTag, "os": TapTimeline.os,
+            "gestureStart": start, "gestureEnd": end, "settledAt": settled, "before": before,
+            "after": ["scale": sample.scaleAfter as Any? ?? NSNull()], "peakScale": peak as Any? ?? NSNull(),
+            "zoomed": zoomed as Any? ?? NSNull(), "settledZoomed": sample.zoomed,
+            "gapMs": sample.pressGapMs as Any? ?? NSNull(), "expectedPresses": taps,
+            "physicalDowns": physical.count, "nativePointerDownTargets": physical.compactMap { $0["target"] as? String },
+            "firstDownTarget": sample.firstDownTarget as Any? ?? NSNull(), "intended": intended,
+            "targetPresses": targetPresses, "targetEntered": targetEntered,
+            "pressedByElement": sample.pressedByElement, "enteredByElement": sample.enteredByElement,
+            "elementOver": elementOver, "overAt": sample.overAt, "preparationDowns": precedingDowns,
+            "touchMousedown": sample.trace.filter { $0["what"] as? String == "touch-mousedown" }.count,
+            "events": sample.events, "trace": sample.trace,
+        ]
+        if let gestureError { row["gestureError"] = gestureError }
+        // 초과가 관찰되면 끝 상태 탐침이 실패하거나 실행이 끊겨도 원본이 남게 한다.
+        let partial = folder.appendingPathComponent(basename + ".pending")
+        if elementOver {
+            try JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]).write(to: partial, options: .atomic)
+        }
+        do {
+            row["after"] = try viewport(handle)
+            let actual: String
+            let expected: String
+            var answersMatch = true
+            switch screen {
+            case .Gkey:
+                let answers = handle.answerMap()
+                actual = String(answers.count)
+                expected = String(taps)
+                row["answers"] = Dictionary(uniqueKeysWithValues: answers.map { (String($0.key), $0.value) })
+                answersMatch = (1...taps).allSatisfy { answers[$0] == 3 }
+                if handle.storeJSON() == nil { complete = false }
+            case .Ggrade:
+                actual = try XCTUnwrap(handle.evaluate("return Array.from(document.querySelectorAll('[data-testid^=grade-][aria-checked=true]'), e=>e.dataset.testid).join(',');") as? String)
+                expected = "grade-1"
+            default:
+                actual = try XCTUnwrap(handle.markOf(3))
+                expected = taps == 3 ? "none" : "guess"
+            }
+            row["endState"] = actual
+            row["expectedEndState"] = expected
+            row["wrongEnd"] = actual != expected || !answersMatch
+        } catch {
+            complete = false
+            row["observationError"] = String(describing: error)
+        }
+        row["completeEvidence"] = complete
+        try JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]).write(to: url, options: .atomic)
+        if elementOver {
+            try? FileManager.default.removeItem(at: partial)
+            throw NSError(domain: "ZoomDiagnostics", code: 5, userInfo: [NSLocalizedDescriptionKey: "요소별 누름보다 많은 입력: " + basename])
+        }
+        return complete
+    }
 }

@@ -1,0 +1,138 @@
+{
+  "action" : "pinch",
+  "details" : {
+    "events" : [
+      {
+        "detail" : 0,
+        "now" : 2473,
+        "pointerId" : -653922999,
+        "pointerType" : "touch",
+        "target" : "mark-cell:13",
+        "touches" : null,
+        "trusted" : true,
+        "ts" : 2465,
+        "type" : "pointerdown",
+        "x" : 193,
+        "y" : 425
+      },
+      {
+        "control" : "mark:13",
+        "detail" : 0,
+        "now" : 2473,
+        "target" : "BUTTON:13#1",
+        "trusted" : true,
+        "type" : "observed-down",
+        "x" : 193,
+        "y" : 424.66666666666663
+      },
+      {
+        "detail" : 0,
+        "now" : 2473,
+        "pointerId" : null,
+        "pointerType" : null,
+        "target" : "mark-cell:13",
+        "touches" : 2,
+        "trusted" : true,
+        "ts" : 2465,
+        "type" : "touchstart",
+        "x" : 193,
+        "y" : 425
+      },
+      {
+        "detail" : 0,
+        "now" : 2473,
+        "pointerId" : -653922998,
+        "pointerType" : "touch",
+        "target" : "mark-cell:13",
+        "touches" : null,
+        "trusted" : true,
+        "ts" : 2465,
+        "type" : "pointerdown",
+        "x" : 200,
+        "y" : 427
+      },
+      {
+        "control" : "mark:13",
+        "detail" : 0,
+        "now" : 2473,
+        "target" : "BUTTON:13#1",
+        "trusted" : true,
+        "type" : "observed-down",
+        "x" : 200,
+        "y" : 427.33333333333331
+      },
+      {
+        "detail" : 0,
+        "now" : 2473,
+        "pointerId" : null,
+        "pointerType" : null,
+        "target" : "mark-cell:13",
+        "touches" : 2,
+        "trusted" : true,
+        "ts" : 2465,
+        "type" : "touchstart",
+        "x" : 200,
+        "y" : 427
+      },
+      {
+        "detail" : 0,
+        "now" : 2900,
+        "pointerId" : -653922998,
+        "pointerType" : "touch",
+        "target" : "mark-cell:13",
+        "touches" : null,
+        "trusted" : true,
+        "ts" : 2900,
+        "type" : "pointercancel",
+        "x" : 0,
+        "y" : 0
+      },
+      {
+        "detail" : 0,
+        "now" : 2900,
+        "pointerId" : -653922999,
+        "pointerType" : "touch",
+        "target" : "mark-cell:13",
+        "touches" : null,
+        "trusted" : true,
+        "ts" : 2900,
+        "type" : "pointercancel",
+        "x" : 0,
+        "y" : 0
+      },
+      {
+        "detail" : 0,
+        "now" : 4598,
+        "pointerId" : null,
+        "pointerType" : null,
+        "target" : "mark-cell:13",
+        "touches" : 0,
+        "trusted" : true,
+        "ts" : 4581,
+        "type" : "touchend",
+        "x" : 110,
+        "y" : 241
+      },
+      {
+        "detail" : 0,
+        "now" : 4598,
+        "pointerId" : null,
+        "pointerType" : null,
+        "target" : "mark-cell:13",
+        "touches" : 0,
+        "trusted" : true,
+        "ts" : 4581,
+        "type" : "touchend",
+        "x" : 119,
+        "y" : 255
+      }
+    ],
+    "scaleAfter" : 1.7516369819641113,
+    "scaleBefore" : 1
+  },
+  "device" : "iphone16-ios26.4.1",
+  "ios" : "26.4.1",
+  "model" : "iPhone17,3",
+  "target" : 9,
+  "version" : "0.3.4"
+}

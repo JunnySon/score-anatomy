@@ -1,0 +1,104 @@
+{
+  "class": "FastTapTests",
+  "test": "testIntervalsWhileMeasuring",
+  "startLine": 2914,
+  "errors": [
+    {
+      "logLine": 3544,
+      "rawLineSHA256": "126fc2671b23c352c5fb6dab6290bfa0c17c002149ac33441ff0ff77100de403",
+      "swiftFile": "FastTapTests.swift",
+      "swiftLine": 403,
+      "message": "XCTAssertTrue failed - 따로 보낸 누름, 0.4초: 찍음이 된다: 3번, 넣은 답 2, 고민, pointerdown, touchstart, pointerup, touchend, click 1, pointerdown, touchstart, dblclick 2, pointerup, touchend"
+    }
+  ],
+  "started": "2026-11-28 18:56:30.207",
+  "result": "failed",
+  "endLine": 3546,
+  "duration": 128.041,
+  "run": "run-20261128-183727.tvSda3",
+  "suite": "main",
+  "log": "main.log",
+  "metrics": [
+    {
+      "source": "runs/main/metrics.jsonl",
+      "line": 13,
+      "lineSHA256": "f31466ba474243e0cfb77d3304886cb6408b32095ef2048c253ea1122c1b60a0",
+      "case": "측정 중 답 키 아주 빠르게(doubleTap)",
+      "target": "아주 빠르게"
+    },
+    {
+      "source": "runs/main/metrics.jsonl",
+      "line": 14,
+      "lineSHA256": "319778e66190fbc785d91f000723907b1229d04cf7548a760ba651e7395620a1",
+      "case": "측정 중 표시 칸 아주 빠르게(doubleTap)",
+      "target": "아주 빠르게"
+    },
+    {
+      "source": "runs/main/metrics.jsonl",
+      "line": 15,
+      "lineSHA256": "00c38bb2a33f98d5affef562325cb822aa45d238e88de511166a04e8c72a1ed4",
+      "case": "측정 중 표시 칸 따로 보낸 누름, 가장 짧게",
+      "target": "0.3초"
+    },
+    {
+      "source": "runs/main/metrics.jsonl",
+      "line": 16,
+      "lineSHA256": "c381851cf712b0249571caab582ea541aca7dee04afdc0767ab7c39e26bfd45b",
+      "case": "측정 중 표시 칸 따로 보낸 누름, 0.4초",
+      "target": "0.4초"
+    }
+  ],
+  "files": [
+    {
+      "source": "runs/main/runs/fast-measure-EB0F81FE/store/store.json",
+      "archived": "runs/fast-measure-EB0F81FE/store/store.json",
+      "sha256": "5b10b47c9ca41a6a37949ea7ee900feacba3edada47e0d4a822d83f5cbc2d1fe",
+      "evidence": "자동 XCTest의 예시 시험 A 기록, 실제 학생 자료 없음"
+    },
+    {
+      "source": "runs/main/runs/fast-measure-EB0F81FE/probe/out-0006.json",
+      "archived": "runs/fast-measure-EB0F81FE/probe/out-0006.json",
+      "sha256": "545ea8ffcc06a567622ccfb88986ce0b718b3dce54eb6c1ddb6edb9fc701415e",
+      "metricLines": [
+        13
+      ],
+      "evidence": "해당 테스트의 이벤트 응답. metrics 미연결 시 실패 동작과 동일한지는 미확인"
+    },
+    {
+      "source": "runs/main/runs/fast-measure-EB0F81FE/probe/out-0008.json",
+      "archived": "runs/fast-measure-EB0F81FE/probe/out-0008.json",
+      "sha256": "244b64b3ec198ee1568b79c46415949c6a3a3250b738f402825548dff0cb8d3e",
+      "metricLines": [
+        14
+      ],
+      "evidence": "해당 테스트의 이벤트 응답. metrics 미연결 시 실패 동작과 동일한지는 미확인"
+    },
+    {
+      "source": "runs/main/runs/fast-measure-EB0F81FE/probe/out-0010.json",
+      "archived": "runs/fast-measure-EB0F81FE/probe/out-0010.json",
+      "sha256": "c50560adcdce73e39b1a1f47afc15d493580ec8362c7176b1089f5b1c9bbae92",
+      "metricLines": [
+        15
+      ],
+      "evidence": "해당 테스트의 이벤트 응답. metrics 미연결 시 실패 동작과 동일한지는 미확인"
+    },
+    {
+      "source": "runs/main/runs/fast-measure-EB0F81FE/probe/out-0012.json",
+      "archived": "runs/fast-measure-EB0F81FE/probe/out-0012.json",
+      "sha256": "68f738e23d3668fb25c6875bb1bdd933513ce9442f7ff63650d7c0f62a3c30ed",
+      "metricLines": [
+        16
+      ],
+      "evidence": "해당 테스트의 이벤트 응답. metrics 미연결 시 실패 동작과 동일한지는 미확인"
+    }
+  ],
+  "notes": [],
+  "metricsSHA256": "6161039e6fcf8086960fa6544778ec8d7fadf580274604f24aa936013649cfee",
+  "intervalKST": [
+    "2026-11-28T18:56:30.207000+09:00",
+    "2026-11-28T18:58:38.248000+09:00"
+  ],
+  "appHandles": [
+    "runs/main/runs/fast-measure-EB0F81FE"
+  ]
+}

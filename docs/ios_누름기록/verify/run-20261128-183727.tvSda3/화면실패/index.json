@@ -1,0 +1,101 @@
+{
+  "run": "run-20261128-183727.tvSda3",
+  "commit": "c8f1bff",
+  "manifest": "version 0.3.4, 커밋 96de310, dirty False, bridge 1, bridgeMax 2, app-test 4cdc68a306dc, app-release 166f71a96f22",
+  "suites": {
+    "first034-16-18": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "first034-16-18.log"
+    },
+    "first034-16-26": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "first034-16-26.log"
+    },
+    "first034-17-26": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "first034-17-26.log"
+    },
+    "held18": {
+      "finishedTestCases": 8,
+      "failures": 0,
+      "log": "held18.log"
+    },
+    "held26": {
+      "finishedTestCases": 8,
+      "failures": 0,
+      "log": "held26.log"
+    },
+    "ios18": {
+      "finishedTestCases": 25,
+      "failures": 0,
+      "log": "ios18.log"
+    },
+    "ipad": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "ipad.log"
+    },
+    "live": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "live.log"
+    },
+    "main": {
+      "finishedTestCases": 49,
+      "failures": 2,
+      "log": "main.log"
+    },
+    "main-dark": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "main-dark.log"
+    },
+    "release": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "release.log"
+    },
+    "release-look": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "release-look.log"
+    },
+    "se": {
+      "finishedTestCases": 4,
+      "failures": 0,
+      "log": "se.log"
+    },
+    "se-dark": {
+      "finishedTestCases": 1,
+      "failures": 0,
+      "log": "se-dark.log"
+    },
+    "unit": {
+      "finishedTestCases": 107,
+      "failures": 0,
+      "log": "unit.log"
+    },
+    "unit18": {
+      "finishedTestCases": 107,
+      "failures": 0,
+      "log": "unit18.log"
+    }
+  },
+  "failures": [
+    {
+      "evidence": "main/FastTapTests.testIntervalsWhileMeasuring-L3546/evidence.json",
+      "metrics": 4,
+      "files": 5,
+      "notes": []
+    },
+    {
+      "evidence": "main/FastTapTests.testTapThenFastDoubleTapWithinASecondFillsThreeItems-L3633/evidence.json",
+      "metrics": 1,
+      "files": 2,
+      "notes": []
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "case": "A",
+    "trial": 1,
+    "sampleFile": "zoom034/A-01.json",
+    "gestureStart": 1795856042.787105,
+    "gestureEnd": 1795856043.7239718,
+    "settledAt": 1795856045.128992,
+    "excess": [],
+    "overKind": [],
+    "countsAgree": true,
+    "observationsAgree": true,
+    "firstTargetConfirmed": true,
+    "completeEvidence": true,
+    "rawRows": 5,
+    "identifiedDoubleTap": 0,
+    "potentialWait": 1,
+    "source": "stream",
+    "coverage": "구간 로그 있음",
+    "logFile": "viewgestures/A-01.ndjson"
+  }
+]

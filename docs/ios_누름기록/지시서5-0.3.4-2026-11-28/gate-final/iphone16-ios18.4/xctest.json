@@ -1,0 +1,61 @@
+{
+ "device": "iphone16",
+ "ok": true,
+ "path": "/Users/soninjun/Desktop/고딩/score-anatomy/ios/build/retap034.fiJDVk/gate-final/iphone16-ios18.4/measurement.xcresult",
+ "summary": {
+  "devicesAndConfigurations": [
+   {
+    "device": {
+     "architecture": "arm64",
+     "deviceId": "917B0EC6-58D6-4EBC-9AD7-4F132FFB50EA",
+     "deviceName": "SA034-iphone16-ios18.4-40361",
+     "modelName": "iPhone 16",
+     "osBuildNumber": "22E238",
+     "osVersion": "18.4",
+     "platform": "iOS Simulator"
+    },
+    "expectedFailures": 0,
+    "failedTests": 1,
+    "passedTests": 0,
+    "skippedTests": 0,
+    "testPlanConfiguration": {
+     "configurationId": "1",
+     "configurationName": "Test Scheme Action"
+    }
+   }
+  ],
+  "environmentDescription": "ScoreAnatomy \u00b7 Built with macOS 26.6.2",
+  "expectedFailures": 0,
+  "failedTests": 1,
+  "finishTime": 1795856124.299,
+  "passedTests": 0,
+  "result": "Failed",
+  "skippedTests": 0,
+  "startTime": 1795856006.329,
+  "statistics": [],
+  "testFailures": [
+   {
+    "failureText": "failed: caught error: \"Error Domain=ZoomDiagnostics Code=1 \"시작 화면 준비 실패: [\"archives\": <__NSArray0 0x1e7212908>(\n\n)\n, \"sent\": <__NSArray0 0x1e7212908>(\n\n)\n, \"failure\": timeout, \"received\": {\n}, \"blockedNavigations\": <__NSArray0 0x1e7212908>(\n\n)\n, \"rendered\": 1, \"remote\": <__NSArray0 0x1e7212908>(\n\n)\n, \"blockedWindows\": <__NSArray0 0x1e7212908>(\n\n)\n]\" UserInfo={NSLocalizedDescription=시작 화면 준비 실패: [\"archives\": <__NSArray0 0x1e7212908>(\n\n)\n, \"sent\": <__NSArray0 0x1e7212908>(\n\n)\n, \"failure\": timeout, \"received\": {\n}, \"blockedNavigations\": <__NSArray0 0x1e7212908>(\n\n)\n, \"rendered\": 1, \"remote\": <__NSArray0 0x1e7212908>(\n\n)\n, \"blockedWindows\": <__NSArray0 0x1e7212908>(\n\n)\n]}\"",
+    "targetName": "ScoreAnatomyUITests",
+    "testIdentifier": 1,
+    "testIdentifierString": "ZoomDiagnosticsTests/testWeb034FirstGestures()",
+    "testIdentifierURL": "test://com.apple.xcode/ScoreAnatomy/ScoreAnatomyUITests/ZoomDiagnosticsTests/testWeb034FirstGestures",
+    "testName": "testWeb034FirstGestures()"
+   }
+  ],
+  "title": "Test - ScoreAnatomy",
+  "topInsights": [],
+  "totalTestCount": 1
+ },
+ "tests": [
+  {
+   "duration": 85.89699196815491,
+   "messages": [
+    "failed: caught error: \"Error Domain=ZoomDiagnostics Code=1 \"시작 화면 준비 실패: [\"archives\": <__NSArray0 0x1e7212908>(\n\n)\n, \"sent\": <__NSArray0 0x1e7212908>(\n\n)\n, \"failure\": timeout, \"received\": {\n}, \"blockedNavigations\": <__NSArray0 0x1e7212908>(\n\n)\n, \"rendered\": 1, \"remote\": <__NSArray0 0x1e7212908>(\n\n)\n, \"blockedWindows\": <__NSArray0 0x1e7212908>(\n\n)\n]\" UserInfo={NSLocalizedDescription=시작 화면 준비 실패: [\"archives\": <__NSArray0 0x1e7212908>(\n\n)\n, \"sent\": <__NSArray0 0x1e7212908>(\n\n)\n, \"failure\": timeout, \"received\": {\n}, \"blockedNavigations\": <__NSArray0 0x1e7212908>(\n\n)\n, \"rendered\": 1, \"remote\": <__NSArray0 0x1e7212908>(\n\n)\n, \"blockedWindows\": <__NSArray0 0x1e7212908>(\n\n)\n]}\""
+   ],
+   "name": "testWeb034FirstGestures",
+   "result": "Failed",
+   "suite": "ZoomDiagnosticsTests"
+  }
+ ]
+}

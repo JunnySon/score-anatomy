@@ -1,0 +1,43 @@
+{
+  "state": "complete",
+  "started": 1795857502.9355059,
+  "expected": 59,
+  "devices": [
+    {
+      "folder": "iphone16-ios18.4",
+      "device": "iphone16",
+      "os": "18.4",
+      "state": "complete",
+      "started": 1795857502.935921,
+      "firstOrdinal": 2,
+      "lastOrdinal": 60,
+      "expected": 59,
+      "udid": "CAE27A0B-619A-4801-8AE8-2F7C5973BE9D",
+      "streamStart": 1795857525.7450051,
+      "streamAliveAtStart": true,
+      "written": 59,
+      "latest": "key-triple-10.json",
+      "xcodeExit": 0,
+      "streamAliveAtEnd": true,
+      "streamEnd": 1795858065.042662,
+      "streamExit": 0,
+      "streamAllRows": 422,
+      "streamBadTimestamps": 0,
+      "shutdownExit": 0,
+      "deleteExit": 0,
+      "completed": 59,
+      "confirmedOver": [],
+      "errors": [],
+      "observationGaps": [],
+      "windowsWithoutLogRows": [],
+      "ended": 1795858066.6618738
+    }
+  ],
+  "scope": "device_segment",
+  "onlyDevice": "iphone16-ios18.4",
+  "firstOrdinal": 2,
+  "lastOrdinal": 60,
+  "exitCode": 0,
+  "ended": 1795858066.6624,
+  "completed": 59
+}

@@ -339,9 +339,9 @@
 - 시작 단계에서 측정기를 보완한 뒤 첫 입력 원본이 생기기 전에 한 번 다시 시작했어요. 아래 두 실행에서는 실제 누름이 들어간 같은 회차를 다시 재지 않았어요.
 - 첫 실행(gate-final)은 17:53:01~18:18:06, 실행기 종료 2, 입력 원본 121회예요. iOS 18.4는 A 1회차 뒤 다음 앱의 시작 화면이 누르기 전에 시간 초과로 끝났어요.
 - iOS 18.4 이어 재기(resume18)는 18:18:22~18:27:46, 실행기 종료 0, 입력 원본 59회예요. A 2회차부터 이어서 두 실행을 합치면 각 기기에 60회씩 있어요.
-- iPhone 16 / 18.4에서 F 간격 280~386ms였어요. [이벤트 원본 예시](ios_누름기록/지시서5-0.3.4-2026-11-28/resume18/iphone16-ios18.4/zoom034/F-01.json), [같은 시간의 WebKit 로그](ios_누름기록/지시서5-0.3.4-2026-11-28/resume18/iphone16-ios18.4/viewgestures/F-01.ndjson)
-- iPhone 16 / 26.4.1에서 F 간격 281~301ms였어요. [이벤트 원본 예시](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone16-ios26.4.1/zoom034/F-01.json), [같은 시간의 WebKit 로그](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone16-ios26.4.1/viewgestures/F-01.ndjson)
-- iPhone 17 / 26.4.1에서 F 간격 279~296ms였어요. [이벤트 원본 예시](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone17-ios26.4.1/zoom034/F-01.json), [같은 시간의 WebKit 로그](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone17-ios26.4.1/viewgestures/F-01.ndjson)
+- iPhone 16 / 18.4에서 F 간격 280~386ms였어요. [최소 간격 원본](ios_누름기록/지시서5-0.3.4-2026-11-28/resume18/iphone16-ios18.4/zoom034/F-09.json), [최대 간격 원본](ios_누름기록/지시서5-0.3.4-2026-11-28/resume18/iphone16-ios18.4/zoom034/F-02.json), [최소 간격 회차의 WebKit 로그](ios_누름기록/지시서5-0.3.4-2026-11-28/resume18/iphone16-ios18.4/viewgestures/F-09.ndjson)
+- iPhone 16 / 26.4.1에서 F 간격 281~301ms였어요. [최소 간격 원본](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone16-ios26.4.1/zoom034/F-03.json), [최대 간격 원본](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone16-ios26.4.1/zoom034/F-04.json), [최소 간격 회차의 WebKit 로그](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone16-ios26.4.1/viewgestures/F-03.ndjson)
+- iPhone 17 / 26.4.1에서 F 간격 279~296ms였어요. [최소 간격 원본](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone17-ios26.4.1/zoom034/F-10.json), [최대 간격 원본](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone17-ios26.4.1/zoom034/F-09.json), [최소 간격 회차의 WebKit 로그](ios_누름기록/지시서5-0.3.4-2026-11-28/gate-final/iphone17-ios26.4.1/viewgestures/F-10.ndjson)
 
 [전체 원본과 기기별 측정 구간](ios_누름기록/지시서5-0.3.4-2026-11-28/)
 

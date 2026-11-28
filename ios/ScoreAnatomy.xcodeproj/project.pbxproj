@@ -11,6 +11,7 @@
 		10EC1902AA8D1DE4B79B859D /* AppHandle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6EFDACFF4EC02443BEDB247 /* AppHandle.swift */; };
 		14BF946A2FC3EBFAD6B10BFC /* app-release in Resources */ = {isa = PBXBuildFile; fileRef = 5045026A721C8CC788ED7BF8 /* app-release */; };
 		16D4A1D34F700CC9A66B68F2 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 19929B165C3A39CD17790589 /* PrivacyInfo.xcprivacy */; };
+		232ED9065FED24310EFEE579 /* MarkGestureRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476870422B3B052FCD576982 /* MarkGestureRegressionTests.swift */; };
 		2806271400323D302C8B9A09 /* RemoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10CD4C16948C4B2ACCC4B49E /* RemoteTests.swift */; };
 		295BE8E3DF90654D93FC9049 /* ScreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6726CE7BE73A72BBD9024AF1 /* ScreenTests.swift */; };
 		353D48E766CC5BEABCD9792F /* ReleaseCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6870E900CBD841ECD0896D4 /* ReleaseCheck.swift */; };
@@ -75,6 +76,7 @@
 		2D2C56EC92D4B78426A41B51 /* ShellUnitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShellUnitTests.swift; sourceTree = "<group>"; };
 		3BE013745F9930727DD28C1D /* StrictJSON.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrictJSON.swift; sourceTree = "<group>"; };
 		46F2375FB9329AD97AFDD8B7 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
+		476870422B3B052FCD576982 /* MarkGestureRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkGestureRegressionTests.swift; sourceTree = "<group>"; };
 		5045026A721C8CC788ED7BF8 /* app-release */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "app-release"; path = "ScoreAnatomy/Web/app-release"; sourceTree = SOURCE_ROOT; };
 		5FF9AE6DABBB53ED561663D9 /* LookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookTests.swift; sourceTree = "<group>"; };
 		6726CE7BE73A72BBD9024AF1 /* ScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenTests.swift; sourceTree = "<group>"; };
@@ -272,6 +274,7 @@
 				F21DB317EC6899DCA8051A65 /* FlowTests.swift */,
 				82991936A6985AB06E0FB694 /* HeldDoubleTapTests.swift */,
 				5FF9AE6DABBB53ED561663D9 /* LookTests.swift */,
+				476870422B3B052FCD576982 /* MarkGestureRegressionTests.swift */,
 				AFECED8B2563A18722305CD4 /* NetworkAndFontTests.swift */,
 				BDF4191C98462F1E5F8EA593 /* RemoteFetchTests.swift */,
 				DE518120FE496F55AAF7CB4B /* RestartAndRhythmTests.swift */,
@@ -500,6 +503,7 @@
 				DB1D5E4578A9D410DF7D8814 /* FlowTests.swift in Sources */,
 				F9C9043B5B0AC480117145D0 /* HeldDoubleTapTests.swift in Sources */,
 				A5D6F1B95E63D4C5081E53A7 /* LookTests.swift in Sources */,
+				232ED9065FED24310EFEE579 /* MarkGestureRegressionTests.swift in Sources */,
 				82AA6681C0D56B9FADAAD2C9 /* NetworkAndFontTests.swift in Sources */,
 				623F6E671B269B9012D384D6 /* RemoteFetchTests.swift in Sources */,
 				5B6EC28CFA1C9A1859113590 /* RestartAndRhythmTests.swift in Sources */,

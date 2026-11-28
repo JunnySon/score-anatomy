@@ -940,7 +940,15 @@ def cmd_render(out_dir, doc_path):
     lines.append(f"- 저장소: 브랜치 {env.get('branch', '?')}, 커밋 {env.get('commit', '?')}{dirty_note}")
     lines.append(f"- 웹 묶음: {env.get('manifestInfo', '?')}")
     lines.append(f"- 실행 시각: {env.get('startedAt', '?')} ~ {env.get('finishedAt', '?')}. 시작할 때 전원: {env.get('power', '?')}. 잠듦 확인은 docs/ios_진행기록.md 에 적어요(pmset 기록).")
-    lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {env.get('simulators', '?')}")
+    simulators = env.get("simulators", "?")
+    # 3-1에서 추가로 만든 기기는 최초 시뮬레이터 목록에 없어서 실제 XCTest 실행 기록에서 읽는다.
+    extra_suite = load(Path(out_dir) / "ui-first034-16-26.json", {})
+    for destination in extra_suite.get("summary", {}).get("devicesAndConfigurations", []):
+        device = destination.get("device", {})
+        if device.get("modelName") == "iPhone 16" and device.get("osVersion"):
+            simulators += f", iPhone 16 (iOS {device['osVersion']}, 첫 누름)"
+            break
+    lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {simulators}")
     lines.append(f"- 데스크톱 폴더 대응: 테스트 빌드에만 링커 설정 `-Wl,-S`(디버그 맵 빼기)를 덧붙였어요. 테스트 바이너리의 디버그 맵 항목 {env.get('testDebugMapEntries', '?')}개(0이어야 해요). 이유는 docs/ios_결정기록.md 에 있어요. 앱 코드와 프로젝트 설정은 그대로예요.")
     lines.append("")
     lines.append("| 번호 | 항목 | 결과 | 숫자 | 최소 기준 |")

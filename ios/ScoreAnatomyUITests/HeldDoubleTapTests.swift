@@ -537,7 +537,33 @@ final class ZoomDiagnosticsTests: XCTestCase {
             .compactMap { ($0["scale"] as? NSNumber)?.doubleValue }
         let peak = (scaleReadings + [sample.scaleBefore, sample.scaleAfter].compactMap { $0 }).max()
         let zoomed = peak.flatMap { maximum in sample.scaleBefore.map { maximum - $0 > 0.01 } }
-        let elementOver = sample.elementOver || !sample.overAt.isEmpty
+        let domElementOver = sample.elementOver || !sample.overAt.isEmpty
+        // 답 키 실험은 답이 빈 세션으로 시작한다. 저장된 각 답의 값과 그 값의 키에 닿은 실제 누름을 비교한다.
+        var savedAnswers: [String: Int]?
+        var keyPresses: [String: Int] = [:]
+        var storedCounts: [String: Int] = [:]
+        var storedExcess: [String: Int] = [:]
+        if screen == .Gkey {
+            for event in downs where event["trusted"] as? Bool == true {
+                if let control = event["control"] as? String, control.hasPrefix("key:"),
+                   let number = Int(control.dropFirst(4)) {
+                    keyPresses[String(number), default: 0] += 1
+                }
+            }
+            if let store = handle.storeJSON(), let current = store["currentId"] as? String,
+               let sessions = store["sessions"] as? [[String: Any]],
+               let session = sessions.first(where: { $0["id"] as? String == current }),
+               let answers = session["answers"] as? [String: Int] {
+                savedAnswers = answers
+                for number in answers.values { storedCounts[String(number), default: 0] += 1 }
+                for (value, count) in storedCounts {
+                    let extra = count - keyPresses[value, default: 0]
+                    if extra > 0 { storedExcess[value] = extra }
+                }
+            }
+        }
+        let storedOver = savedAnswers.map { _ in !storedExcess.isEmpty }
+        let elementOver = domElementOver || storedOver == true
         let precedingDowns = prep.filter { $0["type"] as? String == "pointerdown" }
         var complete = gestureError == nil && precedingDowns.isEmpty && physical.count == taps && downs.count == taps
             && sample.firstDownTarget == intended && physical.first?["target"] as? String == rawTarget
@@ -552,10 +578,21 @@ final class ZoomDiagnosticsTests: XCTestCase {
             "firstDownTarget": sample.firstDownTarget as Any? ?? NSNull(), "intended": intended,
             "targetPresses": targetPresses, "targetEntered": targetEntered,
             "pressedByElement": sample.pressedByElement, "enteredByElement": sample.enteredByElement,
-            "elementOver": elementOver, "overAt": sample.overAt, "preparationDowns": precedingDowns,
+            "elementOver": elementOver, "domElementOver": domElementOver, "storedAnswerOver": storedOver as Any? ?? NSNull(),
+            "overAt": sample.overAt, "preparationDowns": precedingDowns,
             "touchMousedown": sample.trace.filter { $0["what"] as? String == "touch-mousedown" }.count,
             "events": sample.events, "trace": sample.trace,
         ]
+        if screen == .Gkey {
+            row["answerPressesByValue"] = keyPresses
+            if let savedAnswers {
+                row["answers"] = savedAnswers
+                row["storedAnswersByValue"] = storedCounts
+                row["storedExcessByValue"] = storedExcess
+            } else {
+                complete = false
+            }
+        }
         if let gestureError { row["gestureError"] = gestureError }
         // 초과가 관찰되면 끝 상태 탐침이 실패하거나 실행이 끊겨도 원본이 남게 한다.
         let partial = folder.appendingPathComponent(basename + ".pending")
@@ -569,12 +606,9 @@ final class ZoomDiagnosticsTests: XCTestCase {
             var answersMatch = true
             switch screen {
             case .Gkey:
-                let answers = handle.answerMap()
-                actual = String(answers.count)
+                actual = savedAnswers.map { String($0.count) } ?? "확인하지 못함"
                 expected = String(taps)
-                row["answers"] = Dictionary(uniqueKeysWithValues: answers.map { (String($0.key), $0.value) })
-                answersMatch = (1...taps).allSatisfy { answers[$0] == 3 }
-                if handle.storeJSON() == nil { complete = false }
+                answersMatch = (1...taps).allSatisfy { savedAnswers?[String($0)] == 3 }
             case .Ggrade:
                 actual = try XCTUnwrap(handle.evaluate("return Array.from(document.querySelectorAll('[data-testid^=grade-][aria-checked=true]'), e=>e.dataset.testid).join(',');") as? String)
                 expected = "grade-1"

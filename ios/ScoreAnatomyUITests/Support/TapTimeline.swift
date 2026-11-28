@@ -39,9 +39,20 @@ enum TapTimeline {
             enteredByElement.contains { key, count in count > pressedByElement[key, default: 0] }
         }
 
+        var peakScale: Double? {
+            let scales = events.filter { $0["type"] as? String == "viewport-resize" }
+                .compactMap { ($0["scale"] as? NSNumber)?.doubleValue }
+            return (scales + [scaleBefore, scaleAfter].compactMap { $0 }).max()
+        }
+
         var zoomed: Bool {
+            guard let scaleBefore, let peakScale else { return false }
+            return peakScale > scaleBefore
+        }
+
+        var settledZoomed: Bool {
             guard let scaleBefore, let scaleAfter else { return false }
-            return scaleAfter - scaleBefore > 0.01
+            return scaleAfter > scaleBefore
         }
         var pressGapMs: Double?
         /// 손을 뗀 뒤 그 누름의 손가락 click 이 오기까지(ms).
@@ -108,10 +119,10 @@ enum TapTimeline {
         document.addEventListener('click', e => track('accepted-click', e), options);
         if (\(web034Diagnostics ? "true" : "false")) {
           document.addEventListener('mousedown', e => track('observed-mousedown', e), options);
-          window.visualViewport.addEventListener('resize', () => {
-            rows.push({type:'viewport-resize', now:performance.now(), scale:window.visualViewport.scale});
-          }, options);
         }
+        window.visualViewport.addEventListener('resize', () => {
+          rows.push({type:'viewport-resize', now:performance.now(), scale:window.visualViewport.scale});
+        }, options);
         window.__saHeldCapture = { controller, scale: window.visualViewport.scale };
         return true;
         """) as? Bool
@@ -212,6 +223,10 @@ enum TapTimeline {
         for e in trial.events {
             let type = e["type"] as? String ?? ""
             let at = number(e["now"]) ?? 0
+            if type == "viewport-resize", let scale = number(e["scale"]) {
+                lines.append(Line(at: at, text: pad(String(format: "%.1f", at), 10) + "viewport-resize scale " + String(scale)))
+                continue
+            }
             let detail = (e["detail"] as? NSNumber).map { "\($0.intValue)" } ?? "-"
             let trusted = (e["trusted"] as? Bool).map { $0 ? "true" : "false" } ?? "-"
             let finger: String

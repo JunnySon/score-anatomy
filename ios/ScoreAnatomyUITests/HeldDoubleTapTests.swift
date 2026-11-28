@@ -16,6 +16,18 @@ final class HeldDoubleTapTests: XCTestCase {
 
     typealias Trial = TapTimeline.Trial
 
+    nonisolated private static var stopFile: URL? {
+        guard ProcessInfo.processInfo.environment["SA_STOP_ON_OVER"] == "1" else { return nil }
+        return TestEnv.outDirectory.appendingPathComponent("input-over.json")
+    }
+
+    override func setUpWithError() throws {
+        try super.setUpWithError()
+        if let file = Self.stopFile {
+            try XCTSkipIf(FileManager.default.fileExists(atPath: file.path), "이 실행의 앞선 회차에서 초과 입력을 확인하여 중단")
+        }
+    }
+
     private var os: String { TapTimeline.os }
 
     private func save(_ trials: [Trial], target: String, slug: String) {
@@ -51,8 +63,14 @@ final class HeldDoubleTapTests: XCTestCase {
                       "presses": trial.presses, "observed": trial.events.filter { $0["type"] as? String == "observed-down" }.count,
                       "firstDownTarget": trial.firstDownTarget ?? "", "intended": intended,
                       "entered": trial.entered, "over": trial.over, "before": trial.scaleBefore ?? -1, "after": trial.scaleAfter ?? -1,
+                      "peakScale": trial.peakScale ?? -1,
                       "pressedByElement": trial.pressedByElement, "enteredByElement": trial.enteredByElement, "file": file.lastPathComponent])
         trials.append(trial)
+        if trial.over, let signal = Self.stopFile {
+            let proof: [String: Any] = ["slug": slug, "index": trial.index, "file": file.lastPathComponent,
+                                        "device": TestEnv.deviceTag, "os": os]
+            try JSONSerialization.data(withJSONObject: proof, options: [.sortedKeys]).write(to: signal, options: .atomic)
+        }
         XCTAssertEqual(trial.firstDownTarget, intended, "첫 pointerdown이 지정한 요소에 닿아야 한다: " + basename)
         if trial.over {
             throw NSError(domain: "HeldDoubleTapTests", code: 1,
@@ -583,7 +601,7 @@ final class ZoomDiagnosticsTests: XCTestCase {
         let scaleReadings = sample.events.filter { $0["type"] as? String == "viewport-resize" }
             .compactMap { ($0["scale"] as? NSNumber)?.doubleValue }
         let peak = (scaleReadings + [sample.scaleBefore, sample.scaleAfter].compactMap { $0 }).max()
-        let zoomed = peak.flatMap { maximum in sample.scaleBefore.map { maximum - $0 > 0.01 } }
+        let zoomed = peak.flatMap { maximum in sample.scaleBefore.map { maximum > $0 } }
         let domElementOver = sample.elementOver || !sample.overAt.isEmpty
         // 답 키 실험은 답이 빈 세션으로 시작한다. 저장된 각 답의 값과 그 값의 키에 닿은 실제 누름을 비교한다.
         var savedAnswers: [String: Int]?
@@ -619,7 +637,7 @@ final class ZoomDiagnosticsTests: XCTestCase {
             "case": name, "trial": index, "ordinal": ordinal, "device": TestEnv.deviceTag, "os": TapTimeline.os,
             "appRun": handle.runDirectory.lastPathComponent, "gestureStart": start, "gestureEnd": end, "settledAt": settled, "before": before,
             "after": ["scale": sample.scaleAfter as Any? ?? NSNull()], "peakScale": peak as Any? ?? NSNull(),
-            "zoomed": zoomed as Any? ?? NSNull(), "settledZoomed": sample.zoomed,
+            "zoomed": zoomed as Any? ?? NSNull(), "settledZoomed": sample.settledZoomed,
             "gapMs": sample.pressGapMs as Any? ?? NSNull(), "expectedPresses": taps,
             "physicalDowns": physical.count, "nativePointerDownTargets": physical.compactMap { $0["target"] as? String },
             "firstDownTarget": sample.firstDownTarget as Any? ?? NSNull(), "intended": intended,

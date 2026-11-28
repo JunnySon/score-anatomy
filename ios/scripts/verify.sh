@@ -399,33 +399,75 @@ if [ -n "$IPAD" ]; then
 fi
 
 # ---------------------------------------------------------------- 10. 최소 버전(iOS 18), 22. 3-2 되풀이 재기
+gesture_stop=0
+run_held() {
+  local label=$1
+  TEST_RUNNER_SA_STOP_ON_OVER=1 run_ui "$@" ScoreAnatomyUITests/HeldDoubleTapTests
+  if ! "${REPORT[@]}" held-stop "$OUT/runs/$label"; then
+    gesture_stop=1
+    meta gestureStop "$label"
+    log "$label 이후 제스처 중단. 현재까지의 자료로 문서를 쓴다"
+  fi
+}
 if [ -n "$I18" ]; then
   run_ui ios18 "$I18" ios18 ScoreAnatomyUITests/FlowTests ScoreAnatomyUITests/RestartTests ScoreAnatomyUITests/FastTapTests ScoreAnatomyUITests/RemoteFetchTests
-  # 22. 기록용: 누르는 동안 온 dblclick 규칙(웹 0.3.2)을 iOS 18.4 에서 되풀이해 잰다.
-  run_ui held18 "$I18" iphone16 ScoreAnatomyUITests/HeldDoubleTapTests
+  # 22. 누르는 동안 온 dblclick과 최고 배율을 iOS 18.4에서 되풀이해 잰다.
+  run_held held18 "$I18" iphone16
 fi
 # 22. 같은 되풀이를 iOS 26.4 에서도 잰다(나빠진 것이 없는지).
-run_ui held26 "$MAIN" iphone17 ScoreAnatomyUITests/HeldDoubleTapTests
+if [ "$gesture_stop" = 0 ]; then run_held held26 "$MAIN" iphone17; fi
+
+# 22. 지시서 5의 3-1만 실행한다. 초과 파일은 XCTest가 원자적으로 남기고 다음 회차 전에 중단한다.
+# 이어서 원본을 재검산한 뒤 다음 기기로 넘어간다. 확대는 나머지 회차와 기기에서도 계속 잰다.
+run_first034() {
+  local label=$1 device=$2 model=$3 runtime=$4 reuse_id=$5 udid=$5
+  local version=${runtime#* }
+  local -a TEST_TIME=(-test-timeouts-enabled YES -default-test-execution-time-allowance 3600 -maximum-test-execution-time-allowance 3600)
+  if [ -z "$udid" ] && [ -n "$runtime" ]; then
+    udid=$(create_sim "$PREFIX-$label" "com.apple.CoreSimulator.SimDeviceType.$model" "${runtime%% *}")
+  fi
+  if [ -n "$udid" ]; then
+    TEST_RUNNER_SA_ZOOM_034=1 run_ui "$label" "$udid" "$device" ScoreAnatomyUITests/ZoomDiagnosticsTests/testWeb034FirstGestures
+    if [ "$udid" != "$reuse_id" ]; then xcrun simctl shutdown "$udid" >/dev/null 2>&1 || true; fi
+  else
+    log "$label 측정에 필요한 $model iOS $version 시뮬레이터 없음"
+  fi
+  "${REPORT[@]}" first034 "$OUT" "$label" "$device" "$version"
+}
+for label in first034-16-18 first034-16-26 first034-17-26; do
+  [ "$gesture_stop" = 0 ] || break
+  case "$label" in
+    first034-16-18) run_first034 "$label" iphone16 iPhone-16 "$IOS18" "$I18" ;;
+    first034-16-26) run_first034 "$label" iphone16 iPhone-16 "$LATEST" "" ;;
+    first034-17-26) run_first034 "$label" iphone17 iPhone-17 "$LATEST" "$MAIN" ;;
+  esac
+  case $? in
+    0) ;;
+    *) gesture_stop=1; meta gestureStop "$label"; log "$label 이후 제스처 중단. 원본 중단 판정을 문서에 남긴다"; break ;;
+  esac
+done
 
 # ---------------------------------------------------------------- 추가: Release 구성으로 켜기
 # 1번의 Release 앱 검사를 마친 뒤에 한다. 화면 테스트를 붙이려고 이 빌드에만 ENABLE_TESTABILITY 를 켠다(코드는 같다).
-log "Release 구성으로 켜기"
-xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" \
-  "$TEST_LDFLAGS" ENABLE_TESTABILITY=YES build-for-testing > "$OUT/build-release-tests.log" 2>&1 || log "Release 테스트 빌드 실패(로그: $OUT/build-release-tests.log)"
-mkdir -p "$OUT/runs/release" "$OUT/runs/release-look"
-# 15. 배포용 묶음의 모양(작업 지시서 3-2의 3-3): Release 앱은 기록 위치를 바꾸는 장치가 없어 앱 저장 공간을 쓴다. 앞 실행의
-# 기록이 남지 않게 앱을 지운 뒤(xcodebuild 가 다시 깐다) Debug 와 같은 새 상태에서 시작한다. Debug 쪽은 위의 주 기기 실행이 찍었다.
-APP_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BUILD/Build/Products/Release-iphonesimulator/ScoreAnatomy.app/Info.plist" 2>/dev/null || echo "")
-[ -n "$APP_ID" ] && xcrun simctl uninstall "$MAIN" "$APP_ID" >/dev/null 2>&1
-log "15. Release 모양 비교(LookTests)"
-env "${EXAM_ENV[@]}" TEST_RUNNER_SA_OUT="$OUT/runs/release-look" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release TEST_RUNNER_SA_LOOK="$OUT/look" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
-  -destination "platform=iOS Simulator,id=$MAIN" -parallel-testing-enabled NO -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release-look.xcresult" \
-  -only-testing:ScoreAnatomyUITests/LookTests "${TEST_TIME[@]}" test-without-building > "$OUT/release-look.log" 2>&1
-"${REPORT[@]}" xcresult "$OUT/release-look.xcresult" "$OUT/ui-release-look.json" iphone17
-env "${EXAM_ENV[@]}" TEST_RUNNER_SA_OUT="$OUT/runs/release" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
-  -destination "platform=iOS Simulator,id=$MAIN" -parallel-testing-enabled NO -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release.xcresult" \
-  -only-testing:ScoreAnatomyUITests/ReleaseSmokeTests "${TEST_TIME[@]}" test-without-building > "$OUT/release.log" 2>&1
-"${REPORT[@]}" xcresult "$OUT/release.xcresult" "$OUT/ui-release.json" iphone17
+if [ "$gesture_stop" = 0 ]; then
+  log "Release 구성으로 켜기"
+  xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release -destination "platform=iOS Simulator,id=$MAIN" -derivedDataPath "$BUILD" \
+    "$TEST_LDFLAGS" ENABLE_TESTABILITY=YES build-for-testing > "$OUT/build-release-tests.log" 2>&1 || log "Release 테스트 빌드 실패(로그: $OUT/build-release-tests.log)"
+  mkdir -p "$OUT/runs/release" "$OUT/runs/release-look"
+  # 15. 배포용 묶음의 모양(작업 지시서 3-2의 3-3): Release 앱은 기록 위치를 바꾸는 장치가 없어 앱 저장 공간을 쓴다. 앞 실행의
+  # 기록이 남지 않게 앱을 지운 뒤(xcodebuild 가 다시 깐다) Debug 와 같은 새 상태에서 시작한다. Debug 쪽은 위의 주 기기 실행이 찍었다.
+  APP_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$BUILD/Build/Products/Release-iphonesimulator/ScoreAnatomy.app/Info.plist" 2>/dev/null || echo "")
+  [ -n "$APP_ID" ] && xcrun simctl uninstall "$MAIN" "$APP_ID" >/dev/null 2>&1
+  log "15. Release 모양 비교(LookTests)"
+  env "${EXAM_ENV[@]}" TEST_RUNNER_SA_OUT="$OUT/runs/release-look" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release TEST_RUNNER_SA_LOOK="$OUT/look" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+    -destination "platform=iOS Simulator,id=$MAIN" -parallel-testing-enabled NO -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release-look.xcresult" \
+    -only-testing:ScoreAnatomyUITests/LookTests "${TEST_TIME[@]}" test-without-building > "$OUT/release-look.log" 2>&1
+  "${REPORT[@]}" xcresult "$OUT/release-look.xcresult" "$OUT/ui-release-look.json" iphone17
+  env "${EXAM_ENV[@]}" TEST_RUNNER_SA_OUT="$OUT/runs/release" TEST_RUNNER_SA_DEVICE=iphone17 TEST_RUNNER_SA_CONFIG=Release xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+    -destination "platform=iOS Simulator,id=$MAIN" -parallel-testing-enabled NO -derivedDataPath "$BUILD" -resultBundlePath "$OUT/release.xcresult" \
+    -only-testing:ScoreAnatomyUITests/ReleaseSmokeTests "${TEST_TIME[@]}" test-without-building > "$OUT/release.log" 2>&1
+  "${REPORT[@]}" xcresult "$OUT/release.xcresult" "$OUT/ui-release.json" iphone17
+fi
 
 # ---------------------------------------------------------------- 13. 캡처 모으기
 rm -rf "$OUT/screens"
@@ -454,6 +496,15 @@ rm -rf "$REPO/$HELD_REL"
 mkdir -p "$REPO/$HELD_REL"
 for run in held18 held26 main ios18; do
   cp "$OUT/runs/$run/held"/*.txt "$REPO/$HELD_REL/" 2>/dev/null || true
+  if [ -f "$OUT/runs/$run/input-over.json" ]; then
+    cp "$OUT/runs/$run/input-over.json" "$REPO/$HELD_REL/$run-input-over.json" || exit 2
+  fi
+done
+
+for label in first034-16-18 first034-16-26 first034-17-26; do
+  if [ -d "$OUT/runs/$label/zoom034" ]; then
+    cp -R "$OUT/runs/$label/zoom034" "$REPO/$HELD_REL/$label" || exit 2
+  fi
 done
 
 # ---------------------------------------------------------------- 문서

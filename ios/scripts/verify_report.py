@@ -7,14 +7,19 @@
   app <앱 폴더> <manifest.json> <종류> <출력.json>  앱 꾸러미 검사(종류: debug, release)
   captures <원본 폴더> <docs/screens-ios> <출력.json>  캡처 모으기와 빠진 것, 겹친 것 검사
   extras <runs 폴더> <docs/screens-ios/extra>    목록 밖 참고 캡처 모으기
+  first034 <결과 폴더> <실행명> <기기> <버전>     다음 제스처 중단 여부 (초과 3, 판독 불가한 초과 신호 4)
+  held-stop <실행 폴더>                      기존 누름 원본에서 다음 제스처 중단 여부 확인
   render <결과 폴더> <문서 경로>             docs/ios_검증결과.md 쓰기
 
 작업 지시서 4(2부)에서 더한 것: 받는 쪽(ios/ScoreAnatomy/Remote) 검사. 껍데기가 통신하는 곳은 ReleaseFetcher.swift 한 파일뿐이어야 하고,
 Release 앱에 테스트 전용 키와 App Transport Security 예외가 없어야 한다(17~22번).
 """
+from collections import Counter
 import hashlib
 import json
+import math
 import os
+from pathlib import Path
 import plistlib
 import re
 import shutil
@@ -432,6 +437,162 @@ def metrics(out_dir):
     return rows
 
 
+FIRST034 = (("first034-16-18", "iphone16", "ios18Runtime"), ("first034-16-26", "iphone16", "mainRuntime"),
+            ("first034-17-26", "iphone17", "mainRuntime"))
+FIRST034_CASES = ("A", "Gkey", "Ggrade", "F", "mark-triple", "key-triple")
+
+
+def first034_results(out_dir, label, device, version):
+    folder = Path(out_dir) / "runs" / label / "zoom034"
+    results = {case: Counter() for case in FIRST034_CASES}
+    gaps, failures = [], []
+    expected = {f"{case}-{n:02d}" for case in FIRST034_CASES for n in range(1, 11)}
+    files = sorted([*folder.glob("*.json"), *folder.glob("*.pending")])
+    missing = expected - {path.stem for path in files if path.suffix == ".json"}
+    if missing:
+        gaps.append(f"완성 원본 {60-len(missing)}/60")
+    stop = 0
+    for path in files:
+        row = load(path)
+        if not isinstance(row, dict):
+            gaps.append(f"{path.name} 읽기 실패")
+            if path.suffix == ".pending":
+                stop = 4 if stop != 3 else 3
+            continue
+        # 누락된 끝 상태나 중복 파일이 있더라도 이미 저장한 초과 원본을 먼저 판정한다.
+        events = row.get("events", [])
+        try:
+            case = row["case"]
+            downs, entered, key_presses = Counter(), Counter(), Counter()
+            over = []
+            for event in events:
+                kind, target = event["type"], event.get("target")
+                if kind == "observed-down":
+                    if target:
+                        downs[target] += 1
+                    control = event.get("control", "")
+                    if control.startswith("key:") and control[4:].isdigit() and event.get("trusted") is True:
+                        key_presses[control[4:]] += 1
+                elif kind == "accepted-click" and target:
+                    entered[target] += 1
+                    if entered[target] > downs[target]:
+                        over.append(event["now"])
+            answers = row.get("answers")
+            answer_case = case in ("Gkey", "key-triple")
+            stored = Counter(str(v) for v in answers.values()) if answer_case and isinstance(answers, dict) else None
+            extras = (stored - key_presses) if stored is not None else None
+            if over or extras:
+                stop = 3
+                kinds = ", ".join(k for k, hit in (("DOM", over), ("저장 답", extras)) if hit)
+                failures.append(f"{path.name} {kinds} 초과 입력")
+            elif (row.get("elementOver") is True or path.suffix == ".pending") and stop != 3:
+                stop = 4
+                gaps.append(f"{path.name} 초과 신호와 원본 불일치")
+
+            if (row["device"] != device or row["os"] != version or row["trial"] not in range(1, 11)
+                    or path.stem not in expected or path.stem != f"{case}-{row['trial']:02d}" or path.suffix != ".json"):
+                gaps.append(f"{path.name} 장치, 조건, 번호 또는 파일 형식 불일치")
+                continue
+            counts = results[case]
+            counts["rows"] += 1
+            counts["over"] += bool(over or extras)
+            taps = 3 if case.endswith("-triple") else 2
+            target, native = (("key:3", "button:3") if answer_case else
+                              ("grade:1", "button:1등급") if case == "Ggrade" else ("mark:3", "mark-cell:3"))
+            physical = [e for e in events if e["type"] == "pointerdown"]
+            observed = [e for e in events if e["type"] == "observed-down"]
+            touches = [e for e in events if e["type"] == "touchstart"]
+            mousedown = sum(e["type"] == "observed-mousedown" and e.get("defaultPrevented") is True for e in events)
+            presses = sum(e.get("control") == target for e in observed)
+            inputs = sum(e["type"] == "accepted-click" and e.get("control") == target for e in events)
+            counts[f"inputs-{inputs}"] += 1
+            before, after = (row[k]["scale"] for k in ("before", "after"))
+            scales = [before, after] + [e["scale"] for e in events if e["type"] == "viewport-resize"]
+            if not all(type(s) in (int, float) and math.isfinite(s) and s > 0 for s in scales):
+                raise ValueError("배율 증거 없음")
+            peak = max(scales)
+            zoom = peak > before
+            counts["scaleRows"] += 1
+            counts["zoom"] += zoom
+            if zoom:
+                failures.append(f"{path.name} 확대 {before:g} -> {peak:g}")
+            counts["less"] += inputs < presses
+            expected_end = str(taps) if answer_case else "grade-1" if case == "Ggrade" else "none" if taps == 3 else "guess"
+            wrong_end = row["endState"] != expected_end
+            if answer_case and isinstance(answers, dict):
+                wrong_end |= any(answers.get(str(n)) != 3 for n in range(1, taps+1))
+            counts["wrongEnd"] += wrong_end
+            agree = (row.get("completeEvidence") is True and row.get("preparationDowns") == []
+                     and len(physical) == row["physicalDowns"] == len(observed) == row["expectedPresses"] == taps
+                     and [e["target"] for e in physical] == row["nativePointerDownTargets"]
+                     and physical[0]["target"] == native and all(e.get("trusted") is True and e.get("pointerType") == "touch" for e in physical)
+                     and len(touches) == taps and all(e.get("trusted") is True and e.get("touches") == 1 for e in touches)
+                     and all(e.get("trusted") is True for e in observed)
+                     and observed[0]["control"] == row["firstDownTarget"] == row["intended"] == target
+                     and dict(downs) == row["pressedByElement"] and dict(entered) == row["enteredByElement"]
+                     and inputs == row["targetEntered"] and presses == row["targetPresses"]
+                     and row["domElementOver"] is bool(over) and row["overAt"] == over
+                     and row["elementOver"] is bool(over or extras) and row["zoomed"] is zoom
+                     and math.isclose(row["peakScale"], peak, abs_tol=1e-5) and row["expectedEndState"] == expected_end
+                     and row["wrongEnd"] is wrong_end
+                     and sum(t.get("what") == "touch-mousedown" for t in row["trace"]) == row["touchMousedown"] == mousedown)
+            if case == "F" and len(physical) >= 2:
+                gap = physical[1]["now"] - physical[0]["now"]
+                # Swift는 실측 간격을 0.1ms 단위로 기록한다.
+                agree = agree and gap >= 0 and math.isclose(row["gapMs"], gap, rel_tol=0, abs_tol=0.050001)
+            if answer_case:
+                agree = (agree and stored is not None and all(type(v) is int for v in answers.values())
+                         and str(len(answers)) == row["endState"] and dict(key_presses) == row["answerPressesByValue"]
+                         and dict(stored) == row["storedAnswersByValue"] and dict(extras) == row["storedExcessByValue"]
+                         and row["storedAnswerOver"] is bool(extras))
+            if not agree:
+                gaps.append(f"{path.name} 원본 증거 부족 또는 요약 불일치")
+        except (KeyError, TypeError, ValueError, IndexError, AttributeError) as error:
+            gaps.append(f"{path.name} 원본 판독 실패 ({error})")
+            if (row.get("elementOver") is True or path.suffix == ".pending") and stop != 3:
+                stop = 4
+    return results, failures, gaps, stop
+
+
+def held_stop(run):
+    folder = Path(run)
+    signal = folder / "input-over.json"
+    confirmed, unreadable = [], []
+    for path in sorted((folder / "held").glob("*.txt")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            unreadable.append(path.name)
+            continue
+        # 배율과 끝 상태 차이는 중단 이유가 아니다. 먼저 같은 DOM 요소에 들어온 입력과 누름을 시간순으로 센다.
+        downs, clicks = Counter(), Counter()
+        for line in raw.splitlines():
+            parts = line.split(maxsplit=6)
+            if len(parts) != 7 or parts[1] not in ("observed-down", "accepted-click"):
+                continue
+            element = parts[6].partition(" [대상 ")[0]
+            if not element or element.startswith("[대상 "):
+                continue
+            if parts[1] == "observed-down":
+                downs[element] += 1
+            else:
+                clicks[element] += 1
+                if clicks[element] > downs[element]:
+                    confirmed.append(path.name)
+                    break
+        else:
+            # 답 키 저장 수까지 반영한 Trial.entered와 원본 pointerdown 수도 비교한다.
+            entered = re.search(r"^끝 상태: .* 받아들인 누름 (\d+),", raw, re.MULTILINE)
+            physical = len(re.findall(r"^[0-9.]+\s+pointerdown\s", raw, re.MULTILINE))
+            if entered and int(entered[1]) > physical:
+                confirmed.append(path.name)
+    if signal.exists():
+        proof = load(signal, {})
+        if not isinstance(proof, dict) or proof.get("file") not in confirmed:
+            unreadable.append(signal.name + "의 초과 원본 확인하지 못함")
+    return confirmed, unreadable
+
+
 def held_result(out_dir, rows, env, held18, held26):
     # (회수, 실제 누름, 테스트 이름). 결과 요약과 중간에 저장한 원본이 모두 맞아야 한다.
     groups = {
@@ -445,7 +606,12 @@ def held_result(out_dir, rows, env, held18, held26):
         "key-triple-first": (10, 3, "testTripleTapAnswerKeyAsFirstTouch"),
     }
     missing, failures, details = [], [], []
+    if env.get("gestureStop"):
+        details.append(f"{env['gestureStop']} 실행 뒤 제스처 중단. 이후 기기와 Release 화면 테스트는 미실행")
     for folder, os_prefix, device, suite in (("held18", "18.4", "iphone16", held18), ("held26", "26.4", "iphone17", held26)):
+        confirmed, unreadable = held_stop(Path(out_dir) / "runs" / folder)
+        failures.extend(f"{folder}/{name} 원본 초과 입력" for name in confirmed)
+        missing.extend(f"{folder}/{name} 원본 판독 실패" for name in unreadable)
         tests = tests_of(suite, "HeldDoubleTapTests")
         if str(env.get(folder + "Exit")) not in ("None", "0") or any(t["result"] == "Failed" for t in tests):
             failures.append(f"{folder} XCTest {fmt_tests(tests)}, 종료 코드 {env.get(folder + 'Exit')}")
@@ -463,6 +629,8 @@ def held_result(out_dir, rows, env, held18, held26):
                     continue
                 if r.get("over") is True or any(v > pressed.get(k, 0) for k, v in entered.items()):
                     failures.append(f"{title} {r.get('index')}회 초과 입력")
+            if any(r.get("zoom") != 0 for r in completed):
+                failures.append(title + " 요약에 확대 0회 미확인")
             if any(r.get("over", 0) > 0 for r in completed):
                 failures.append(title + " 요약에 초과 입력")
             if len(completed) != 1 or completed[0].get("trials") != n or not all_passed([t for t in tests if t["name"] == name], 1):
@@ -477,6 +645,19 @@ def held_result(out_dir, rows, env, held18, held26):
                         raw = timeline.read()
                 except (OSError, UnicodeError):
                     raw = ""
+                scales = re.search(r"^배율 (\S+) -> ([^,]+),", raw, re.MULTILINE)
+                observed_scales = []
+                try:
+                    before, after = (float(s) for s in scales.groups()) if scales else (0, 0)
+                    observed_scales = [float(s) for s in re.findall(r"^[0-9.]+\s+viewport-resize scale (\S+)$", raw, re.MULTILINE)]
+                    peak = max([before, after, *observed_scales])
+                except ValueError:
+                    before, after, peak = 0, 0, 0
+                if not (all(math.isfinite(s) and s > 0 for s in [before, after, *observed_scales])
+                        and before == r.get("before") and after == r.get("after") and peak == r.get("peakScale")):
+                    missing.append(f"{title} {r.get('index')}회 원본 배율 증거")
+                elif peak > before:
+                    failures.append(f"{title} {r.get('index')}회 확대 {before:g} -> {peak:g}")
                 # Swift가 남긴 요약, 껍데기의 가공 전 pointerdown, DOM 속성으로 식별한 실제 버튼을 따로 확인한다.
                 # 둘째, 셋째 누름은 확대나 스크롤로 다른 데에 닿을 수 있다.
                 if slug == "anatomy":
@@ -498,6 +679,29 @@ def held_result(out_dir, rows, env, held18, held26):
                         downs != expected or observed != expected or min(r.get("before", -1), r.get("after", -1)) <= 0):
                     missing.append(f"{title} {r.get('index')}회 증거 누락")
         details.append(f"{folder} {fmt_tests(tests)}")
+    for label, device, runtime_key in FIRST034:
+        version = env.get(runtime_key)
+        counts, zoom_failures, gaps, _ = first034_results(out_dir, label, device, version)
+        bundle = Path(out_dir) / (label + ".xcresult")
+        summary = load(Path(out_dir) / f"ui-{label}.json", {})
+        tests = tests_of(summary)
+        totals = summary.get("summary", {})
+        destinations = [c.get("device", {}) for c in totals.get("devicesAndConfigurations", [])]
+        model = {"iphone16": "iPhone 16", "iphone17": "iPhone 17"}[device]
+        correct_device = (len(destinations) == 1 and destinations[0].get("modelName") == model
+                          and destinations[0].get("osVersion") == version)
+        if (str(env.get(label + "Exit")) != "0" or not bundle.is_dir() or summary.get("path") != str(bundle)
+                or totals.get("result") != "Passed" or totals.get("passedTests") != 1 or not correct_device
+                or len(tests) != 1 or tests[0]["suite"] != "ZoomDiagnosticsTests"
+                or tests[0]["name"] != "testWeb034FirstGestures" or tests[0]["result"] != "Passed"):
+            target_list = zoom_failures if any(t["result"] == "Failed" for t in tests) else gaps
+            target_list.append(f"전용 XCTest {fmt_tests(tests)}, 종료 코드 {env.get(label + 'Exit')}")
+        failures.extend(f"{label}/{s}" for s in zoom_failures)
+        missing.extend(f"{label}/{s}" for s in gaps)
+        for case, c in counts.items():
+            distribution = ", ".join(f"{k[7:]}개 {v}회" for k, v in sorted(c.items()) if k.startswith("inputs-"))
+            details.append(f"{label}/{case} 원본 {c['rows']}/10, 확대 {c['zoom']}/{c['scaleRows']}, 초과 {c['over']}/{c['rows']}, "
+                           f"대상 입력 분포 {distribution or '미확인'}, 실제 누름보다 적은 입력 {c['less']}회, 끝 상태 차이 {c['wrongEnd']}회")
     status = "실패" if failures else "확인하지 못함" if missing else "통과"
     return status, ". ".join(details + failures + missing) + ". 시도별 기록: " + env.get("heldPath", "docs/ios_누름기록/verify")
 
@@ -716,7 +920,9 @@ def cmd_render(out_dir, doc_path):
     held_status, held_detail = held_result(out_dir, rows, env, held18_ui, held26_ui)
     add(22, "요소별 초과 입력과 확대(iOS 18.4, 26.4)", held_status, held_detail,
         "두 기기에서 표시 칸과 답 키의 첫 두 번과 세 번을 10번씩, 세 대상의 0.29초 누름을 32번씩 측정. "
-        "요소별 초과 입력이나 원본 누락이 있으면 통과할 수 없음. 배율과 끝 상태 차이는 기록")
+        "기존 두 기기와 3-1 세 기기 모두 시작 배율 대비 앞뒤 및 resize 최고 배율이 조금이라도 오른 회차 0. "
+        "3-1은 여섯 조건을 각 10회 측정. "
+        "전용 XCTest 통과와 원본 증거가 필요하며 DOM 요소별/저장 답별 초과 및 확대는 모두 0회. 입력 부족과 끝 상태 차이는 기록")
 
     lines = []
     lines.append("# iOS 앱 껍데기 검증 결과")
@@ -850,14 +1056,14 @@ def cmd_render(out_dir, doc_path):
             raw = sorted(f for f in files if re.fullmatch(re.escape(f"{device}-ios{runtime}-{slug}-") + r"\d+\.txt", f)
                          and os.path.getsize(os.path.join(directory, f)) > 0)
             available = [r for r in records if r.get("file") in raw]
-            scales = [r for r in available if min(r.get("before", -1), r.get("after", -1)) > 0]
-            zooms = sum(r["after"] - r["before"] > 0.01 for r in scales)
+            scales = [r for r in available if min(r.get("before", -1), r.get("after", -1), r.get("peakScale", -1)) > 0]
+            zooms = sum(r["peakScale"] > r["before"] for r in scales)
             excess = [f"{r['index']}회차 `{r['file']}`" for r in records if r.get("over") is True]
             over_text = ", ".join(excess) or ("관측 0회" if available else "확인하지 못함")
             partial.append(f"| {runtime or '?'} | {label} | {len(raw)} | {zooms}/{len(scales)} | {over_text} |")
     if partial:
         lines.extend(["", "전체 요약이 없는 경우에는 저장된 시도까지만 적었어요.", "",
-                      "| iOS | 경우 | 확보한 원본 파일 수 | 확대 / 앞뒤 배율이 있는 시도 | 초과 입력 회차와 파일 |",
+                      "| iOS | 경우 | 확보한 원본 파일 수 | 확대 / 앞뒤 및 최고 배율이 있는 시도 | 초과 입력 회차와 파일 |",
                       "| --- | --- | --- | --- | --- |", *partial])
     lines.append("")
     lines.append("## Release 와 Debug 의 화면 모양(3-3)")
@@ -979,6 +1185,16 @@ def main():
         cmd_captures(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "extras":
         cmd_extras(sys.argv[2], sys.argv[3])
+    elif cmd == "first034":
+        raise SystemExit(first034_results(*sys.argv[2:6])[3])
+    elif cmd == "held-stop":
+        confirmed, unreadable = held_stop(sys.argv[2])
+        for name in confirmed:
+            print("원본에서 초과 입력 확인:", name)
+        for name in unreadable:
+            print("원본 판독 실패:", name)
+        unresolved_signal = (Path(sys.argv[2]) / "input-over.json").is_file() and unreadable
+        raise SystemExit(3 if confirmed else 4 if unresolved_signal else 0)
     elif cmd == "render":
         cmd_render(sys.argv[2], sys.argv[3])
     else:

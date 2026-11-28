@@ -278,12 +278,15 @@ final class ZoomDiagnosticsTests: XCTestCase {
         }
 
         @MainActor
-        func open(_ handle: AppHandle) throws -> XCUIElement {
+        func open(_ handle: AppHandle, recoverStartup: Bool = false) throws -> XCUIElement {
             let key = self == .Gkey
             let grade = self == .Ggrade
             handle.seedSession(answers: key ? [:] : ExampleA.answers,
                                gradedAt: grade ? "2026-11-22T11:00:00.000Z" : nil)
-            handle.launch(extra: ["-SAEventLog"])
+            handle.launch(extra: ["-SAEventLog"], waitForStart: !recoverStartup)
+            if recoverStartup && !handle.web.waitForExistence(timeout: 20) {
+                throw NSError(domain: "ZoomDiagnostics", code: 1, userInfo: [NSLocalizedDescriptionKey: "시작 화면 웹뷰가 없음"])
+            }
             // WKWebView가 먼저 보이고 시험용 문서와 라우터는 잠시 뒤에 준비될 수 있다.
             guard handle.waitForStats(timeout: 35, { ($0["rendered"] as? Int ?? 0) > 0 && $0["failure"] == nil }) else {
                 throw NSError(domain: "ZoomDiagnostics", code: 1, userInfo: [NSLocalizedDescriptionKey: "시작 화면 준비 실패: \(handle.shellStats())"])
@@ -482,28 +485,67 @@ final class ZoomDiagnosticsTests: XCTestCase {
         ]
         let folder = TestEnv.outDirectory.appendingPathComponent("zoom034", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let firstText = ProcessInfo.processInfo.environment["SA_ZOOM_034_FIRST"] ?? "1"
+        guard let first = Int(firstText), (1...(plan.count * 10)).contains(first) else {
+            throw NSError(domain: "ZoomDiagnostics", code: 6, userInfo: [NSLocalizedDescriptionKey: "시작 순서가 1~60 밖이에요: " + firstText])
+        }
         var incomplete: [String] = []
-        for group in plan {
+        for (offset, group) in plan.enumerated() {
             for index in 1...10 {
-                let complete = try recordWeb034(group.name, screen: group.screen, taps: group.taps, index: index, folder: folder)
+                let ordinal = offset * 10 + index
+                guard ordinal >= first else { continue }
+                let complete = try recordWeb034(group.name, screen: group.screen, taps: group.taps, index: index, ordinal: ordinal, folder: folder)
                 if !complete { incomplete.append("\(group.name) \(index)회") }
             }
         }
         XCTAssertEqual(incomplete, [], "측정 증거가 빠진 회차")
     }
 
-    private func recordWeb034(_ name: String, screen: Scenario, taps: Int, index: Int, folder: URL) throws -> Bool {
+    /// 제스처를 보내는 코드는 이 함수 밖에 있다. 시작 화면 또는 대상이 나타나지 않은 때만 새 앱으로 다시 준비한다.
+    private func prepareWeb034(_ screen: Scenario, name: String, index: Int, ordinal: Int) throws -> (AppHandle, XCUIElement) {
+        let basename = String(format: "%@-%02d", name, index)
+        var attempt = 0
+        while true {
+            attempt += 1
+            let handle = AppHandle(name: "zoom034-\(basename)-prep\(attempt)")
+            let start = Date().timeIntervalSince1970
+            do {
+                let target = try screen.open(handle, recoverStartup: true)
+                guard target.waitForExistence(timeout: 5) else {
+                    throw NSError(domain: "ZoomDiagnostics", code: 2, userInfo: [NSLocalizedDescriptionKey: "대상 요소가 없음: " + basename])
+                }
+                return (handle, target)
+            } catch {
+                let reason = error as NSError
+                let stats = handle.shellStats()
+                if handle.app.state != .notRunning { handle.terminate() }
+                guard reason.domain == "ZoomDiagnostics", [1, 2].contains(reason.code) else { throw error }
+                let folder = TestEnv.outDirectory.appendingPathComponent("zoom034-preparation", isDirectory: true)
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                let record: [String: Any] = [
+                    "case": name, "trial": index, "ordinal": ordinal, "attempt": attempt,
+                    "device": TestEnv.deviceTag, "os": TapTimeline.os, "measurementGestureStarted": false,
+                    "started": start, "ended": Date().timeIntervalSince1970,
+                    "domain": reason.domain, "code": reason.code, "reason": reason.localizedDescription,
+                    "appRun": handle.runDirectory.lastPathComponent, "shellStats": stats,
+                ]
+                let file = folder.appendingPathComponent(handle.runDirectory.lastPathComponent + ".json")
+                try JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]).write(to: file, options: .atomic)
+                if attempt >= 3 { throw error }
+            }
+        }
+    }
+
+    private func recordWeb034(_ name: String, screen: Scenario, taps: Int, index: Int, ordinal: Int, folder: URL) throws -> Bool {
         let basename = String(format: "%@-%02d", name, index)
         let url = folder.appendingPathComponent(basename + ".json")
-        guard !FileManager.default.fileExists(atPath: url.path) else {
-            throw NSError(domain: "ZoomDiagnostics", code: 4, userInfo: [NSLocalizedDescriptionKey: "기존 회차가 있어 중단: " + basename])
+        let startedFile = folder.appendingPathComponent(basename + ".started")
+        let partial = folder.appendingPathComponent(basename + ".pending")
+        guard [url, startedFile, partial].allSatisfy({ !FileManager.default.fileExists(atPath: $0.path) }) else {
+            throw NSError(domain: "ZoomDiagnostics", code: 4, userInfo: [NSLocalizedDescriptionKey: "이전에 측정을 시작한 회차라 중단: " + basename])
         }
-        let handle = AppHandle(name: "zoom034-" + basename)
+        let (handle, target) = try prepareWeb034(screen, name: name, index: index, ordinal: ordinal)
         defer { handle.terminate() }
-        let target = try screen.open(handle)
-        guard target.waitForExistence(timeout: 5) else {
-            throw NSError(domain: "ZoomDiagnostics", code: 2, userInfo: [NSLocalizedDescriptionKey: "대상 요소가 없음: " + basename])
-        }
         let intended: String
         let rawTarget: String
         switch screen {
@@ -514,6 +556,11 @@ final class ZoomDiagnosticsTests: XCTestCase {
         let before = try viewport(handle)
         let prep = TapTimeline.takeLogs(handle).0
         TapTimeline.beginHeld(handle, web034Diagnostics: true)
+        // 호출 직전 중단되어 누름이 실제 전달됐는지 알 수 없는 경우도 다시 재지 않는다.
+        let marker: [String: Any] = ["ordinal": ordinal, "case": name, "trial": index, "device": TestEnv.deviceTag,
+                                     "os": TapTimeline.os, "appRun": handle.runDirectory.lastPathComponent,
+                                     "beforeGesture": Date().timeIntervalSince1970]
+        try JSONSerialization.data(withJSONObject: marker).write(to: startedFile, options: .withoutOverwriting)
         let start = Date().timeIntervalSince1970
         var gestureError: String?
         if screen == .F {
@@ -569,8 +616,8 @@ final class ZoomDiagnosticsTests: XCTestCase {
             && sample.firstDownTarget == intended && physical.first?["target"] as? String == rawTarget
             && sample.scaleBefore != nil && sample.scaleAfter != nil
         var row: [String: Any] = [
-            "case": name, "trial": index, "device": TestEnv.deviceTag, "os": TapTimeline.os,
-            "gestureStart": start, "gestureEnd": end, "settledAt": settled, "before": before,
+            "case": name, "trial": index, "ordinal": ordinal, "device": TestEnv.deviceTag, "os": TapTimeline.os,
+            "appRun": handle.runDirectory.lastPathComponent, "gestureStart": start, "gestureEnd": end, "settledAt": settled, "before": before,
             "after": ["scale": sample.scaleAfter as Any? ?? NSNull()], "peakScale": peak as Any? ?? NSNull(),
             "zoomed": zoomed as Any? ?? NSNull(), "settledZoomed": sample.zoomed,
             "gapMs": sample.pressGapMs as Any? ?? NSNull(), "expectedPresses": taps,
@@ -595,7 +642,6 @@ final class ZoomDiagnosticsTests: XCTestCase {
         }
         if let gestureError { row["gestureError"] = gestureError }
         // 초과가 관찰되면 끝 상태 탐침이 실패하거나 실행이 끊겨도 원본이 남게 한다.
-        let partial = folder.appendingPathComponent(basename + ".pending")
         if elementOver {
             try JSONSerialization.data(withJSONObject: row, options: [.sortedKeys]).write(to: partial, options: .atomic)
         }

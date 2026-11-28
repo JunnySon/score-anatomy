@@ -1,0 +1,56 @@
+{
+  "class": "FastTapTests",
+  "test": "testTapThenFastDoubleTapWithinASecondFillsThreeItems",
+  "startLine": 3594,
+  "errors": [
+    {
+      "logLine": 3631,
+      "rawLineSHA256": "4437f9250a3c0a2559031f5ac476ed10c749e5e808e1661852b310c1fe47f64a",
+      "swiftFile": "FastTapTests.swift",
+      "swiftLine": 198,
+      "message": "XCTAssertTrue failed - 지금 칸이 4번: pointerdown, touchstart, pointerup, touchend, click 1, pointerdown, touchstart, pointerup, touchend, pointerdown, touchstart, dblclick 2, pointerup, touchend"
+    }
+  ],
+  "started": "2026-11-28 18:58:57.765",
+  "result": "failed",
+  "endLine": 3633,
+  "duration": 17.01,
+  "run": "run-20261128-183727.tvSda3",
+  "suite": "main",
+  "log": "main.log",
+  "metrics": [
+    {
+      "source": "runs/main/metrics.jsonl",
+      "line": 19,
+      "lineSHA256": "4e2f0ef077fa335f89b28d5973eb747ecbedf7e40b4fe1fff33eeac0a21881bc",
+      "case": "한 번 누른 뒤 1초 안에 아주 빠르게 두 번(같은 답 키)",
+      "target": null
+    }
+  ],
+  "files": [
+    {
+      "source": "runs/main/runs/fast-one-then-two-A4E053B8/store/store.json",
+      "archived": "runs/fast-one-then-two-A4E053B8/store/store.json",
+      "sha256": "06a42f3e472c53342ad9d9d3ef3494d62ddaf1c4b69d57880c2e8d554f772c5e",
+      "evidence": "자동 XCTest의 예시 시험 A 기록, 실제 학생 자료 없음"
+    },
+    {
+      "source": "runs/main/runs/fast-one-then-two-A4E053B8/probe/out-0004.json",
+      "archived": "runs/fast-one-then-two-A4E053B8/probe/out-0004.json",
+      "sha256": "e7e4fe60b4577d17d352d0bdb35035094a0198f389b8ea8c1cca4464dafe5bf0",
+      "metricLines": [
+        19
+      ],
+      "evidence": "해당 테스트의 이벤트 응답. metrics 미연결 시 실패 동작과 동일한지는 미확인"
+    }
+  ],
+  "notes": [],
+  "metricsSHA256": "4e2f0ef077fa335f89b28d5973eb747ecbedf7e40b4fe1fff33eeac0a21881bc",
+  "intervalKST": [
+    "2026-11-28T18:58:57.765000+09:00",
+    "2026-11-28T18:59:14.775000+09:00"
+  ],
+  "appHandles": [
+    "runs/main/runs/fast-one-then-two-A4E053B8"
+  ]
+}

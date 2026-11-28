@@ -7,17 +7,26 @@
   app <앱 폴더> <manifest.json> <종류> <출력.json>  앱 꾸러미 검사(종류: debug, release)
   captures <원본 폴더> <docs/screens-ios> <출력.json>  캡처 모으기와 빠진 것, 겹친 것 검사
   extras <runs 폴더> <docs/screens-ios/extra>    목록 밖 참고 캡처 모으기
+  first034 <결과 폴더> <실행명> <기기> <버전>     다음 제스처 중단 여부 (초과 3, 판독 불가한 초과 신호 4)
+  held-stop <실행 폴더>                      기존 누름 원본에서 다음 제스처 중단 여부 확인
   render <결과 폴더> <문서 경로>             docs/ios_검증결과.md 쓰기
+
+작업 지시서 4(2부)에서 더한 것: 받는 쪽(ios/ScoreAnatomy/Remote) 검사. 껍데기가 통신하는 곳은 ReleaseFetcher.swift 한 파일뿐이어야 하고,
+Release 앱에 테스트 전용 키와 App Transport Security 예외가 없어야 한다(17~22번).
 """
+from collections import Counter
 import hashlib
 import json
+import math
 import os
+from pathlib import Path
 import plistlib
 import re
 import shutil
 import struct
 import subprocess
 import sys
+import unicodedata
 
 # 금지 문자는 글자 대신 코드 번호로 적는다(이 파일 자신이 검사에 걸리지 않게).
 FORBIDDEN = {chr(c): f"U+{c:04X}" for c in (0x2014, 0x2013, 0x00B7, 0x318D, 0x30FB, 0x2027)}
@@ -28,7 +37,7 @@ NETWORK_APIS = [
     r"\bURLSession\b", r"\bNSURLSession\b", r"\bNSURLConnection\b", r"\bURLRequest\b", r"\bNSURLRequest\b",
     r"\bimport Network\b", r"\bNWConnection\b", r"\bNWListener\b", r"\bNWPathMonitor\b", r"\bNWBrowser\b",
     r"\bCFStream", r"\bCFSocket", r"\bgetaddrinfo\b", r"\bsocket\(", r"\bSCNetworkReachability",
-    r"\bWKWebsiteDataStore\.default\b", r"\bMultipeerConnectivity\b", r"\bCloudKit\b", r"\bURLSessionWebSocketTask\b",
+    r"\bWKWebsiteDataStore\.default\b", r"\bMultipeerConnectivity\b", r"\bCloudKit\b", r"\b(?:URLSessionWebSocketTask|URLSessionStreamTask|webSocketTask|streamTask)\b", r"\bNW[A-Z]\w*",
 ]
 NOTIFICATION_APIS = [r"\bUNUserNotificationCenter\b", r"\bimport UserNotifications\b", r"registerForRemoteNotifications", r"requestAuthorization\("]
 TRACKING_APIS = [r"\bATTrackingManager\b", r"\bAppTrackingTransparency\b", r"\bASIdentifierManager\b", r"\bAdSupport\b", r"\bSKAdNetwork\b"]
@@ -47,7 +56,12 @@ BINARY_SYMBOLS = {
     "notification": ["_OBJC_CLASS_$_UNUserNotificationCenter"],
     "requiredReason": ["_OBJC_CLASS_$_NSUserDefaults", "_$s10Foundation12UserDefaultsC", "_stat", "_fstat", "_lstat", "_fstatat", "_getattrlist", "_fgetattrlist", "_getattrlistbulk", "_getattrlistat", "_mach_absolute_time", "_statfs", "_fstatfs", "_statvfs", "_fstatvfs"],
 }
-DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "-SAEventLog", "__saEventLog", "shell-stats.json", "probe-network.json", "setInspectable:"]
+DEBUG_MARKERS = ["-SAStoreDir", "-SAProbe", "-SASeed", "-SAForceLoadFailure", "-SAEventLog", "__saEventLog", "shell-stats.json", "probe-network.json", "setInspectable:",
+                 "-SAExamURL", "-SAExamKeyFile", "-SAExamInterval"]
+# 껍데기가 통신하는 곳(작업 지시서 4의 3-3). 네트워크 API 는 이 파일에서만 쓴다.
+NETWORK_ALLOWED_FILE = os.path.join("ios", "ScoreAnatomy", "Remote", "ReleaseFetcher.swift")
+# Release 바이너리에서 받아들이는 네트워크 기호(URLSession). 소켓, Network 프레임워크 같은 다른 길은 여전히 0 이어야 한다.
+ALLOWED_NETWORK_SYMBOLS = ("_OBJC_CLASS_$_NSURLSession", "_$s10Foundation10URLSessionC")
 
 
 def load(path, default=None):
@@ -115,7 +129,7 @@ def text_files(root, exts):
 
 def cmd_scan(ios_dir, repo_dir, out):
     shell_dir = os.path.join(ios_dir, "ScoreAnatomy")
-    report = {"forbidden": [], "network": [], "notification": [], "tracking": [], "permissionApis": [], "requiredReason": {}, "httpLiterals": [], "visibleText": {}, "packages": [], "scanned": 0}
+    report = {"forbidden": [], "network": [], "networkAllowed": [], "notification": [], "tracking": [], "permissionApis": [], "requiredReason": {}, "httpLiterals": [], "visibleText": {}, "packages": [], "scanned": 0}
 
     # 금지 문자: 껍데기 소스와 리소스, 테스트, 스크립트, 설정, iOS 문서.
     targets = list(text_files(ios_dir, {".swift", ".plist", ".xcprivacy", ".json", ".yml", ".xcconfig", ".sh", ".py", ".md", ".pbxproj", ".xcscheme", ".strings"}))
@@ -140,7 +154,11 @@ def cmd_scan(ios_dir, repo_dir, out):
         for key, patterns in (("network", NETWORK_APIS), ("notification", NOTIFICATION_APIS), ("tracking", TRACKING_APIS), ("permissionApis", PERMISSION_APIS)):
             for pattern in patterns:
                 for m in re.finditer(pattern, code):
-                    report[key].append({"file": rel, "api": m.group(0), "debugOnly": debug_only})
+                    entry = {"file": rel, "api": m.group(0), "debugOnly": debug_only}
+                    if key == "network" and unicodedata.normalize("NFC", rel) == NETWORK_ALLOWED_FILE and m.group(0) in ("URLSession", "URLRequest"):
+                        report["networkAllowed"].append(entry)
+                    else:
+                        report[key].append(entry)
         for category, patterns in REQUIRED_REASON.items():
             for pattern in patterns:
                 for m in re.finditer(pattern, code):
@@ -161,7 +179,7 @@ def cmd_scan(ios_dir, repo_dir, out):
         "forbidden": sum(t.count(ch) for t in visible for ch in FORBIDDEN),
     }
     report["permissionKeys"] = sorted(k for k in info if re.match(r"^NS.*UsageDescription$", k))
-    report["infoPlist"] = {k: info.get(k) for k in ("CFBundleDisplayName", "ITSAppUsesNonExemptEncryption", "UISupportedInterfaceOrientations", "LSRequiresIPhoneOS")}
+    report["infoPlist"] = {k: info.get(k) for k in ("CFBundleDisplayName", "ITSAppUsesNonExemptEncryption", "UISupportedInterfaceOrientations", "LSRequiresIPhoneOS", "NSAppTransportSecurity", "SAExamBaseURL")}
 
     # 외부 패키지: Swift Package, CocoaPods, Carthage.
     pbx = open(os.path.join(ios_dir, "ScoreAnatomy.xcodeproj", "project.pbxproj"), encoding="utf-8").read()
@@ -269,6 +287,13 @@ def cmd_app(app, manifest_path, kind, out):
     report["info"] = {k: info.get(k) for k in ("CFBundleDisplayName", "CFBundleShortVersionString", "CFBundleVersion", "CFBundleIdentifier", "MinimumOSVersion", "UIDeviceFamily", "DTSDKName", "DTXcode", "DTXcodeBuild", "DTPlatformVersion", "ITSAppUsesNonExemptEncryption")}
     report["permissionKeys"] = sorted(k for k in info if re.match(r"^NS.*UsageDescription$", k))
     report["versionMatchesManifest"] = info.get("CFBundleShortVersionString") == manifest.get("version")
+    # 작업 지시서 4의 3-3: App Transport Security 예외, 받는 주소, 넣은 공개 키, 앱 안 모든 파일의 테스트 전용 키.
+    report["ats"] = info.get("NSAppTransportSecurity")
+    report["examBaseURL"] = info.get("SAExamBaseURL")
+    key_file = os.path.join(app, "exam-public-key.txt")
+    report["examKeyFileBytes"] = os.path.getsize(key_file) if os.path.isfile(key_file) else None
+    scan = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "exam_key.py"), "selftest", app], capture_output=True, text=True)
+    report["testKeyScan"] = {"exit": scan.returncode, "lines": scan.stdout.strip().splitlines()[-6:]}
     libs = []
     symbols = {}
     for binary in macho_binaries(app):
@@ -281,10 +306,15 @@ def cmd_app(app, manifest_path, kind, out):
                 continue
             libs.append({"binary": rel, "lib": line.split(" (")[0], "weak": "weak" in line})
         undefined = subprocess.run(["nm", "-u", binary], capture_output=True, text=True).stdout.split()
+        network_swift = sorted({u for u in undefined if u.startswith("_$s7Network")})
+        symbols.setdefault("network", []).extend(f"{rel}: {u}" for u in network_swift)
         for group, names in BINARY_SYMBOLS.items():
             found = sorted({n for n in names for u in undefined if u == n or u.startswith(n) and n.endswith("C")})
             if found:
                 symbols.setdefault(group, []).extend(f"{rel}: {n}" for n in found)
+    for entry in libs:
+        if "/Network.framework/" in entry["lib"]:
+            symbols.setdefault("network", []).append(entry["binary"] + ": " + entry["lib"])
     report["linkedLibraries"] = libs
     report["nonSystemLibraries"] = sorted({l["lib"] for l in libs if not (l["lib"].startswith("/System/") or l["lib"].startswith("/usr/lib/"))})
     report["swiftWebKit"] = sorted({l["binary"] for l in libs if "libswiftWebKit" in l["lib"]})
@@ -407,18 +437,291 @@ def metrics(out_dir):
     return rows
 
 
+FIRST034 = (("first034-16-18", "iphone16", "ios18Runtime"), ("first034-16-26", "iphone16", "mainRuntime"),
+            ("first034-17-26", "iphone17", "mainRuntime"))
+FIRST034_CASES = ("A", "Gkey", "Ggrade", "F", "mark-triple", "key-triple")
+
+
+def first034_results(out_dir, label, device, version):
+    folder = Path(out_dir) / "runs" / label / "zoom034"
+    results = {case: Counter() for case in FIRST034_CASES}
+    gaps, failures = [], []
+    expected = {f"{case}-{n:02d}" for case in FIRST034_CASES for n in range(1, 11)}
+    files = sorted([*folder.glob("*.json"), *folder.glob("*.pending")])
+    missing = expected - {path.stem for path in files if path.suffix == ".json"}
+    if missing:
+        gaps.append(f"완성 원본 {60-len(missing)}/60")
+    stop = 0
+    for path in files:
+        row = load(path)
+        if not isinstance(row, dict):
+            gaps.append(f"{path.name} 읽기 실패")
+            if path.suffix == ".pending":
+                stop = 4 if stop != 3 else 3
+            continue
+        # 누락된 끝 상태나 중복 파일이 있더라도 이미 저장한 초과 원본을 먼저 판정한다.
+        events = row.get("events", [])
+        try:
+            case = row["case"]
+            downs, entered, key_presses = Counter(), Counter(), Counter()
+            over = []
+            for event in events:
+                kind, target = event["type"], event.get("target")
+                if kind == "observed-down":
+                    if target:
+                        downs[target] += 1
+                    control = event.get("control", "")
+                    if control.startswith("key:") and control[4:].isdigit() and event.get("trusted") is True:
+                        key_presses[control[4:]] += 1
+                elif kind == "accepted-click" and target:
+                    entered[target] += 1
+                    if entered[target] > downs[target]:
+                        over.append(event["now"])
+            answers = row.get("answers")
+            answer_case = case in ("Gkey", "key-triple")
+            stored = Counter(str(v) for v in answers.values()) if answer_case and isinstance(answers, dict) else None
+            extras = (stored - key_presses) if stored is not None else None
+            if over or extras:
+                stop = 3
+                kinds = ", ".join(k for k, hit in (("DOM", over), ("저장 답", extras)) if hit)
+                failures.append(f"{path.name} {kinds} 초과 입력")
+            elif (row.get("elementOver") is True or path.suffix == ".pending") and stop != 3:
+                stop = 4
+                gaps.append(f"{path.name} 초과 신호와 원본 불일치")
+
+            if (row["device"] != device or row["os"] != version or row["trial"] not in range(1, 11)
+                    or path.stem not in expected or path.stem != f"{case}-{row['trial']:02d}" or path.suffix != ".json"):
+                gaps.append(f"{path.name} 장치, 조건, 번호 또는 파일 형식 불일치")
+                continue
+            counts = results[case]
+            counts["rows"] += 1
+            counts["over"] += bool(over or extras)
+            taps = 3 if case.endswith("-triple") else 2
+            target, native = (("key:3", "button:3") if answer_case else
+                              ("grade:1", "button:1등급") if case == "Ggrade" else ("mark:3", "mark-cell:3"))
+            physical = [e for e in events if e["type"] == "pointerdown"]
+            observed = [e for e in events if e["type"] == "observed-down"]
+            touches = [e for e in events if e["type"] == "touchstart"]
+            mousedown = sum(e["type"] == "observed-mousedown" and e.get("defaultPrevented") is True for e in events)
+            presses = sum(e.get("control") == target for e in observed)
+            inputs = sum(e["type"] == "accepted-click" and e.get("control") == target for e in events)
+            counts[f"inputs-{inputs}"] += 1
+            before, after = (row[k]["scale"] for k in ("before", "after"))
+            scales = [before, after] + [e["scale"] for e in events if e["type"] == "viewport-resize"]
+            if not all(type(s) in (int, float) and math.isfinite(s) and s > 0 for s in scales):
+                raise ValueError("배율 증거 없음")
+            peak = max(scales)
+            zoom = peak > before
+            counts["scaleRows"] += 1
+            counts["zoom"] += zoom
+            if zoom:
+                failures.append(f"{path.name} 확대 {before:g} -> {peak:g}")
+            counts["less"] += inputs < presses
+            expected_end = str(taps) if answer_case else "grade-1" if case == "Ggrade" else "none" if taps == 3 else "guess"
+            wrong_end = row["endState"] != expected_end
+            if answer_case and isinstance(answers, dict):
+                wrong_end |= any(answers.get(str(n)) != 3 for n in range(1, taps+1))
+            counts["wrongEnd"] += wrong_end
+            agree = (row.get("completeEvidence") is True and row.get("preparationDowns") == []
+                     and len(physical) == row["physicalDowns"] == len(observed) == row["expectedPresses"] == taps
+                     and [e["target"] for e in physical] == row["nativePointerDownTargets"]
+                     and physical[0]["target"] == native and all(e.get("trusted") is True and e.get("pointerType") == "touch" for e in physical)
+                     and len(touches) == taps and all(e.get("trusted") is True and e.get("touches") == 1 for e in touches)
+                     and all(e.get("trusted") is True for e in observed)
+                     and observed[0]["control"] == row["firstDownTarget"] == row["intended"] == target
+                     and dict(downs) == row["pressedByElement"] and dict(entered) == row["enteredByElement"]
+                     and inputs == row["targetEntered"] and presses == row["targetPresses"]
+                     and row["domElementOver"] is bool(over) and row["overAt"] == over
+                     and row["elementOver"] is bool(over or extras) and row["zoomed"] is zoom
+                     and math.isclose(row["peakScale"], peak, abs_tol=1e-5) and row["expectedEndState"] == expected_end
+                     and row["wrongEnd"] is wrong_end
+                     and sum(t.get("what") == "touch-mousedown" for t in row["trace"]) == row["touchMousedown"] == mousedown)
+            if case == "F" and len(physical) >= 2:
+                gap = physical[1]["now"] - physical[0]["now"]
+                # Swift는 실측 간격을 0.1ms 단위로 기록한다.
+                agree = agree and gap >= 0 and math.isclose(row["gapMs"], gap, rel_tol=0, abs_tol=0.050001)
+            if answer_case:
+                agree = (agree and stored is not None and all(type(v) is int for v in answers.values())
+                         and str(len(answers)) == row["endState"] and dict(key_presses) == row["answerPressesByValue"]
+                         and dict(stored) == row["storedAnswersByValue"] and dict(extras) == row["storedExcessByValue"]
+                         and row["storedAnswerOver"] is bool(extras))
+            if not agree:
+                gaps.append(f"{path.name} 원본 증거 부족 또는 요약 불일치")
+        except (KeyError, TypeError, ValueError, IndexError, AttributeError) as error:
+            gaps.append(f"{path.name} 원본 판독 실패 ({error})")
+            if (row.get("elementOver") is True or path.suffix == ".pending") and stop != 3:
+                stop = 4
+    return results, failures, gaps, stop
+
+
+def held_stop(run):
+    folder = Path(run)
+    signal = folder / "input-over.json"
+    confirmed, unreadable = [], []
+    for path in sorted((folder / "held").glob("*.txt")):
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            unreadable.append(path.name)
+            continue
+        # 배율과 끝 상태 차이는 중단 이유가 아니다. 먼저 같은 DOM 요소에 들어온 입력과 누름을 시간순으로 센다.
+        downs, clicks = Counter(), Counter()
+        for line in raw.splitlines():
+            parts = line.split(maxsplit=6)
+            if len(parts) != 7 or parts[1] not in ("observed-down", "accepted-click"):
+                continue
+            element = parts[6].partition(" [대상 ")[0]
+            if not element or element.startswith("[대상 "):
+                continue
+            if parts[1] == "observed-down":
+                downs[element] += 1
+            else:
+                clicks[element] += 1
+                if clicks[element] > downs[element]:
+                    confirmed.append(path.name)
+                    break
+        else:
+            # 답 키 저장 수까지 반영한 Trial.entered와 원본 pointerdown 수도 비교한다.
+            entered = re.search(r"^끝 상태: .* 받아들인 누름 (\d+),", raw, re.MULTILINE)
+            physical = len(re.findall(r"^[0-9.]+\s+pointerdown\s", raw, re.MULTILINE))
+            if entered and int(entered[1]) > physical:
+                confirmed.append(path.name)
+    if signal.exists():
+        proof = load(signal, {})
+        if not isinstance(proof, dict) or proof.get("file") not in confirmed:
+            unreadable.append(signal.name + "의 초과 원본 확인하지 못함")
+    return confirmed, unreadable
+
+
+def held_result(out_dir, rows, env, held18, held26):
+    # (회수, 실제 누름, 테스트 이름). 결과 요약과 중간에 저장한 원본이 모두 맞아야 한다.
+    groups = {
+        "marks": (32, 2, "testMarkCellSpacedDoubleTaps"),
+        "key": (32, 2, "testAnswerKeySpacedDoubleTaps"),
+        "anatomy": (32, 2, "testAnatomySameSpotSpacedDoubleTaps"),
+        "triple": (10, 3, "testTripleTapsOnMarkCell"),
+        "double-first": (10, 2, "testDoubleTapAsFirstTouchAfterLaunch"),
+        "triple-first": (10, 3, "testTripleTapAsFirstTouchAfterLaunch"),
+        "key-double-first": (10, 2, "testDoubleTapAnswerKeyAsFirstTouch"),
+        "key-triple-first": (10, 3, "testTripleTapAnswerKeyAsFirstTouch"),
+    }
+    missing, failures, details = [], [], []
+    if env.get("gestureStop"):
+        details.append(f"{env['gestureStop']} 실행 뒤 제스처 중단. 이후 기기와 Release 화면 테스트는 미실행")
+    for folder, os_prefix, device, suite in (("held18", "18.4", "iphone16", held18), ("held26", "26.4", "iphone17", held26)):
+        confirmed, unreadable = held_stop(Path(out_dir) / "runs" / folder)
+        failures.extend(f"{folder}/{name} 원본 초과 입력" for name in confirmed)
+        missing.extend(f"{folder}/{name} 원본 판독 실패" for name in unreadable)
+        tests = tests_of(suite, "HeldDoubleTapTests")
+        if str(env.get(folder + "Exit")) not in ("None", "0") or any(t["result"] == "Failed" for t in tests):
+            failures.append(f"{folder} XCTest {fmt_tests(tests)}, 종료 코드 {env.get(folder + 'Exit')}")
+        if str(env.get(folder + "Exit")) != "0":
+            missing.append(folder + " 완료 기록")
+        runtime = lambda r: (str(r.get("os")) == os_prefix or str(r.get("os")).startswith(os_prefix + "."))
+        for slug, (n, expected, name) in groups.items():
+            title = f"{folder}/{slug}"
+            completed = [r for r in pick(rows, "held", device=device, slug=slug) if runtime(r)]
+            trials = [r for r in pick(rows, "heldTrial", device=device, slug=slug) if runtime(r)]
+            for r in trials:
+                pressed, entered = r.get("pressedByElement"), r.get("enteredByElement")
+                if not isinstance(pressed, dict) or not isinstance(entered, dict):
+                    missing.append(f"{title} {r.get('index')}회 요소별 기록")
+                    continue
+                if r.get("over") is True or any(v > pressed.get(k, 0) for k, v in entered.items()):
+                    failures.append(f"{title} {r.get('index')}회 초과 입력")
+            if any(r.get("zoom") != 0 for r in completed):
+                failures.append(title + " 요약에 확대 0회 미확인")
+            if any(r.get("over", 0) > 0 for r in completed):
+                failures.append(title + " 요약에 초과 입력")
+            if len(completed) != 1 or completed[0].get("trials") != n or not all_passed([t for t in tests if t["name"] == name], 1):
+                missing.append(title + " 완료/횟수")
+            if sorted(r.get("index", 0) for r in trials) != list(range(1, n + 1)):
+                missing.append(f"{title} 원본 {len(trials)}/{n}회")
+            for r in trials:
+                filename = f"{device}-ios{r.get('os')}-{slug}-{r.get('index', 0):02d}.txt"
+                path = os.path.join(out_dir, "runs", folder, "held", filename)
+                try:
+                    with open(path, encoding="utf-8") as timeline:
+                        raw = timeline.read()
+                except (OSError, UnicodeError):
+                    raw = ""
+                scales = re.search(r"^배율 (\S+) -> ([^,]+),", raw, re.MULTILINE)
+                observed_scales = []
+                try:
+                    before, after = (float(s) for s in scales.groups()) if scales else (0, 0)
+                    observed_scales = [float(s) for s in re.findall(r"^[0-9.]+\s+viewport-resize scale (\S+)$", raw, re.MULTILINE)]
+                    peak = max([before, after, *observed_scales])
+                except ValueError:
+                    before, after, peak = 0, 0, 0
+                if not (all(math.isfinite(s) and s > 0 for s in [before, after, *observed_scales])
+                        and before == r.get("before") and after == r.get("after") and peak == r.get("peakScale")):
+                    missing.append(f"{title} {r.get('index')}회 원본 배율 증거")
+                elif peak > before:
+                    failures.append(f"{title} {r.get('index')}회 확대 {before:g} -> {peak:g}")
+                # Swift가 남긴 요약, 껍데기의 가공 전 pointerdown, DOM 속성으로 식별한 실제 버튼을 따로 확인한다.
+                # 둘째, 셋째 누름은 확대나 스크롤로 다른 데에 닿을 수 있다.
+                if slug == "anatomy":
+                    intended, raw_target = "grade:1", "button:1등급"
+                elif slug == "key" or slug.startswith("key-"):
+                    intended, raw_target = "key:3", "button:3"
+                else:
+                    no = ((r.get("index", 0) - 1) % 16 + 1) if slug == "marks" else 3
+                    intended, raw_target = f"mark:{no}", f"mark-cell:{no}"
+                first_down = re.search(r"^[0-9.]+\s+pointerdown\s[^\n]*", raw, re.MULTILINE)
+                first_observed = re.search(r"^[0-9.]+\s+observed-down\s[^\n]*", raw, re.MULTILINE)
+                if (r.get("intended") != intended or r.get("firstDownTarget") != intended or
+                        not first_down or not first_down.group().rstrip().endswith(" " + raw_target) or
+                        not first_observed or not first_observed.group().rstrip().endswith(f" [대상 {intended}]")):
+                    missing.append(f"{title} {r.get('index')}회 첫 누름 대상 {intended} 확인하지 못함")
+                downs = len(re.findall(r"^[0-9.]+\s+pointerdown\s", raw, re.MULTILINE))
+                observed = len(re.findall(r"^[0-9.]+\s+observed-down\s", raw, re.MULTILINE))
+                if (r.get("file") != filename or r.get("presses") != expected or r.get("observed") != expected or
+                        downs != expected or observed != expected or min(r.get("before", -1), r.get("after", -1)) <= 0):
+                    missing.append(f"{title} {r.get('index')}회 증거 누락")
+        details.append(f"{folder} {fmt_tests(tests)}")
+    for label, device, runtime_key in FIRST034:
+        version = env.get(runtime_key)
+        counts, zoom_failures, gaps, _ = first034_results(out_dir, label, device, version)
+        bundle = Path(out_dir) / (label + ".xcresult")
+        summary = load(Path(out_dir) / f"ui-{label}.json", {})
+        tests = tests_of(summary)
+        totals = summary.get("summary", {})
+        destinations = [c.get("device", {}) for c in totals.get("devicesAndConfigurations", [])]
+        model = {"iphone16": "iPhone 16", "iphone17": "iPhone 17"}[device]
+        correct_device = (len(destinations) == 1 and destinations[0].get("modelName") == model
+                          and destinations[0].get("osVersion") == version)
+        if (str(env.get(label + "Exit")) != "0" or not bundle.is_dir() or summary.get("path") != str(bundle)
+                or totals.get("result") != "Passed" or totals.get("passedTests") != 1 or not correct_device
+                or len(tests) != 1 or tests[0]["suite"] != "ZoomDiagnosticsTests"
+                or tests[0]["name"] != "testWeb034FirstGestures" or tests[0]["result"] != "Passed"):
+            target_list = zoom_failures if any(t["result"] == "Failed" for t in tests) else gaps
+            target_list.append(f"전용 XCTest {fmt_tests(tests)}, 종료 코드 {env.get(label + 'Exit')}")
+        failures.extend(f"{label}/{s}" for s in zoom_failures)
+        missing.extend(f"{label}/{s}" for s in gaps)
+        for case, c in counts.items():
+            distribution = ", ".join(f"{k[7:]}개 {v}회" for k, v in sorted(c.items()) if k.startswith("inputs-"))
+            details.append(f"{label}/{case} 원본 {c['rows']}/10, 확대 {c['zoom']}/{c['scaleRows']}, 초과 {c['over']}/{c['rows']}, "
+                           f"대상 입력 분포 {distribution or '미확인'}, 실제 누름보다 적은 입력 {c['less']}회, 끝 상태 차이 {c['wrongEnd']}회")
+    status = "실패" if failures else "확인하지 못함" if missing else "통과"
+    return status, ". ".join(details + failures + missing) + ". 시도별 기록: " + env.get("heldPath", "docs/ios_누름기록/verify")
+
+
 def cmd_render(out_dir, doc_path):
     env = load(os.path.join(out_dir, "meta.json"), {})
+    captures_path = env.get("capturesPath", "docs/screens-ios")
+    held_path = env.get("heldPath", "docs/ios_누름기록/verify")
     scan = load(os.path.join(out_dir, "scan.json"), {})
     debug_app = load(os.path.join(out_dir, "app-debug.json"), {})
     release_app = load(os.path.join(out_dir, "app-release.json"), {})
     unit = load(os.path.join(out_dir, "unit.json"), {})
+    unit18 = load(os.path.join(out_dir, "unit18.json"), {})
     main_ui = load(os.path.join(out_dir, "ui-main.json"), {})
     live = load(os.path.join(out_dir, "ui-live.json"), {})
     se_ui = load(os.path.join(out_dir, "ui-se.json"), {})
     ipad_ui = load(os.path.join(out_dir, "ui-ipad.json"), {})
-    old_ui = load(os.path.join(out_dir, "ui-old.json"), {})
     ios18_ui = load(os.path.join(out_dir, "ui-ios18.json"), {})
+    held18_ui = load(os.path.join(out_dir, "ui-held18.json"), {})
+    held26_ui = load(os.path.join(out_dir, "ui-held26.json"), {})
     caps = load(os.path.join(out_dir, "captures.json"), {})
     rows = metrics(out_dir)
     audit = load(os.path.join(out_dir, "runs", "main", "accessibility-audit-iphone17.json"), [])
@@ -440,7 +743,9 @@ def cmd_render(out_dir, doc_path):
 
     # 2 단위
     unit_tests = tests_of(unit)
-    add(2, "단위 테스트", "통과" if all_passed(unit_tests, 39) else "실패", fmt_tests(unit_tests), "39개 이상 실행, 실패 0, 건너뜀 0")
+    unit18_tests = tests_of(unit18)
+    units_ok = str(env.get("unitExit")) == "0" and str(env.get("unit18Exit")) == "0"
+    add(2, "단위 테스트", "통과" if units_ok and all_passed(unit_tests, 92) and all_passed(unit18_tests, 92) else "실패", f"iOS {env.get('mainRuntime')} {fmt_tests(unit_tests)}, iOS {env.get('ios18Runtime')} {fmt_tests(unit18_tests)}", "각각 92개 이상 실행, 실패 0, 건너뜀 0(받는 쪽 50개 포함, 17번)")
 
     main_tests = tests_of(main_ui)
 
@@ -462,15 +767,18 @@ def cmd_render(out_dir, doc_path):
     release_reason_symbols = release_app.get("symbols", {}).get("requiredReason", [])
     info = scan.get("infoPlist", {})
     http_release = [h for h in scan.get("httpLiterals", []) if not h.get("debugOnly")]
-    static_ok = bool(scan) and bool(release_app) and not scan.get("network") and not scan.get("notification") and not scan.get("tracking") and not scan.get("permissionApis") \
+    net_symbols = release_app.get("symbols", {}).get("network", [])
+    other_net_symbols = [s for s in net_symbols if not any(s.split(": ")[-1].startswith(a) for a in ALLOWED_NETWORK_SYMBOLS)]
+    static_ok = bool(scan) and bool(release_app) and not scan.get("network") and bool(scan.get("networkAllowed")) and not scan.get("notification") and not scan.get("tracking") and not scan.get("permissionApis") \
         and not scan.get("packages") and not scan.get("permissionKeys") and not release_app.get("permissionKeys") and release_app.get("privacyManifest") \
         and pm.get("tracking") is False and not pm.get("trackingDomains") and not pm.get("collected") and len(pm.get("accessedCategories", [])) == found_reason == 0 \
-        and not release_reason_symbols and not release_app.get("symbols", {}).get("network") and not release_app.get("symbols", {}).get("notification") \
+        and not release_reason_symbols and not other_net_symbols and not release_app.get("symbols", {}).get("notification") \
         and info.get("ITSAppUsesNonExemptEncryption") is False and info.get("UISupportedInterfaceOrientations") == ["UIInterfaceOrientationPortrait"] and not http_release \
+        and info.get("NSAppTransportSecurity") is None and release_app.get("ats") is None \
         and all(sum(v.values()) == 0 for v in scan.get("bundleLinks", {"x": {"missing": 1}}).values())
     add(6, "통신과 권한", "통과" if all_passed(net, 2) and static_ok else "실패",
-        fmt_tests(net) + network_numbers(rows) + (" 소스 검사 결과가 없다." if not scan else f" 정적 검사: 네트워크 API {len(scan.get('network', []))}건, 외부 패키지 {len(scan.get('packages', []))}개, 권한 문구 {len(scan.get('permissionKeys', []))}개(Release Info.plist {len(release_app.get('permissionKeys', []))}개), 알림 API {len(scan.get('notification', []))}건, 추적 API {len(scan.get('tracking', []))}건, 권한이 필요한 기기 API {len(scan.get('permissionApis', []))}건, DEBUG 밖 소스의 http(s) 주소 글자 {len(http_release)}건, Release 바이너리의 네트워크 기호 {len(release_app.get('symbols', {}).get('network', []))}건, 웹 묶음 안의 바깥 링크와 새 창과 미리 연결 표시 {sum(sum(v.values()) for v in scan.get('bundleLinks', {}).values())}건. PrivacyInfo.xcprivacy {'있음' if release_app.get('privacyManifest') else '없음'}(추적 {pm.get('tracking')}, 추적 도메인 {len(pm.get('trackingDomains', []))}개, 수집 자료 {len(pm.get('collected', []))}개, 사유 API 선언 {len(pm.get('accessedCategories', []))}개). 소스에서 찾은 사유 API 이름 {found_reason}건, Release 바이너리의 사유 API 기호 {len(release_reason_symbols)}건. Info.plist: 암호화 사용 {info.get('ITSAppUsesNonExemptEncryption')}, 방향 {info.get('UISupportedInterfaceOrientations')}"),
-        "탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 정적 검사 모두 0, 개인정보 매니페스트 있음(추적 없음, 수집 없음), 찾은 사유 API 와 선언이 같음(둘 다 0), 암호화 사용 NO, 세로 고정")
+        fmt_tests(net) + network_numbers(rows) + (" 소스 검사 결과가 없다." if not scan else f" 정적 검사: 허용하지 않은 네트워크 API {len(scan.get('network', []))}건(ReleaseFetcher.swift의 URLSession, URLRequest {len(scan.get('networkAllowed', []))}건: {', '.join(sorted({n['api'] for n in scan.get('networkAllowed', [])}))}), 외부 패키지 {len(scan.get('packages', []))}개, 권한 문구 {len(scan.get('permissionKeys', []))}개(Release Info.plist {len(release_app.get('permissionKeys', []))}개), 알림 API {len(scan.get('notification', []))}건, 추적 API {len(scan.get('tracking', []))}건, 권한이 필요한 기기 API {len(scan.get('permissionApis', []))}건, DEBUG 밖 소스의 http(s) 주소 글자 {len(http_release)}건, Release 바이너리의 네트워크 기호 {len(net_symbols)}건(URLSession 말고 {len(other_net_symbols)}건), App Transport Security 예외(소스 Info.plist, Release 앱) {'없음' if info.get('NSAppTransportSecurity') is None and release_app.get('ats') is None else '있음'}, 웹 묶음 안의 바깥 링크와 새 창과 미리 연결 표시 {sum(sum(v.values()) for v in scan.get('bundleLinks', {}).values())}건. PrivacyInfo.xcprivacy {'있음' if release_app.get('privacyManifest') else '없음'}(추적 {pm.get('tracking')}, 추적 도메인 {len(pm.get('trackingDomains', []))}개, 수집 자료 {len(pm.get('collected', []))}개, 사유 API 선언 {len(pm.get('accessedCategories', []))}개). 소스에서 찾은 사유 API 이름 {found_reason}건, Release 바이너리의 사유 API 기호 {len(release_reason_symbols)}건. Info.plist: 암호화 사용 {info.get('ITSAppUsesNonExemptEncryption')}, 방향 {info.get('UISupportedInterfaceOrientations')}"),
+        "웹뷰 탐침 2개 통과(차단 0건 도달, 대조 1건 이상 도달), 네트워크 API 는 ReleaseFetcher.swift 에서만(작업 지시서 4), 그 밖의 정적 검사 모두 0, Release 바이너리의 네트워크 기호는 URLSession 뿐, ATS 예외 없음, 개인정보 매니페스트 있음(추적 없음, 수집 없음), 찾은 사유 API 와 선언이 같음(둘 다 0), 암호화 사용 NO, 세로 고정")
 
     font = suite("FontScaleUITests")
     live_tests = tests_of(live)
@@ -491,16 +799,15 @@ def cmd_render(out_dir, doc_path):
     else:
         add(9, "iPad(아이폰 앱 호환 방식)", "통과" if all_passed(ipad, 1) else "실패", f"{env.get('ipadName', '')}: " + fmt_tests(ipad) + ipad_numbers(rows), "시작 화면 테스트 1개 통과")
 
+    # 10 최소 버전: 작업 지시서 4의 3-1 에서 최소 버전을 iOS 18.0 으로 올렸다. 이 맥의 iOS 18 런타임(18.4)으로 돌려 판정에 넣는다.
     ref = tests_of(ios18_ui)
-    ref_note = (f" 참고(iOS {env.get('ios18Runtime')}, 잠듦 여부는 docs/ios_진행기록.md): 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름(3-4의 1번, 6번, 7번) {fmt_tests(suite('FastTapTests', ref))}."
-                if env.get("ios18Runtime") else "")
-    if env.get("ios17Runtime"):
-        old = tests_of(old_ui)
-        old_ok = all_passed(suite("FlowTests", old), 1) and all_passed(suite("RestartTests", old), 2) and all_passed(suite("FastTapTests", old), 15)
-        add(10, "최소 버전(iOS 17)", "통과" if old_ok else "실패", f"iOS {env.get('ios17Runtime')}: 흐름 {fmt_tests(suite('FlowTests', old))}, 다시 켜기 {fmt_tests(suite('RestartTests', old))}, 빠른 누름 {fmt_tests(suite('FastTapTests', old))}." + ref_note,
-            "iOS 17 에서 흐름, 다시 켜기, 빠른 누름 통과")
+    if env.get("ios18Runtime"):
+        min_ok = str(env.get("unit18Exit")) == "0" and all_passed(unit18_tests, 92) and all_passed(suite("FlowTests", ref), 1) and all_passed(suite("RestartTests", ref), 2) and all_passed(suite("FastTapTests", ref), 16) and all_passed(suite("RemoteFetchTests", ref), 5)
+        add(10, "최소 버전(iOS 18)", "통과" if min_ok else "실패",
+            f"iOS {env.get('ios18Runtime')}(iPhone 16): 단위 {fmt_tests(unit18_tests)}, 흐름 {fmt_tests(suite('FlowTests', ref))}, 다시 켜기 {fmt_tests(suite('RestartTests', ref))}, 빠른 누름 {fmt_tests(suite('FastTapTests', ref))}, 받기 화면 {fmt_tests(suite('RemoteFetchTests', ref))}. iOS 18.0~18.3: 이 맥에 런타임이 없어 확인하지 못함",
+            "이 맥의 iOS 18 런타임에서 흐름 1, 다시 켜기 2, 빠른 누름 16, 받기 화면 5개 통과(18.0~18.3 은 확인하지 못함으로 적음)")
     else:
-        add(10, "최소 버전(iOS 17)", "확인하지 못함", "iOS 17 런타임이 이 맥에 없다(이 Xcode 의 xcodebuild 로는 받을 수 없었음, docs/ios_진행기록.md 3-5)." + ref_note, "iOS 17 런타임이 있으면 흐름, 다시 켜기, 빠른 누름 통과")
+        add(10, "최소 버전(iOS 18)", "확인하지 못함", "iOS 18 런타임이 이 맥에 없다.", "이 맥의 iOS 18 런타임에서 흐름, 다시 켜기, 빠른 누름, 받기 화면 통과")
 
     vis = scan.get("visibleText", {})
     commits = scan.get("commitMessages", {})
@@ -512,7 +819,7 @@ def cmd_render(out_dir, doc_path):
     issues = sum(len(a.get("issues", [])) for a in audit)
     per_screen = ", ".join(f"{a.get('screen')} {len(a.get('issues', []))}" for a in audit)
     add(12, "접근성 감사(기록용)", "통과" if all_passed(audit_tests, 1) and len(ran) == 4 else "실패",
-        f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건({per_screen}). 지난번(웹 묶음 0.2.0, 2026-11-24) 38건(시작 7, 답 입력 4, 점수 해부 7, 계단 20)",
+        f"{fmt_tests(audit_tests)}. 감사한 화면 {len(ran)}개, 걸린 것 {issues}건({per_screen}). 지난번(웹 묶음 0.3.1, 2026-11-24) 30건(시작 7, 답 입력 4, 점수 해부 7, 계단 12)",
         "네 화면 모두 감사를 돌리고 걸린 것을 기록(통과가 접근성을 보장하지 않음)")
 
     main_dark = tests_of(load(os.path.join(out_dir, "ui-main-dark.json"), {}))
@@ -557,6 +864,66 @@ def cmd_render(out_dir, doc_path):
         + ("" if env.get("seSimulator") == "ok" else f"(SE 시뮬레이터를 만들지 못함: {env.get('seSimulator')})") + ". 간격별 결과와 웹이 받은 이벤트는 아래 절",
         "모두 통과(SE 포함). 0.1초와 0.2초 간격은 만들 수 없어 확인하지 못함으로 적음. 진행 막대 끝의 틈과 아래 단서의 모양은 테스트가 찍기만 하고 사람이 확대 캡처로 판단함(docs/ios_화면비교.md)")
 
+    # 17 받는 쪽 단위 테스트(작업 지시서 4의 3-3)
+    remote_suites = ["StrictJSONTests", "ReleaseKeyTests", "ReleaseRunTests", "RemoteMergeTests", "RemoteStoreTests", "RemoteBridgeTests", "ReleaseNetworkTests"]
+    remote_unit = [x for x in unit_tests if x["suite"] in remote_suites]
+    remote_unit18 = [x for x in unit18_tests if x["suite"] in remote_suites]
+    remote_names = {(x["suite"], x["name"]) for x in remote_unit}
+    remote_names18 = {(x["suite"], x["name"]) for x in remote_unit18}
+    same_remote = remote_names == remote_names18 and {s for s, _ in remote_names} == set(remote_suites)
+    per_suite = ", ".join(f"{s} {sum(1 for x in remote_unit if x['suite'] == s)}" for s in remote_suites)
+    unit_headers = load(os.path.join(out_dir, "runs", "unit", "request-headers.json"), {})
+    header_text = ", ".join(f"{h[0]}: {h[1]}" for h in unit_headers.get("headers", [])) or "기록 없음"
+    add(17, "추가: 받는 쪽 단위 테스트(3-3)", "통과" if units_ok and same_remote and all_passed(remote_unit, 50) and all_passed(remote_unit18, 50) else "실패",
+        f"iOS {env.get('mainRuntime')} {fmt_tests(remote_unit)}({per_suite}), iOS {env.get('ios18Runtime')} {fmt_tests(remote_unit18)}. 시험 서버가 받은 요청 머리글(iOS 26.4): {header_text}",
+        "50개 이상 실행(테스트 전용 발행물 네 가지, 받는 쪽 시험 순서 1~7, CryptoKit 이 문서의 키와 서명을 받음, 틀린 모양, 통신 경우, 보관 파일 깨짐), 실패 0, 건너뜀 0")
+
+    # 18 받는 쪽 화면 테스트
+    remote_ui = suite("RemoteFetchTests")
+    remote_ui18 = suite("RemoteFetchTests", ref)
+    fetches = pick(rows, "remoteFetch")
+    fetch_text = ", ".join(f"{r.get('device')} {r.get('ms')}ms(요청 {r.get('requests')}개)" for r in fetches) or "기록 없음"
+    add(18, "추가: 받는 쪽 화면 테스트(3-3)", "통과" if all_passed(remote_ui, 5) and all_passed(release_smoke, 1) else "실패",
+        f"iPhone 17(iOS 26.4) {fmt_tests(remote_ui)}. iOS 18.4 {fmt_tests(remote_ui18)}(10번에서 판정). Release 가 실행 인자의 시험 서버 주소를 무시하고 받지 않으며 시험 선택 화면이 지금과 같음: {fmt_tests(release_smoke)}. 한 번 받는 데 걸린 시간(시험 서버, 받기와 확인과 보관): {fetch_text}",
+        "처음 받기, 새로 확인의 두 응답과 틀린 발행물 두 가지, 통신 없이 다시 켜기, 넘기는 응답, 앞으로 돌아왔을 때 5개 통과와 Release 확인 통과")
+
+    # 19 Release 앱에 테스트 전용 키와 ATS 예외가 없음
+    key_scan = release_app.get("testKeyScan", {})
+    key_lines = " ".join(key_scan.get("lines", []))
+    negatives = {"keytestSecond": "둘째 테스트 공개 키(바이트)와 씨앗(16진수)", "keytestEmbedded": "앱 안 파일에 테스트 공개 키", "keytestUnknownFile": "검사 목록 밖의 파일", "keytestInstall": "exam-data/public-key.txt 가 테스트 키"}
+    neg_ok = all(env.get(k) == "빌드 실패(기대대로)" for k in negatives)
+    key_ok = key_scan.get("exit") == 0 and "찾은 것 0개" in key_lines and str(env.get("releaseKeyScan", "")).startswith("테스트 키 검사: 배포용 앱의 파일") \
+        and neg_ok and release_app.get("ats") is None and info.get("NSAppTransportSecurity") is None and debug_app.get("ats") is None
+    add(19, "추가: Release 앱에 테스트 키와 ATS 예외 없음(3-3)", "통과" if key_ok else "실패",
+        f"빌드 단계 검사: {env.get('releaseKeyScan', '기록 없음')}. 기기용 빌드: {env.get('deviceKeyScan', '기록 없음')}. 빌드 밖에서 Release 앱 전체를 다시 훑음: {key_lines or '기록 없음'}. "
+        f"일부러 넣은 빌드(저장소 밖 복사본): " + ", ".join(f"{v} {env.get(k, '확인하지 못함')}" for k, v in negatives.items()) +
+        f". ATS 예외: 소스 Info.plist {'없음' if info.get('NSAppTransportSecurity') is None else '있음'}, Release 앱 {'없음' if release_app.get('ats') is None else '있음'}, Debug 앱 {'없음' if debug_app.get('ats') is None else '있음'}(시뮬레이터에서 예외 없이 http://127.0.0.1 에 붙어서 Debug 에도 넣지 않음). 앱에 넣은 공개 키 파일 {release_app.get('examKeyFileBytes')}바이트(0 이면 진짜 공개 키 없음)",
+        "Release 빌드 단계 검사가 돌았고 0건, 테스트 키나 목록 밖 파일을 넣은 빌드 네 가지가 모두 해당 파일과 까닭으로 실패, Release 앱 전체에서 테스트 키 0건, ATS 예외 없음")
+
+    # 20 껍데기의 요청이 정해진 주소 밖으로 나가지 않음
+    net_unit = {x["name"]: x for x in unit_tests if x["suite"] in ("ReleaseNetworkTests", "RemoteBridgeTests")}
+    need = ["testFullRunRequestsOnlyThePublicationFiles", "testRedirectIsNotFollowed", "testRedirectOnExamFileFailsTheWholeRun", "testLocationRules"]
+    need_ok = all(net_unit.get(n, {}).get("result") == "Passed" for n in need)
+    ui_need = [x for x in remote_ui if x["name"] in ("testFirstFetchShowsNoticeRefreshAndTestExam", "testRedirectIsNotFollowed")]
+    paths_ok = bool(fetches) and all(r.get("paths") == ["index.json", "index.json.sig", "files/test-only-exam.2.json"] for r in fetches)
+    out_ok = need_ok and all_passed(ui_need, 2) and paths_ok and not scan.get("network") and all_passed(net, 2)
+    add(20, "추가: 껍데기 요청이 정해진 주소 밖으로 나가지 않음(3-3)", "통과" if out_ok else "실패",
+        f"단위: " + ", ".join(f"{n} {net_unit.get(n, {}).get('result', '없음')}" for n in need) + f". 화면: {fmt_tests(ui_need)}, 앱이 시험 서버에 보낸 요청 경로 {', '.join(fetches[-1].get('paths', [])) if fetches else '기록 없음'}. "
+        f"ReleaseFetcher.swift에서 허용한 API 외 {len(scan.get('network', []))}건. 웹뷰의 바깥 통신 차단은 그대로(6번 탐침 {fmt_tests(net)})",
+        "요청은 정해진 주소의 index.json, index.json.sig, 시험 파일뿐, 넘기는 응답을 따라가지 않음, 주소 밖 경로를 만들지 않음, 웹뷰 차단 그대로")
+
+    # 21 출시 준비(기록용)
+    add(21, "기록: 출시 준비", "기록", f"아직 없는 것: {env.get('releaseMissing', '?')}", "없는 것을 적기만 하고 실패로 보지 않음")
+
+    # 22. 측정이 끊겨도 남아 있는 시도별 원본과 XCTest 결과를 함께 본다.
+    held = pick(rows, "held")
+    held_status, held_detail = held_result(out_dir, rows, env, held18_ui, held26_ui)
+    add(22, "요소별 초과 입력과 확대(iOS 18.4, 26.4)", held_status, held_detail,
+        "두 기기에서 표시 칸과 답 키의 첫 두 번과 세 번을 10번씩, 세 대상의 0.29초 누름을 32번씩 측정. "
+        "기존 두 기기와 3-1 세 기기 모두 시작 배율 대비 앞뒤 및 resize 최고 배율이 조금이라도 오른 회차 0. "
+        "3-1은 여섯 조건을 각 10회 측정. "
+        "전용 XCTest 통과와 원본 증거가 필요하며 DOM 요소별/저장 답별 초과 및 확대는 모두 0회. 입력 부족과 끝 상태 차이는 기록")
+
     lines = []
     lines.append("# iOS 앱 껍데기 검증 결과")
     lines.append("")
@@ -573,7 +940,15 @@ def cmd_render(out_dir, doc_path):
     lines.append(f"- 저장소: 브랜치 {env.get('branch', '?')}, 커밋 {env.get('commit', '?')}{dirty_note}")
     lines.append(f"- 웹 묶음: {env.get('manifestInfo', '?')}")
     lines.append(f"- 실행 시각: {env.get('startedAt', '?')} ~ {env.get('finishedAt', '?')}. 시작할 때 전원: {env.get('power', '?')}. 잠듦 확인은 docs/ios_진행기록.md 에 적어요(pmset 기록).")
-    lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {env.get('simulators', '?')}")
+    simulators = env.get("simulators", "?")
+    # 3-1에서 추가로 만든 기기는 최초 시뮬레이터 목록에 없어서 실제 XCTest 실행 기록에서 읽는다.
+    extra_suite = load(Path(out_dir) / "ui-first034-16-26.json", {})
+    for destination in extra_suite.get("summary", {}).get("devicesAndConfigurations", []):
+        device = destination.get("device", {})
+        if device.get("modelName") == "iPhone 16" and device.get("osVersion"):
+            simulators += f", iPhone 16 (iOS {device['osVersion']}, 첫 누름)"
+            break
+    lines.append(f"- 시뮬레이터(검증에 쓰려고 새로 만들고 끝나면 지움): {simulators}")
     lines.append(f"- 데스크톱 폴더 대응: 테스트 빌드에만 링커 설정 `-Wl,-S`(디버그 맵 빼기)를 덧붙였어요. 테스트 바이너리의 디버그 맵 항목 {env.get('testDebugMapEntries', '?')}개(0이어야 해요). 이유는 docs/ios_결정기록.md 에 있어요. 앱 코드와 프로젝트 설정은 그대로예요.")
     lines.append("")
     lines.append("| 번호 | 항목 | 결과 | 숫자 | 최소 기준 |")
@@ -594,7 +969,7 @@ def cmd_render(out_dir, doc_path):
     main_dark_ui = load(os.path.join(out_dir, "ui-main-dark.json"), {})
     se_dark_ui = load(os.path.join(out_dir, "ui-se-dark.json"), {})
     release_look_ui = load(os.path.join(out_dir, "ui-release-look.json"), {})
-    for label, res in (("단위", unit), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면", old_ui), ("화면(Release 모양)", release_look_ui), ("화면(Release)", release_ui), ("화면(참고)", ios18_ui)):
+    for label, res in (("단위", unit), ("단위(iOS 18)", unit18), ("화면", main_ui), ("화면(어두운 화면)", main_dark_ui), ("화면", live), ("화면", se_ui), ("화면(어두운 화면)", se_dark_ui), ("화면", ipad_ui), ("화면(iOS 18)", ios18_ui), ("화면(Release 모양)", release_look_ui), ("화면(Release)", release_ui), ("화면(3-2 기록, iOS 18)", held18_ui), ("화면(3-2 기록, iOS 26)", held26_ui)):
         for t in tests_of(res):
             dur = t.get("duration")
             lines.append(f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | {dur:.1f} |" if isinstance(dur, (int, float)) else f"| {label} | {t['suite']}.{t['name']} | {res.get('device', '')} | {t['result']} | |")
@@ -648,9 +1023,60 @@ def cmd_render(out_dir, doc_path):
     for r in pick(rows, "webfix"):
         lines.append(f"- {r.get('case')}({r.get('device')}, iOS {r.get('os')}): {esc(json.dumps({k: v for k, v in r.items() if k not in ('kind', 'case', 'device', 'os')}, ensure_ascii=False, sort_keys=True))[:900]}")
     lines.append("")
+    lines.append("## 받기와 서명 확인(작업 지시서 4의 3-3)")
+    lines.append("")
+    lines.append("앱이 시험 서버(ios/scripts/exam_server.py, 이 맥의 127.0.0.1)에서 받을 때 실제로 나간 요청과 걸린 시간이에요. 진짜 주소와 진짜 공개 키는 아직 없어서(21번) Debug 의 실행 인자로 시험 서버 주소와 테스트 전용 공개 키를 줬어요.")
+    lines.append("")
+    for r in fetches:
+        lines.append(f"- {r.get('device')}: 받기와 확인과 보관 {r.get('ms')}ms, 요청 {r.get('requests')}개({', '.join(r.get('paths', []))}), 머리글 " + ", ".join(f"{h[0]}: {h[1]}" for h in r.get("headers", [])))
+    if unit_headers:
+        lines.append(f"- 단위 테스트(URLSession 만으로 받은 것): {unit_headers.get('version')} {unit_headers.get('path')}, 머리글 {header_text}")
+    lines.append(f"- 출시 준비에서 아직 없는 것: {env.get('releaseMissing', '?')}")
+    lines.append("")
+    lines.append("## 3-2: 누르는 동안 온 dblclick 규칙을 잰 것(기록용)")
+    lines.append("")
+    lines.append(f"표시 칸, 답 키, 점수 해부의 같은 자리를 누르는 세 실험에서는 0.29초를 목표로 TouchSynth가 두 번의 누름을 따로 보냈어요. 누름 시작 사이의 실측 최솟값과 최댓값은 표에 적었어요. 사라짐은 둘째 누름의 손가락 click 이 오지 않은 것, 채움은 웹이 click 을 만들어 보낸 것(누르는 동안 온 dblclick 규칙과 손뗌 수 규칙), 늦은 click 버림은 채운 뒤 그 누름의 진짜 click 이 늦게 와서 웹이 버린 것이에요. 사라진 경우와 채운 경우의 이벤트 기록(시각 차례, 결정기록 7.8 의 형식)은 {held_path} 에 있어요.")
+    lines.append("")
+    lines.append("| iOS | 경우 | 되풀이 | 사라짐(그 가운데 누르는 동안 dblclick) | 채움(누르는 동안 온 dblclick 으로) | 사라졌는데 채우지 않음 | 늦은 click 버림 | 누른 수보다 많이 들어감 | 확대 | 끝 상태 차이(첫 누름과 세 번) | 누름 시작 사이(ms) | 손뗌에서 click 까지 가장 긴 것(ms, 20ms 넘은 수) | 끝 상태 |")
+    lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    for r in held:
+        ends = "; ".join(f"{k} {v}번" for k, v in sorted((r.get("endStates") or {}).items()))
+        wrong_end = "해당 없음" if r.get("slug") in ("marks", "key", "anatomy") else r.get("wrongEnd", "확인하지 못함")
+        lines.append(f"| {r.get('os')} | {esc(r.get('target'))} | {r.get('trials')} | {r.get('lost')}({r.get('dblclickWhileHeld')}) | {r.get('filled')}({r.get('heldFilled')}) | {r.get('lostNotFilled')} | {r.get('lateDropped')} | {r.get('over')} | {r.get('zoom')} | {wrong_end} | {r.get('gapMin')}~{r.get('gapMax')} | {r.get('liftToClickMax')}({r.get('liftToClickOver20')}) | {esc(ends)[:400]} |")
+    # 전체 요약 전에 멈춘 경우도 저장된 파일과 시도별 측정에서 확인할 수 있다.
+    complete = {(r.get("device"), r.get("slug")) for r in held}
+    names = {"marks": "표시 칸 두 번", "key": "답 키 두 번", "anatomy": "점수 해부 두 번", "triple": "표시 칸 세 번",
+             "double-first": "표시 칸 첫 두 번", "triple-first": "표시 칸 첫 세 번",
+             "key-double-first": "답 키 첫 두 번", "key-triple-first": "답 키 첫 세 번"}
+    partial = []
+    for folder, device, runtime, result in (("held18", "iphone16", env.get("ios18Runtime"), held18_ui),
+                                            ("held26", "iphone17", env.get("mainRuntime"), held26_ui)):
+        attempts = pick(rows, "heldTrial", device=device)
+        if not attempts and not result:
+            continue
+        runtime = next((r["os"] for r in attempts if r.get("os")), runtime)
+        directory = os.path.join(out_dir, "runs", folder, "held")
+        files = set(os.listdir(directory)) if os.path.isdir(directory) else set()
+        for slug, label in names.items():
+            if (device, slug) in complete:
+                continue
+            records = [r for r in attempts if r.get("slug") == slug]
+            raw = sorted(f for f in files if re.fullmatch(re.escape(f"{device}-ios{runtime}-{slug}-") + r"\d+\.txt", f)
+                         and os.path.getsize(os.path.join(directory, f)) > 0)
+            available = [r for r in records if r.get("file") in raw]
+            scales = [r for r in available if min(r.get("before", -1), r.get("after", -1), r.get("peakScale", -1)) > 0]
+            zooms = sum(r["peakScale"] > r["before"] for r in scales)
+            excess = [f"{r['index']}회차 `{r['file']}`" for r in records if r.get("over") is True]
+            over_text = ", ".join(excess) or ("관측 0회" if available else "확인하지 못함")
+            partial.append(f"| {runtime or '?'} | {label} | {len(raw)} | {zooms}/{len(scales)} | {over_text} |")
+    if partial:
+        lines.extend(["", "전체 요약이 없는 경우에는 저장된 시도까지만 적었어요.", "",
+                      "| iOS | 경우 | 확보한 원본 파일 수 | 확대 / 앞뒤 및 최고 배율이 있는 시도 | 초과 입력 회차와 파일 |",
+                      "| --- | --- | --- | --- | --- |", *partial])
+    lines.append("")
     lines.append("## Release 와 Debug 의 화면 모양(3-3)")
     lines.append("")
-    lines.append("같은 테스트(LookTests)를 Debug 와 Release 로 돌려 같은 누름으로 같은 화면까지 가서 찍었어요(Release 에는 상태를 심는 장치가 없어요). 캡처는 docs/screens-ios/release/debug 와 release 에 있어요. 세 가지로 견줬어요. 화면 전체의 화소(채널 차이 8 넘는 화소가 30개 넘으면 다름, 기록 화면은 Debug 전용 목록의 위 끝에서 12pt 위까지), 이름이 있는 접근성 요소의 있고 없음과 자리와 크기(1pt 넘게 다르면 다름, 기록 화면의 Debug 전용 목록 아래는 크기만), 요소마다 각자의 자리에서 잘라 견준 화소(채널 차이 8 넘는 화소가 0.5% 넘으면 다름)예요. 기록 화면은 맨 위에서 찍고(08-기록), 맨 아래까지 내린 것(08b-기록-아래)은 요소의 있고 없음만 견줘요.")
+    lines.append(f"같은 테스트(LookTests)를 Debug 와 Release 로 돌려 같은 누름으로 같은 화면까지 가서 찍었어요(Release 에는 상태를 심는 장치가 없어요). 캡처는 {captures_path}/release/debug 와 {captures_path}/release/release 에 있어요. 세 가지로 견줬어요. 화면 전체의 화소(채널 차이 8 넘는 화소가 30개 넘으면 다름, 기록 화면은 Debug 전용 목록의 위 끝에서 12pt 위까지), 이름이 있는 접근성 요소의 있고 없음과 자리와 크기(1pt 넘게 다르면 다름, 기록 화면의 Debug 전용 목록 아래는 크기만), 요소마다 각자의 자리에서 잘라 견준 화소(채널 차이 8 넘는 화소가 0.5% 넘으면 다름)예요. 기록 화면은 맨 위에서 찍고(08-기록), 맨 아래까지 내린 것(08b-기록-아래)은 요소의 있고 없음만 견줘요.")
     lines.append("")
     lines.append("| 화면 | 요소(Debug/Release) | Debug 에만 | Release 에만 | 화면 전체 화소 차이(견준 높이) | 자리 다름 | 크기 다름 | 화소를 견준 요소 | 모양 다름 |")
     lines.append("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
@@ -666,7 +1092,7 @@ def cmd_render(out_dir, doc_path):
     lines.append("")
     lines.append("## 캡처")
     lines.append("")
-    lines.append("docs/screens-ios/기기/테마/번호-화면.png 로 남겼어요. 같은 화면의 웹 캡처와의 비교는 docs/ios_화면비교.md 에 있어요.")
+    lines.append(f"{captures_path}/기기/테마/번호-화면.png 로 남겼어요. 같은 화면의 웹 캡처와의 비교는 docs/ios_화면비교.md 에 있어요.")
     if caps.get("missing"):
         lines.append(f"- 빠진 것: {', '.join(caps['missing'])}")
     if caps.get("duplicates"):
@@ -684,9 +1110,9 @@ def cmd_render(out_dir, doc_path):
     for ch in FORBIDDEN:
         text = text.replace(ch, " ")
     with open(doc_path, "w", encoding="utf-8") as f:
-        f.write(text)
+        f.writelines(line.rstrip() + "\n" for line in text.splitlines())
     print(json.dumps({"items": [(i["no"], i["status"]) for i in items]}, ensure_ascii=False))
-    sys.exit(0 if not total_fail else 1)
+    sys.exit(0 if not total_fail and held_status == "통과" else 1)
 
 
 def esc(text):
@@ -767,6 +1193,16 @@ def main():
         cmd_captures(sys.argv[2], sys.argv[3], sys.argv[4])
     elif cmd == "extras":
         cmd_extras(sys.argv[2], sys.argv[3])
+    elif cmd == "first034":
+        raise SystemExit(first034_results(*sys.argv[2:6])[3])
+    elif cmd == "held-stop":
+        confirmed, unreadable = held_stop(sys.argv[2])
+        for name in confirmed:
+            print("원본에서 초과 입력 확인:", name)
+        for name in unreadable:
+            print("원본 판독 실패:", name)
+        unresolved_signal = (Path(sys.argv[2]) / "input-over.json").is_file() and unreadable
+        raise SystemExit(3 if confirmed else 4 if unresolved_signal else 0)
     elif cmd == "render":
         cmd_render(sys.argv[2], sys.argv[3])
     else:

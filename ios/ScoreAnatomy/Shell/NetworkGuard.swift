@@ -1,9 +1,10 @@
 import Foundation
 import WebKit
 
-/// 바깥 통신 차단. 웹뷰 안에서 http, https(와 ws, wss)로 나가는 요청을 모두 막고,
-/// 처음 문서(앱 안의 index.html)가 아닌 곳으로 가려는 이동은 취소한다.
-/// 껍데기 코드 자체는 네트워크 API 를 쓰지 않는다.
+/// 웹뷰의 바깥 통신 차단. 웹뷰 안에서 http, https(와 ws, wss)로 나가는 요청을 모두 막고,
+/// 처음 문서(앱 안의 index.html)가 아닌 곳으로 가려는 이동은 취소한다. 웹은 스스로 통신하지 않는다.
+/// 껍데기 쪽 통신은 시험 자료 받기(ios/ScoreAnatomy/Remote/ReleaseFetcher.swift) 한 곳뿐이다. 정해진 주소 하나의 index.json,
+/// index.json.sig, 시험 파일만 받고 아무것도 보내지 않는다(작업 지시서 4, docs/시험_배포_규격.md 3장). 이 차단은 그대로 둔다.
 enum NetworkGuard {
     /// 컴파일한 규칙 목록의 이름. 규칙을 바꾸면 끝의 번호를 올린다.
     static let ruleListIdentifier = "sa-block-remote-1"

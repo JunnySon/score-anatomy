@@ -1,0 +1,24 @@
+# 빠른 누름 테스트의 표시 칸 세 번 빠르게(앱을 켜고 표시 화면을 연 뒤 첫 누름)
+# 기기 iphone16, iOS 18.4. 시각은 performance.now()(ms, 이 경우의 첫 이벤트 3340.0).
+# 손가락: pointer 이벤트는 pointerId, touch 이벤트는 그때 닿아 있는 손가락 수. trusted false 는 웹이 만들어 보낸 click.
+# 분류: 채움+누른 수보다 많이 들어감. 누름 시작 사이 62.0ms, 손뗌에서 click 까지 1.0, 16.0ms
+시각(ms)    종류           detail  trusted  손가락     x,y      대상 또는 웹 판단
+3340.0    pointerdown  0       true     726015899 197,255  mark-cell:3
+3341.0    touchstart   0       true     1       197,255  mark-cell:3
+3400.0    pointerup    0       true     726015899 197,255  mark-cell:3
+3401.0    touchend     0       true     0       197,255  mark-cell:3
+3402.0    pointerdown  0       true     726015900 197,255  mark-cell:3
+3402.0    touchstart   0       true     1       197,255  mark-cell:3
+3598.0    pointerup    0       true     726015900 197,255  mark-cell:3
+3599.0    touchend     0       true     0       197,255  mark-cell:3
+3599.0    click        2       true     -       197,255  mark-cell:3
+3600.0    click        1       false    -       197,255  mark-cell:3
+3600.0    (웹 판단)       fill(detail 1, rule lifts, x 197, y 255)
+3606.0    dblclick     2       true     -       197,255  mark-cell:3
+3606.0    click        1       true     -       197,255  mark-cell:3
+3608.0    pointerdown  0       true     726015901 197,255  mark-cell:3
+3608.0    touchstart   0       true     1       197,255  mark-cell:3
+3608.0    pointerup    0       true     726015901 197,255  mark-cell:3
+3608.0    touchend     0       true     0       197,255  mark-cell:3
+3624.0    click        1       true     -       197,255  mark-cell:3
+끝 상태: 3번 칸 data-mark doubt, 버린 누름 알림 0. 받아들인 누름 4, 웹이 만든 click 1(누르는 동안 온 dblclick 으로 채움 0, 손뗌 수로 채움 1), 버림 0, 늦은 click 버림 0

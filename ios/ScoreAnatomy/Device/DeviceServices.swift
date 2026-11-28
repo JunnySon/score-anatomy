@@ -40,10 +40,8 @@ final class KeyHaptics {
     }
 
     private static func makeGenerator(view: UIView) -> UIImpactFeedbackGenerator {
-        if #available(iOS 17.5, *) {
-            return UIImpactFeedbackGenerator(style: .light, view: view)
-        }
-        return UIImpactFeedbackGenerator(style: .light)
+        // 최소 버전이 iOS 18 이라 뷰를 받는 생성자(iOS 17.5 부터)를 늘 쓸 수 있다.
+        UIImpactFeedbackGenerator(style: .light, view: view)
     }
 }
 

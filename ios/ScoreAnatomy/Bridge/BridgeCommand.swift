@@ -14,6 +14,8 @@ enum BridgeCommand: Equatable, Sendable {
     case copy(String)
     /// saCopy 인데 글자가 아니다. 복사하지 않고 copied(ok: false)로 답한다(saCopy 하나에 copied 하나).
     case copyMalformed
+    /// saRemote { op: "refresh" }: 정해진 주소에서 다시 받아 확인하고 remote 나 remoteFailed 로 답한다(규격 2, 7-3).
+    case remoteRefresh
     /// 알 수 없는 메시지. 아무것도 하지 않는다.
     case ignored
 
@@ -36,6 +38,9 @@ enum BridgeCommand: Equatable, Sendable {
         case .copy:
             guard let text = body as? String else { return .copyMalformed }
             return .copy(text)
+        case .remote:
+            guard let message = body as? [String: Any], message["op"] as? String == "refresh" else { return .ignored }
+            return .remoteRefresh
         }
     }
 }
@@ -45,8 +50,12 @@ enum ToWeb: Equatable, Sendable {
     case storeFailed
     case fontScale(Double)
     case copied(Bool)
+    /// 규격 2: 받아들인 시험 자료(새 자료를 받아들였을 때, 새로 확인의 응답).
+    case remote(RemoteSnapshot)
+    /// 규격 2: 새로 확인에서 받지 못했거나 확인을 통과하지 못했다.
+    case remoteFailed
 
-    /// 웹에 넘기는 JSON 글자. 웹 쪽에서 JSON.parse 로 객체를 만든다(참과 거짓이 숫자로 바뀌지 않게).
+    /// 웹에 넘기는 JSON 글자(remote 는 기록용 요약). 웹 쪽에서 JSON.parse 로 객체를 만든다(참과 거짓이 숫자로 바뀌지 않게).
     var json: String {
         let object: [String: Any]
         switch self {
@@ -56,17 +65,41 @@ enum ToWeb: Equatable, Sendable {
             object = ["type": "fontScale", "value": value]
         case .copied(let ok):
             object = ["type": "copied", "ok": ok]
+        case .remote(let snapshot):
+            object = ["type": "remote", "seq": snapshot.seq, "exams": snapshot.exams.count]
+        case .remoteFailed:
+            object = ["type": "remoteFailed"]
         }
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]) else { return "{}" }
         return String(decoding: data, as: UTF8.self)
     }
 
-    /// 웹에 알리는 스크립트. JSON 은 그대로 자바스크립트 객체 글자로 쓸 수 있다(여기서 만드는 JSON 은 영문, 숫자, 참거짓뿐이다).
-    /// 함수가 아직 없으면 아무것도 하지 않는다.
+    /// 웹에 알리는 스크립트. 함수가 아직 없으면 아무것도 하지 않는다.
+    /// - remote 말고는 JSON 을 그대로 자바스크립트 객체 글자로 쓴다(여기서 만드는 JSON 은 영문, 숫자, 참거짓뿐이다).
+    /// - remote 는 받은 바이트를 이은 JSON 글자를 자바스크립트 글자로 넣고 JSON.parse 로 읽게 한다(객체 글자로 넣으면 "__proto__" 같은
+    ///   키의 뜻이 JSON.parse 와 달라질 수 있어서).
     /// WebKit 의 기본(Objective-C) API 인 evaluateJavaScript 로 돌린다. iOS 26 SDK 의 Swift 전용 함수(callAsyncJavaScript)는
-    /// iOS 17, 18 에 없는 라이브러리(libswiftWebKit)를 불러서 앱이 켜지지 않는다(docs/ios_결정기록.md).
+    /// iOS 18 에 없는 라이브러리(libswiftWebKit)를 불러서 앱이 켜지지 않는다(docs/ios_결정기록.md).
     var deliverScript: String {
-        "(function () { var f = window.__saFromApp; if (typeof f === 'function') { f(\(json)); } })();"
+        switch self {
+        case .remote(let snapshot):
+            let literal = JavaScriptText.stringLiteral(snapshot.remoteJSON)
+            return "(function () { var f = window.__saFromApp; if (typeof f === 'function') { var r = null; try { r = JSON.parse(\(literal)); } catch (e) { r = null; } f({ type: 'remote', remote: r }); } })();"
+        default:
+            return "(function () { var f = window.__saFromApp; if (typeof f === 'function') { f(\(json)); } })();"
+        }
+    }
+}
+
+/// 자바스크립트에 글자를 넣을 때 쓴다.
+enum JavaScriptText {
+    /// 글자를 자바스크립트 글자 상수(따옴표 포함)로. JSON 글자는 자바스크립트 글자로도 읽힌다.
+    /// U+2028, U+2029 는 예전 자바스크립트 문법에서 줄바꿈으로 읽혀서 이스케이프해 둔다.
+    static func stringLiteral(_ text: String) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed]) else { return "\"\"" }
+        return String(decoding: data, as: UTF8.self)
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
     }
 }
 

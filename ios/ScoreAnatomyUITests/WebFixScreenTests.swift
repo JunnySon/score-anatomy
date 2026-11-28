@@ -30,18 +30,24 @@ final class WebFixScreenTests: XCTestCase {
 
     // MARK: 3-1. 규격 1 껍데기에서는 받은 자료 안내와 "새로 확인"이 없다
 
-    func testSpecOneShellShowsNoRemoteNoticeOrRefresh() throws {
-        let handle = AppHandle(name: "spec1")
+    /// 다리 규격 2 껍데기인데 받은 자료가 없으면(주소가 없는 지금의 앱) remote 는 null 이고 시험 선택 화면은 규격 1 때와 같다
+    /// (작업 지시서 4의 3-3: 주소나 진짜 공개 키가 없으면 규격 2로 돌고 remote 는 null, 화면은 지금과 같아야 한다).
+    func testSpecTwoShellWithoutDataShowsNoRemoteNoticeOrRefresh() throws {
+        let handle = AppHandle(name: "spec2-nodata")
         handle.launch()
         XCTAssertTrue(handle.button("시험 고르기").waitForExistence(timeout: 20))
         let app = handle.evaluate("""
         const a = window.__SA_APP__;
-        return { bridge: a.bridge, hasRemote: Object.prototype.hasOwnProperty.call(a, 'remote'), keys: Object.keys(a).sort().join(','),
+        return { bridge: a.bridge, hasRemote: Object.prototype.hasOwnProperty.call(a, 'remote'), remoteIsNull: a.remote === null, keys: Object.keys(a).sort().join(','),
                  remoteHandler: typeof (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.saRemote) };
         """) as? [String: Any] ?? [:]
-        XCTAssertEqual(app["bridge"] as? Int, 1, "껍데기는 다리 규격 1")
-        XCTAssertEqual(app["hasRemote"] as? Bool, false, "remote 칸을 넣지 않는다")
-        XCTAssertEqual(app["remoteHandler"] as? String, "undefined", "saRemote 메시지를 받는 곳이 없다")
+        XCTAssertEqual(app["bridge"] as? Int, 2, "껍데기는 다리 규격 2")
+        XCTAssertEqual(app["hasRemote"] as? Bool, true, "remote 칸이 있다")
+        XCTAssertEqual(app["remoteIsNull"] as? Bool, true, "받은 자료가 없으면 null")
+        XCTAssertEqual(app["remoteHandler"] as? String, "object", "saRemote 를 받는 곳이 있다")
+        Thread.sleep(forTimeInterval: 1.0)
+        let stats = handle.shellStats()
+        XCTAssertEqual((stats["remote"] as? [Any])?.count ?? 0, 0, "주소가 없으면 받지 않는다")
         handle.button("시험 고르기").tap()
         XCTAssertTrue(handle.any("어떤 시험을 넣을까요?").waitForExistence(timeout: 8), "시험 선택 화면")
         Thread.sleep(forTimeInterval: 0.8)
@@ -51,9 +57,9 @@ final class WebFixScreenTests: XCTestCase {
         }
         let body = handle.evaluate("return document.body.innerText;") as? String ?? ""
         XCTAssertFalse(texts.contains { body.contains($0) }, "화면 글자에도 없다")
-        handle.capture("규격1-시험선택", theme: "light")
-        record("규격 1 껍데기의 시험 선택", ["bridge": app["bridge"] ?? "", "hasRemote": app["hasRemote"] ?? "", "keys": app["keys"] ?? "", "remoteHandler": app["remoteHandler"] ?? "",
-                                     "shown": texts.filter { body.contains($0) }])
+        handle.capture("규격2-받은자료없음-시험선택", theme: "light")
+        record("규격 2 껍데기의 시험 선택(받은 자료 없음)", ["bridge": app["bridge"] ?? "", "hasRemote": app["hasRemote"] ?? "", "remoteIsNull": app["remoteIsNull"] ?? "",
+                                     "keys": app["keys"] ?? "", "remoteHandler": app["remoteHandler"] ?? "", "shown": texts.filter { body.contains($0) }])
     }
 
     // MARK: 2. 계단 카드의 제목이 접근성 요소 하나

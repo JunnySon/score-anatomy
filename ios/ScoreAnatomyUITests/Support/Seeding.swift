@@ -12,6 +12,15 @@ struct TapEvents {
 
     func count(_ name: String) -> Int { raw.filter { kind($0) == name }.count }
 
+    /// 둘째 누름(두 번째 pointerdown 부터 그다음 pointerup 까지)에 dblclick 이 왔는지. iOS 18.4 의 WebKit 이 둘째 click 을
+    /// 보내지 않는 경우의 모양이다(누르는 동안 dblclick 만 옴). 이벤트 차례로 본다.
+    var heldDoubleClickOnSecondPress: Bool {
+        let downs = raw.indices.filter { kind(raw[$0]) == "pointerdown" }
+        guard downs.count >= 2 else { return false }
+        let end = raw[downs[1]...].firstIndex { kind($0) == "pointerup" } ?? raw.endIndex
+        return raw[downs[1]..<end].contains { kind($0) == "dblclick" }
+    }
+
     /// 손가락에서 온 click 의 detail(trusted).
     var realClicks: [Int] {
         raw.filter { kind($0) == "click" && ($0["trusted"] as? Bool) == true }.compactMap { $0["detail"] as? Int }
@@ -88,6 +97,11 @@ extension AppHandle {
 
     /// 웹 화면 주소(# 뒤)를 바꿔 연다. 화면이 그려지고 처음 막기(0.5초)가 끝날 때까지 기다린다.
     func open(_ path: String, route: String, file: StaticString = #filePath, line: UInt = #line) {
+        // 앱의 첫 WKWebView는 묶음이 로드되기 전에도 보인다. 시작 문서가 준비된 뒤에만 hash를 바꾼다.
+        guard waitForStats(timeout: 30, { ($0["rendered"] as? Int ?? 0) > 0 && $0["failure"] == nil }) else {
+            XCTFail("화면 이동 전 시작 문서가 준비되지 않았다: \(shellStats())", file: file, line: line)
+            return
+        }
         _ = evaluate("location.hash = \(jsString("#" + path)); return true;")
         waitForRoute(route, file: file, line: line)
         Thread.sleep(forTimeInterval: 0.7)

@@ -166,9 +166,15 @@ final class FastTapTests: XCTestCase {
         let handle = start("fast-triple", answers: ExampleA.answers, path: "/marks", route: "/marks")
         let cell = handle.markCell(3)
         XCTAssertTrue(cell.waitForExistence(timeout: 5))
+        TapTimeline.clearLogs(handle)
         cell.tap(withNumberOfTaps: 3, numberOfTouches: 1)
         Thread.sleep(forTimeInterval: 0.9)
-        let events = handle.takeEvents()
+        let (raw, trace) = TapTimeline.takeLogs(handle)
+        let events = TapEvents(raw)
+        // 판정보다 먼저 시각과 웹 판단이 든 기록을 남긴다(결정기록 7.8 의 세 번 누름 건, iOS 18.4 에서 끝 상태가 갈린 적이 있다).
+        let end = "3번 칸 data-mark \(handle.markOf(3) ?? "?"), 버린 누름 알림 \(handle.noticeCount())"
+        TapTimeline.write(TapTimeline.classify(index: 1, events: raw, trace: trace, endState: end),
+                          title: "빠른 누름 테스트의 표시 칸 세 번 빠르게(앱을 켜고 표시 화면을 연 뒤 첫 누름)", name: "fasttap-triple")
         record("세 번 빠르게 누름(표시 칸)", events, result: cell.label)
         // 끝 상태(표시 없음)는 누르기 전과 같아서, 누름 셋이 실제로 처리됐는지(손가락 click 과 채운 click 이 모두 셋)도 본다.
         XCTAssertEqual(events.count("touchend"), 3, "손뗌 셋이 웹에 왔다: \(events.sequence)")
@@ -476,9 +482,18 @@ final class FastTapTests: XCTestCase {
         let discarded = after.discarded - before.discarded
         record("점수 해부: 고른 자리를 곧 다시 누름", events, result: "고른 칩 \(g1["checked"] ?? ""), 버린 누름 +\(discarded), 스크롤 \(g0["scrollTop"] ?? "") -> \(g1["scrollTop"] ?? ""), 손가락 자리의 요소 '\(under)'",
                extra: ["measure": true, "discardedDelta": discarded, "filledDelta": after.filled - before.filled])
-        XCTAssertEqual(events.realClicks.count, 2, "두 누름 모두 click 으로 왔다: \(events.sequence)")
+        // iOS 18.4 의 WebKit 은 가끔 둘째 누름의 click 을 보내지 않고 누르는 동안 dblclick 만 보낸다(docs/ios_결정기록.md 3장, 22번 기록).
+        // 그때 웹은 손가락 아래 요소가 앞 click 과 달라 채우지 않는다(결정기록 7.8). 둘째 누름이 옮겨 온 자리에 들어가지 않았다는 끝은 같고,
+        // 보호가 버릴 click 이 오지 않았으니 버린 누름은 늘지 않는다. 그 경우인지는 웹이 받은 이벤트 차례로 가린다.
+        let lostByWebKit = events.realClicks.count == 1 && events.heldDoubleClickOnSecondPress
+        if lostByWebKit {
+            XCTAssertEqual(discarded, 0, "WebKit 이 둘째 click 을 보내지 않은 경우: 버릴 click 이 없다: \(events.sequence)")
+            XCTAssertEqual(events.madeClicks, [], "WebKit 이 둘째 click 을 보내지 않은 경우: 다른 요소라 채우지 않는다: \(events.sequence)")
+        } else {
+            XCTAssertEqual(events.realClicks.count, 2, "두 누름 모두 click 으로 왔다: \(events.sequence)")
+            XCTAssertEqual(discarded, 1, "둘째 누름은 보호가 버렸다(옮겨 온 자리에 들어가지 않음)")
+        }
         XCTAssertNotEqual((g1["scrollTop"] as? NSNumber)?.doubleValue ?? -1, (g0["scrollTop"] as? NSNumber)?.doubleValue ?? -1, "첫 누름으로 첫 줄이 보이게 스크롤됐다")
-        XCTAssertEqual(discarded, 1, "둘째 누름은 보호가 버렸다(옮겨 온 자리에 들어가지 않음)")
         XCTAssertEqual(g1["checked"] as? [String], ["grade-1"], "1등급만 골라져 있다")
         XCTAssertEqual(g1["modal"] as? Int, 0, "시트가 열리지 않았다")
         XCTAssertEqual(g1["open"] as? Int, g0["open"] as? Int, "펼친 것이 바뀌지 않았다")

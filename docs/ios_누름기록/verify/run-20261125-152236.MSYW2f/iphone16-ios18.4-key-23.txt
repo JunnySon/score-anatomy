@@ -1,0 +1,25 @@
+# key 23번째
+# 기기 iphone16, iOS 18.4. 시각은 performance.now()(ms, 이 경우의 첫 이벤트 28137.0).
+# 손가락: pointer 이벤트는 pointerId, touch 이벤트는 그때 닿아 있는 손가락 수. trusted false 는 웹이 만들어 보낸 click.
+# 분류: 사라짐+채움. 누름 시작 사이 293.0ms, 손뗌에서 click 까지 2.0ms
+시각(ms)    종류           detail  trusted  손가락     x,y      대상 또는 웹 판단
+28137.0   pointerdown  0       true     -278125948 196,718  button:3
+28137.0   observed-down 0       true     -       196,718  BUTTON:3#1 [대상 key:3]
+28137.0   touchstart   0       true     1       196,718  button:3
+28213.0   pointerup    0       true     -278125948 196,718  button:3
+28213.0   touchend     0       true     0       196,718  button:3
+28215.0   click        1       true     -       197,718  button:3
+28215.0   accepted-click 1       true     -       197,718  BUTTON:3#1
+28430.0   pointerdown  0       true     -278125947 196,718  button:3
+28430.0   observed-down 0       true     -       196,718  BUTTON:3#1 [대상 key:3]
+28430.0   touchstart   0       true     1       196,718  button:3
+28498.0   dblclick     2       true     -       196,718  button:3
+28500.0   pointerup    0       true     -278125947 196,718  button:3
+28500.0   touchend     0       true     0       196,718  button:3
+28500.0   (웹 판단)       held-mark(detail 2, x 196, y 718)
+28500.0   (웹 판단)       held-wait(detail 2, x 196, y 718)
+28601.0   click        2       false    -       196,718  button:3
+28601.0   accepted-click 2       false    -       196,718  BUTTON:3#1
+28601.0   (웹 판단)       held-fill(detail 2, why timer, x 196, y 718)
+끝 상태: 답 키 3 으로 들어간 문항 2개(모두 14개), 버린 누름 알림 0. 받아들인 누름 2, 웹이 만든 click 1(누르는 동안 온 dblclick 으로 채움 1, 손뗌 수로 채움 0), 버림 0, 늦은 click 버림 0
+배율 1.0 -> 1.0, 요소별 누름 ["BUTTON:3#1": 2], 요소별 입력 ["BUTTON:3#1": 2], 초과 시각 []

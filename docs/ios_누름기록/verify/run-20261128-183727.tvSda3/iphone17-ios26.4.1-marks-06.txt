@@ -1,0 +1,24 @@
+# marks 6번째
+# 기기 iphone17, iOS 26.4.1. 시각은 performance.now()(ms, 이 경우의 첫 이벤트 25328.0).
+# 손가락: pointer 이벤트는 pointerId, touch 이벤트는 그때 닿아 있는 손가락 수. trusted false 는 웹이 만들어 보낸 click.
+# 분류: 보통. 누름 시작 사이 286.0ms, 손뗌에서 click 까지 3.0, 1.0ms
+시각(ms)    종류           detail  trusted  손가락     x,y      대상 또는 웹 판단
+25328.0   pointerdown  0       true     1840900247 53,334   mark-cell:6
+25328.0   observed-down 0       true     -       53,334   BUTTON:6#1 [대상 mark:6]
+25328.0   touchstart   0       true     1       53,334   mark-cell:6
+25395.0   pointerup    0       true     1840900247 53,334   mark-cell:6
+25396.0   touchend     0       true     0       53,334   mark-cell:6
+25398.0   click        1       true     -       53,334   mark-cell:6
+25398.0   accepted-click 1       true     -       53,334   BUTTON:6#1
+25398.0   (웹 판단)       touch-mousedown
+25614.0   pointerdown  0       true     1840900248 53,334   mark-cell:6
+25614.0   observed-down 0       true     -       53,334   BUTTON:6#1 [대상 mark:6]
+25615.0   touchstart   0       true     1       53,334   mark-cell:6
+25679.0   pointerup    0       true     1840900248 53,334   mark-cell:6
+25679.0   touchend     0       true     0       53,334   mark-cell:6
+25680.0   click        2       true     -       53,334   mark-cell:6
+25680.0   (웹 판단)       touch-mousedown
+25681.0   accepted-click 2       true     -       53,334   BUTTON:6#1
+25682.0   dblclick     2       true     -       53,334   mark-cell:6
+끝 상태: 6번 칸 data-mark guess, 버린 누름 알림 0. 받아들인 누름 2, 웹이 만든 click 0(누르는 동안 온 dblclick 으로 채움 0, 손뗌 수로 채움 0), 버림 0, 늦은 click 버림 0
+배율 1.0 -> 1.0, 요소별 누름 ["BUTTON:6#1": 2], 요소별 입력 ["BUTTON:6#1": 2], 초과 시각 []

@@ -4,7 +4,8 @@ import Foundation
 enum BridgeSpec {
     /// 다리 규격 번호. 웹 묶음의 manifest.json 에 적힌 bridge(묶음이 돌아가는 가장 낮은 규격) 이상, bridgeMax(웹이 아는
     /// 가장 높은 규격) 이하여야 한다(docs/앱_다리_규격.md 7-2, 단위 테스트 ManifestTests 가 확인한다).
-    static let version = 1
+    /// 규격 2: 받아 확인한 시험 자료를 remote 로 넘긴다(7장, 작업 지시서 4). 규격 1의 일은 그대로 한다.
+    static let version = 2
 
     /// 껍데기 종류(window.__SA_APP__.platform).
     static let platform = "ios"
@@ -14,6 +15,8 @@ enum BridgeSpec {
         case store = "saStore"
         case haptic = "saHaptic"
         case copy = "saCopy"
+        /// 규격 2: 새로 확인.
+        case remote = "saRemote"
     }
 }
 

@@ -251,7 +251,7 @@ final class BridgeTests: XCTestCase {
         let app = context.evaluateScript("window.__SA_APP__")!
         XCTAssertTrue(app.isObject, "글자가 아니라 객체로 넣는다")
         XCTAssertEqual(app.forProperty("platform").toString(), "ios")
-        XCTAssertTrue(context.evaluateScript("window.__SA_APP__.bridge === 1").toBool())
+        XCTAssertTrue(context.evaluateScript("window.__SA_APP__.bridge === 2").toBool(), "다리 규격 2(작업 지시서 4)")
         XCTAssertEqual(app.forProperty("appVersion").toString(), "0.2.0")
         XCTAssertEqual(app.forProperty("fontScale").toDouble(), 1.25)
         XCTAssertEqual(app.forProperty("store").toString(), tricky)
@@ -343,7 +343,7 @@ final class ShellConfigurationTests: XCTestCase {
         #endif
     }
 
-    func testOnlyTheThreeBridgeHandlersAreRegistered() {
-        XCTAssertEqual(BridgeSpec.Inbound.allCases.map(\.rawValue), ["saStore", "saHaptic", "saCopy"])
+    func testOnlyTheFourBridgeHandlersAreRegistered() {
+        XCTAssertEqual(BridgeSpec.Inbound.allCases.map(\.rawValue), ["saStore", "saHaptic", "saCopy", "saRemote"], "규격 2에서 saRemote 가 더해졌다")
     }
 }

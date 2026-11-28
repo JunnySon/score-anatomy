@@ -40,6 +40,7 @@ final class AppHandle {
     func launch(seed: String? = nil, extra: [String] = [], waitForStart: Bool = true) {
         var arguments = ["-AppleLanguages", "(ko)", "-AppleLocale", "ko_KR",
                          "-SAStoreDir", storeDirectory.path, "-SAProbeDir", probeDirectory.path]
+        if !extra.contains("-SAExamURL") { arguments += ["-SAExamURL", ""] }
         if let seed { arguments += ["-SASeed", seed] }
         app.launchArguments = arguments + extra
         app.launch()

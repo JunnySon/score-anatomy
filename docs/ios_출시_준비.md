@@ -4,6 +4,14 @@
 
 ## 1. 결론
 
+- 11월 28일 웹 0.3.4에서 iPhone 16(iOS 18.4와 26.4.1), iPhone 17(iOS 26.4.1) 시뮬레이터로 첫 누름 여섯 조건을 각각 10회씩 확인했어요. 180회 모두 시작과 최고 배율이 1이었고, 누른 횟수보다 입력을 많이 받은 요소는 없었어요. 앞서 iPhone 16 / iOS 18.4에서 웹 0.3.2와 0.3.3의 표시 칸을 처음 아주 빠르게 두 번 누르면 각각 10회 모두 1.6배가 됐어요. [버전별 원본과 0.3.4의 기기별 표](ios_확대_진단.md#웹-034-재측정2026-11-28)
+
+- 0.3.4에서 표시 칸을 처음 두 번 눌렀을 때 iPhone 16 / iOS 18.4에서는 10회 중 2회가 입력 0개, 2회가 1개였어요. iPhone 17 / iOS 26.4.1도 1회가 입력 1개였어요. 11월 26일 웹 0.3.3의 전체 검증에서는 누르지 않은 지우기 버튼 입력, 마지막 빈칸의 답 4 미저장, HTML에 닿은 누름이 4번 표시 칸의 입력으로 기록되는 사례가 있었어요. 이번 전체 verify에서 해당 iOS 18.4 화면 테스트가 통과했고, 기존 반복 측정과 첫 누름 측정에서도 요소별 초과 입력은 0회였어요. [0.3.3 지우기 원본](ios_누름기록/검증-0.3.3-2026-11-26-1226/iphone16-ios18.4-key-triple-first-04.txt), [답 미저장과 4번 칸 원본](ios_확대_진단.md#1407에-다시-시작한-전체-검증)
+
+- 0.3.4에서 출시 전에 고칠 입력 누락은 두 가지예요. iPhone 17 / iOS 26.4.1에서 3번 표시 칸을 419ms 간격으로 두 번 눌러도 “고민”이 남았고, 빈 답 키패드에서 3을 678ms, 67ms 간격으로 세 번 누르면 첫 문항에만 답이 저장됐어요. 두 경우 모두 손가락 click은 1회, 웹이 채운 click은 0회였어요. 전체 verify가 종료 코드 1이어서 PR #9는 열어 뒀어요. [두 동작의 재현 순서와 저장 원본](ios_확대_진단.md#iphone-17에서-입력이-빠진-두-경우)
+
+- 세 시뮬레이터에서 0.3.4의 두 손가락 확대는 1.72~1.75배였고, 표시 칸에서 스크롤하면 본문이 330~341px 움직이며 입력은 0회였어요. 9번 칸을 0.7초 누르면 0.3.3과 0.3.4 모두 “고민”이 한 번 들어가 저장됐고, 0.3.4의 진행자 화면은 자판으로 입력한 `P01`을 표시했어요. 두 버전을 합쳐 XCTest 15건이 통과했어요. 출시 전에는 실제 아이폰에서 첫 두 번 누름, 두 손가락 확대, 버튼 위 스크롤, 길게 누름, VoiceOver로 선택한 요소의 실행을 확인해요. [기기별 제스처 결과](ios_확대_진단.md#확대-스크롤-길게-누름과-진행자-글-입력), [실기기 확인표 29~33번](ios_실기기_확인표.md#2-확인표)
+
 - TestFlight 전: 유료 Apple Developer Program 회원이어야 TestFlight 를 쓸 수 있어요. 개인 등록은 거주 지역의 성년이어야 하고 한국의 성년은 만 19세라서, 개발자가 만 19세 미만이면 보호자 명의 등록 방법을 Apple 에 먼저 물어야 해요. https://developer.apple.com/programs/enroll/, https://www.law.go.kr/법령/민법/제4조 (확인: 2026-11-24)
 - TestFlight 전: 고등학생은 외부 테스터로 초대하고, 첫 빌드는 TestFlight App Review 를 받아요. 사용권 계약에 '앱이 주로 아동 대상이면 테스터가 성년인지 확인하라'는 조항이 있어서, 이 앱이 여기에 해당하는지 테스트 전에 Apple 에 확인해야 해요. https://developer.apple.com/support/terms/apple-developer-program-license-agreement/ (확인: 2026-11-24)
 - App Store 전: 개인정보 처리방침 URL 과 앱 안 처리방침, 지원 URL, 앱 개인정보 답변, 연령 등급 설문, 스크린샷이 있어야 해요. '예시' 시험만 든 빌드는 TestFlight 로만 보내고, 실제 시험의 정답과 등급컷은 출처의 이용 조건을 사람이 확인한 뒤에 넣어요. https://developer.apple.com/app-store/review/guidelines/ (확인: 2026-11-24)
@@ -22,12 +30,12 @@
 
 ### 전제로 한 앱 상태(앱 설명, 조사 대상 아님)
 
-- 이름은 '모고칸'이에요(2026-11-24 에 정함. 처음 조사할 때는 '점수 해부'였고, 웹 묶음 안의 화면 제목은 아직 '점수 해부'예요). App Store Connect 에서 같은 이름이 이미 쓰이고 있는지는 확인하지 못했어요. iPhone 전용, 한국어 전용이에요.
+- 이름은 '모고칸'이에요(2026-11-24 에 정함. 처음 조사할 때는 '점수 해부'였어요. 웹 묶음 0.3.2 부터 시작 화면 제목과 문서 제목도 '모고칸'이고, '점수 해부'는 앱 안의 화면 이름으로 남아요). App Store Connect 에서 같은 이름이 이미 쓰이고 있는지는 확인하지 못했어요. iPhone 전용, 한국어 전용이에요.
 - 고등학생(대부분 17세, 미성년)이 종이 수학 모의고사의 답을 넣고 점수를 나눠 봐요.
 - Swift, SwiftUI, WKWebView 로 만든 얇은 네이티브 껍데기가 번들 안의 오프라인 단일 파일 웹 UI 를 띄워요.
-- 네트워크가 전혀 없어요. WebKit 콘텐츠 규칙이 http, https, ws, wss 를 막고, 번들 밖으로의 이동은 취소돼요.
+- 웹뷰의 바깥 요청과 번들 밖 이동을 막아요. 규격 2 껍데기는 받는 주소와 공개 키를 설정한 빌드에서만 서명된 시험 자료를 받아요. 지금 Release에는 두 값이 없어요.
 - 계정, 분석, 광고, 권한 요청이 없어요. 기록은 기기 안 파일에 남고 일반 기기 백업에 들어가며, 서버로 가지 않아요.
-- 최소 iOS 17.0 이고, Xcode 26.4.1 과 iOS 26.4 SDK 로 빌드해요.
+- 최소 iOS 18.0 이고(작업 지시서 4에서 17.0 에서 올렸어요. iOS 17 런타임을 이 Xcode 로 받을 수 없어 확인할 방법이 없었고, iOS 18 은 iOS 17 이 돌던 기종 전부에서 돌아요), Xcode 26.4.1 과 iOS 26.4 SDK 로 빌드해요.
 - 지금 빌드에는 '예시' 표시가 붙은 가짜 정답의 샘플 시험만 있어요. 개인정보 처리방침 화면은 없어요.
 - 첫 실제 사용(2027년 3월 모의고사) 전에 고등학생 8~10명과 사용성 테스트를 할 계획이에요.
 
@@ -43,7 +51,7 @@
 
 ## 3. 올릴 때 필요한 Xcode 와 SDK
 
-- **결론:** 지금 환경(Xcode 26.4.1, iOS 26.4 SDK, 최소 iOS 17.0)은 현재 업로드 요건을 충족해요(추론). 2027년 4월부터는 iOS 27 SDK 가 필요해요. https://developer.apple.com/news/upcoming-requirements/, https://developer.apple.com/app-store/submitting/ (확인: 2026-11-24)
+- **결론:** 지금 환경(Xcode 26.4.1, iOS 26.4 SDK, 최소 iOS 18.0)은 현재 업로드 요건을 충족해요(추론). 2027년 4월부터는 iOS 27 SDK 가 필요해요. https://developer.apple.com/news/upcoming-requirements/, https://developer.apple.com/app-store/submitting/ (확인: 2026-11-24)
 
 ### 지금 요건
 
@@ -75,7 +83,7 @@
 ### 이 앱에 적용하면
 
 - 추론: 2027년 3월 말까지 올리는 빌드는 지금 환경으로 돼요. 2027년 4월 이후의 업데이트와 새 TestFlight 빌드에는 Xcode 27 계열이 필요하고, Mac 이 macOS Tahoe 26.6 이상을 돌려야 해요. https://developer.apple.com/app-store/submitting/, https://developer.apple.com/xcode/system-requirements (확인: 2026-11-24)
-- 추론: 최소 iOS 17.0 은 2027년 4월의 iOS 15 대상 조건과 Xcode 27 의 실기기 지원(iOS 17 이상) 안에 있어요. https://developer.apple.com/xcode/system-requirements (확인: 2026-11-24)
+- 추론: 최소 iOS 18.0 은 2027년 4월의 iOS 15 대상 조건과 Xcode 27 의 실기기 지원(iOS 17 이상) 안에 있어요. https://developer.apple.com/xcode/system-requirements (확인: 2026-11-24)
 - 제안: Xcode 27 로 언제 옮길지는 사람이 정해요. 옮기기 전에 앱이 UIScene 생명주기를 쓰는지, 방향 고정 같은 설정이 있는지 확인해요.
 
 ## 4. 개발자 계정 조건
@@ -150,7 +158,7 @@
 - 개발자가 Expire Build 를 누르면 내부, 외부 테스터 모두 그 빌드를 설치할 수 없어요. https://developer.apple.com/help/app-store-connect/test-a-beta-version/stop-testing-a-build (확인: 2026-11-24)
 - 테스터는 최대 30대 기기에 설치할 수 있고, iPhone 은 iOS 16 이상이어야 해요. https://testflight.apple.com/ (확인: 2026-11-24)
 - 한국 App Store 의 TestFlight 앱은 무료, 연령 등급 12+, iOS 16.0 이상이에요. 이것은 앱의 등급이지 테스터 자격 요건이 아니에요. https://apps.apple.com/kr/app/testflight/id899247664 (확인: 2026-11-24)
-- 추론: 이 앱의 최소 iOS 가 17.0 이라서 테스터 iPhone 은 iOS 17 이상이어야 해요. 사용성 테스트는 빌드를 올린 날부터 90일 안에 끝내야 해요. https://testflight.apple.com/ (확인: 2026-11-24)
+- 추론: 이 앱의 최소 iOS 가 18.0 이라서 테스터 iPhone 은 iOS 18 이상이어야 해요. 사용성 테스트는 빌드를 올린 날부터 90일 안에 끝내야 해요. https://testflight.apple.com/ (확인: 2026-11-24)
 
 ### 공개 링크
 
@@ -545,7 +553,7 @@
 - A: 2027년 4월 이후의 업데이트는 iOS 27 SDK 로 빌드해야 해요(3절). https://developer.apple.com/app-store/submitting/ (확인: 2026-11-24)
 - B: 데이터 파일을 바꿀 때마다 앱 심사를 받지는 않아요(추론). 다만 받기 기능을 처음 넣는 버전은 심사를 받고, 새 기능과 변경은 심사 메모에 구체적으로 적어야 하며(2.3.1(a)), 심사 중 기능을 숨기면 안 돼요. https://developer.apple.com/app-store/review/guidelines/, https://developer.apple.com/help/app-review/after-submitting-for-review/review-status (확인: 2026-11-24)
 - B 의 변형: Apple 이 호스팅하는 에셋 팩은 앱 빌드와 따로 내려받지만, 외부 TestFlight 나 App Store 에 내기 전에 App Review 심사를 받아요. https://developer.apple.com/help/app-store-connect/manage-submissions-to-app-review/submit-apple-hosted-asset-packs (확인: 2026-11-24)
-- Background Assets 프레임워크로 개발자 서버나 CDN 에서 추가 콘텐츠를 백그라운드로 받도록 예약할 수 있고, iOS 26 이상을 대상으로 하는 앱은 시스템이 관리하는 Managed Background Assets 를 쓸 수 있어요. 최소 iOS 17.0 인 이 앱에 어떤 방식이 맞는지는 확인하지 못했어요. https://developer.apple.com/help/app-store-connect/manage-asset-packs/overview-of-apple-hosted-asset-packs (확인: 2026-11-24)
+- Background Assets 프레임워크로 개발자 서버나 CDN 에서 추가 콘텐츠를 백그라운드로 받도록 예약할 수 있고, iOS 26 이상을 대상으로 하는 앱은 시스템이 관리하는 Managed Background Assets 를 쓸 수 있어요. 최소 iOS 18.0 인 이 앱에 어떤 방식이 맞는지는 확인하지 못했어요(작업 지시서 4는 뒤에서 받지 않기로 했어요). https://developer.apple.com/help/app-store-connect/manage-asset-packs/overview-of-apple-hosted-asset-packs (확인: 2026-11-24)
 
 ### 사용자 수고
 
@@ -636,7 +644,7 @@
 
 - 확인하지 못함: '예시' 샘플 시험이 2.1 의 임시 콘텐츠나 2.2 의 데모인지. 이유: 공식 기준이 없어요. https://developer.apple.com/app-store/review/guidelines/ (확인: 2026-11-24)
 - 확인하지 못함: 코드가 아닌 데이터 파일 다운로드의 명시적 허용과 '기능 변경' 판단 기준. 이유: 가이드라인에 없어요. https://developer.apple.com/app-store/review/guidelines/ (확인: 2026-11-24)
-- 확인하지 못함: 최소 iOS 17.0 앱에서 Apple 호스팅 에셋 팩을 쓸 수 있는지. 이유: 이번 자료에 없어요. https://developer.apple.com/help/app-store-connect/manage-asset-packs/overview-of-apple-hosted-asset-packs (확인: 2026-11-24)
+- 확인하지 못함: 최소 iOS 18.0 앱에서 Apple 호스팅 에셋 팩을 쓸 수 있는지. 이유: 이번 자료에 없어요. https://developer.apple.com/help/app-store-connect/manage-asset-packs/overview-of-apple-hosted-asset-packs (확인: 2026-11-24)
 - 확인하지 못함: iPhone 스크린샷의 필수 등급. 이유: 요약과 상세 표의 표현이 달라요. 업로드 화면에서 확인해야 해요. https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications (확인: 2026-11-24)
 - 확인하지 못함: iPhone 전용 앱에 13인치 iPad 스크린샷이나 Mac, Vision Pro 스크린샷이 필요한지. 이유: 사양 페이지에 명시가 없어요. https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications (확인: 2026-11-24)
 - 확인하지 못함: iOS 26.4 SDK 빌드가 iPadOS 27 에서 크기 조절 창으로 열리는지. 이유: 자료는 최신 SDK 로 다시 빌드하면 자동 적용된다고만 해요. https://developer.apple.com/videos/play/wwdc2026/102/ (확인: 2026-11-24)
@@ -679,7 +687,7 @@
 - [ ] 이메일 초대와 공개 링크(인원 제한) 중 하나를 골라요(5절).
 - [ ] 학생과 보호자용 안내문을 만들어요. TestFlight 약관의 보호자 검토, Apple 의 충돌 로그와 사용 정보 수집, 베타 비공개 의무, 연락 동의를 담아요(5절).
 - [ ] 사례를 줄지 2.2 와 약관 해석을 본 뒤 정해요(5절).
-- [ ] 학생 기기 1대로 TestFlight 설치를 미리 해 봐요. 학교 관리형 계정은 안 되고 iOS 17 이상이어야 해요(5절).
+- [ ] 학생 기기 1대로 TestFlight 설치를 미리 해 봐요. 학교 관리형 계정은 안 되고 iOS 18 이상이어야 해요(5절).
 - [ ] 빌드를 올린 날부터 90일 안에 사용성 테스트 날짜를 잡아요(5절).
 
 ### App Store 제출 전

@@ -1,0 +1,50 @@
+{
+ "device": "iphone16",
+ "ok": true,
+ "path": "ios/build/retap034.fiJDVk/resume18/iphone16-ios18.4/measurement.xcresult",
+ "summary": {
+  "devicesAndConfigurations": [
+   {
+    "device": {
+     "architecture": "arm64",
+     "deviceId": "CAE27A0B-619A-4801-8AE8-2F7C5973BE9D",
+     "deviceName": "SA034-iphone16-ios18.4-43426",
+     "modelName": "iPhone 16",
+     "osBuildNumber": "22E238",
+     "osVersion": "18.4",
+     "platform": "iOS Simulator"
+    },
+    "expectedFailures": 0,
+    "failedTests": 0,
+    "passedTests": 1,
+    "skippedTests": 0,
+    "testPlanConfiguration": {
+     "configurationId": "1",
+     "configurationName": "Test Scheme Action"
+    }
+   }
+  ],
+  "environmentDescription": "ScoreAnatomy \u00b7 Built with macOS 26.6.2",
+  "expectedFailures": 0,
+  "failedTests": 0,
+  "finishTime": 1795858064.544,
+  "passedTests": 1,
+  "result": "Passed",
+  "skippedTests": 0,
+  "startTime": 1795857529.135,
+  "statistics": [],
+  "testFailures": [],
+  "title": "Test - ScoreAnatomy",
+  "topInsights": [],
+  "totalTestCount": 1
+ },
+ "tests": [
+  {
+   "duration": 517.5752120018005,
+   "messages": [],
+   "name": "testWeb034FirstGestures",
+   "result": "Passed",
+   "suite": "ZoomDiagnosticsTests"
+  }
+ ]
+}

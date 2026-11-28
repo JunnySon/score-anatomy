@@ -1,0 +1,42 @@
+{
+  "devicesAndConfigurations" : [
+    {
+      "device" : {
+        "architecture" : "arm64",
+        "deviceId" : "9320B99F-497B-4F0B-A3AF-FCAF1AE98DF6",
+        "deviceName" : "SA-gesture-iphone16-ios18.4-44532",
+        "modelName" : "iPhone 16",
+        "osBuildNumber" : "22E238",
+        "osVersion" : "18.4",
+        "platform" : "iOS Simulator"
+      },
+      "expectedFailures" : 0,
+      "failedTests" : 0,
+      "passedTests" : 1,
+      "skippedTests" : 0,
+      "testPlanConfiguration" : {
+        "configurationId" : "1",
+        "configurationName" : "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription" : "ScoreAnatomy \u00b7 Built with macOS 26.6.2",
+  "expectedFailures" : 0,
+  "failedTests" : 0,
+  "finishTime" : 1795858174.406,
+  "passedTests" : 1,
+  "result" : "Passed",
+  "skippedTests" : 0,
+  "startTime" : 1795858137.463,
+  "statistics" : [
+
+  ],
+  "testFailures" : [
+
+  ],
+  "title" : "Test - ScoreAnatomy",
+  "topInsights" : [
+
+  ],
+  "totalTestCount" : 1
+}

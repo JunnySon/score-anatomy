@@ -9,6 +9,16 @@ import type { Answers, Exam } from './types';
 
 // 문서에 적은 숫자가 실제 계산과 맞는지 본다.
 
+it('README 제목과 잠금 파일의 자기 버전 두 곳이 package.json과 같아요', () => {
+  const file = (name: string) => readFileSync(resolve(process.cwd(), name), 'utf8');
+  const { version } = JSON.parse(file('package.json'));
+  const lock = JSON.parse(file('package-lock.json'));
+  const title = file('README.md').split(/\r?\n/, 1)[0];
+  expect(title.match(/버전 ([^\s)]+)\)$/)?.[1]).toBe(version);
+  expect(lock.version).toBe(version);
+  expect(lock.packages[''].version).toBe(version);
+});
+
 const guide = readFileSync(resolve(process.cwd(), 'docs/사용성테스트_진행안내.md'), 'utf8');
 const keys = [...guide.matchAll(/붙여 넣을 답지: `([^`]+)`/g)].map((m) => m[1]!);
 

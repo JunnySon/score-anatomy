@@ -471,8 +471,8 @@ const REQUIRED = {
   smallStates: 133, // 작은 화면(360x640)에서 검사한 화면 상태 수의 최소
   overflowTests: 8, // 가로 넘침 화면 테스트(e2e/horizontal-width.spec.ts, 작업 지시서 4-1 의 2-2) 수: 폭 일곱 가지와 앱용 묶음 하나
   overflowChecks: 203, // 가로 넘침을 잰 수의 최소: 폭 7가지마다 일반 빌드 화면 17개(119)와 앱용 묶음 둘의 화면 6개(84)
-  e2eTests: 263, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22). 표시 화면의 자리 밀림(별도 검토 C10)에서 2개 늘었다(rhythm 1, fill 1). 작업 지시서 4의 2-2에서 27개, 그 별도 검토에서 6개 늘었다(fill 5, appRemote 1). 0.3.3(작업 지시서 4-1)에서 22개 늘었다(fill 14, overflow 8).
-  unitTests: 462, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기). 작업 지시서 4의 2-2에서 1개 늘었다(누르는 동안 온 dblclick 으로 채운 누름 세기).
+  e2eTests: 276, // 실제로 돈 화면 테스트 수의 최소(건너뛴 것은 세지 않는다). 작업 지시서 3-1에서 56개 늘었다(fill 34, iosweb 22). 표시 화면의 자리 밀림(별도 검토 C10)에서 2개 늘었다(rhythm 1, fill 1). 작업 지시서 4의 2-2에서 27개, 그 별도 검토에서 6개 늘었다(fill 5, appRemote 1). 0.3.3(작업 지시서 4-1)에서 22개 늘었다(fill 14, overflow 8). 0.3.4에서 손가락 mousedown 검사 13개를 더했다.
+  unitTests: 463, // 통과한 단위 테스트 수의 최소. 작업 지시서 3-1에서 1개 늘었다(채운 누름 세기). 작업 지시서 4의 2-2에서 1개 늘었다(누르는 동안 온 dblclick 으로 채운 누름 세기). 0.3.4에서 버전 일치 검사 1개를 더했다.
   toolTests: 104, // 통과한 발행 도구(scripts/exams) 단위 테스트 수의 최소(13번)
   leakChecks: 64, // 화면 글자와 속성을 읽는 정답 노출 검사 횟수의 최소
   leakCompared: 25, // 정답만 다른 두 빌드의 화면을 통째로 견준 곳의 최소
@@ -485,6 +485,7 @@ const REQUIRED = {
   // 작업 지시서 4의 2-2(누르는 동안 온 dblclick 으로 채우기)에서 27개, 그 별도 검토에서 5개 늘었다(같은 결과 14, 채우는 경우와 채우지 않는 경우 15, 세 번 누름 2, 측정 1).
   // 0.3.3(작업 지시서 4-1 의 2-1)에서 독립 검토의 회귀 4개를 포함해 14개 늘었다(채운 곳의 장부, 꼭 넣을 테스트 1~8, 10, 11. 9번은 고치기 전 코드로 1번을 돌려 본 것).
   fillTests: 81,
+  touchButtonTests: 13, // 실제 터치와 이벤트 열, 마우스와 펜, 키보드, 글 입력, 끈 빌드
   iosWebTests: 22, // 아이폰에서 찾은 보기 문제 화면 테스트(e2e/iosweb.spec.ts, 작업 지시서 3-1의 3-2 ~ 3-5) 수
 };
 // 검사 기록에 결과 칸이 빠져 있으면 0건으로 세지 않는다(칸이 없는 것과 찾은 것이 없는 것은 다르다).
@@ -555,11 +556,13 @@ const unitOk =
 const flowTests = byFile('flow.spec.ts');
 const missingE2e = REQUIRED_E2E_TESTS.filter((title) => !tests.some((t) => t.file.endsWith('rhythm.spec.ts') && t.title === title && t.ok));
 // 작업 지시서 3-1: 빠진 누름 채우기(3-1)와 아이폰에서 찾은 보기 문제(3-2 ~ 3-5)의 화면 테스트. 줄거나 실패하면 2번 항목이 실패한다.
+const touchButtonTests = byFile('touch-button.spec.ts');
+const touchButtonOk = allOk(touchButtonTests) && touchButtonTests.length === REQUIRED.touchButtonTests;
 const fillTests = byFile('fill.spec.ts');
 const iosWebTests = byFile('iosweb.spec.ts');
 const fillOk = allOk(fillTests) && fillTests.length === REQUIRED.fillTests;
 const iosWebOk = allOk(iosWebTests) && iosWebTests.length === REQUIRED.iosWebTests;
-const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0 && fillOk && iosWebOk;
+const flowOk = allOk(flowTests) && flowTests.length === 4 && flows.length === 4 && missingE2e.length === 0 && fillOk && iosWebOk && touchButtonOk;
 const smallTests = [...byFile('small.spec.ts'), ...tests.filter((t) => t.title.includes('360x640'))];
 // 가로 넘침(작업 지시서 4-1 의 2-2): 폭 일곱 가지에서 모든 화면의 문서 폭과 화면 밖으로 나간 요소를 잰다(e2e/horizontal-width.spec.ts).
 const overflowTests = byFile('horizontal-width.spec.ts');
@@ -734,7 +737,7 @@ function buildReport(textOk, textResult) {
       '2',
       '화면 흐름(390x844)',
       flowOk,
-      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인. 꼭 있어야 하는 기다리지 않는 좌표 누름 테스트 ${REQUIRED_E2E_TESTS.length}개 가운데 ${REQUIRED_E2E_TESTS.length - missingE2e.length}개 통과. 빠진 누름 채우기 테스트(e2e/fill.spec.ts) ${fillTests.length}개 가운데 ${fillTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.fillTests}개). 아이폰에서 찾은 보기 문제 테스트(e2e/iosweb.spec.ts) ${iosWebTests.length}개 가운데 ${iosWebTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.iosWebTests}개)`,
+      `흐름 ${flowTests.length}개 가운데 ${flowTests.filter((t) => t.ok).length}개 통과(시험 A 키패드, 시험 A 5행, 시험 B, 시험 C). 점수 해부의 78, 7점, 8점, 3~7점, 약 75점, 6~10점 확인. 꼭 있어야 하는 기다리지 않는 좌표 누름 테스트 ${REQUIRED_E2E_TESTS.length}개 가운데 ${REQUIRED_E2E_TESTS.length - missingE2e.length}개 통과. 빠진 누름 채우기 테스트(e2e/fill.spec.ts) ${fillTests.length}개 가운데 ${fillTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.fillTests}개). 아이폰에서 찾은 보기 문제 테스트(e2e/iosweb.spec.ts) ${iosWebTests.length}개 가운데 ${iosWebTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.iosWebTests}개). 손가락 mousedown ${touchButtonTests.filter((t) => t.ok).length}개 통과(기대 ${REQUIRED.touchButtonTests}개)`,
     ],
     [
       '3',

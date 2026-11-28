@@ -6,6 +6,7 @@ import { runAnswers } from './answers.ts';
 import { runCheck } from './check.ts';
 import { runCuts } from './cuts.ts';
 import { displayPath } from './data.ts';
+import { runEntry } from './entry.ts';
 import { consoleIo } from './io.ts';
 import type { Io } from './io.ts';
 import { runKeygen } from './keygen.ts';
@@ -40,6 +41,7 @@ const COMMON: readonly OptionName[] = ['data', 'out'];
 
 const COMMANDS: Record<string, CommandSpec> = {
   check: { minArgs: 0, maxArgs: 0, options: COMMON, usage: 'check' },
+  entry: { minArgs: 0, maxArgs: 1, options: ['data'], usage: 'entry [홀수형 또는 짝수형]' },
   answers: { minArgs: 2, maxArgs: 2, options: [...COMMON, 'note'], usage: 'answers <정답 파일 1> <정답 파일 2> [--note "<정정 안내>"]' },
   cuts: { minArgs: 1, maxArgs: 1, options: COMMON, usage: 'cuts <기관별 추정 컷 파일>' },
   publish: {
@@ -57,6 +59,7 @@ const COMMANDS: Record<string, CommandSpec> = {
 const USAGE = [
   '사용법: node scripts/exams.mjs <명령> [인자] [--data <자료 폴더>] [--out <발행 폴더>]',
   '  check                         원본 시험 파일과 잠금 달력을 검사하고 발행한 기록과 견줘요. 파일을 쓰지 않아요.',
+  '  entry [문형]                  수능 입력지 두 장을 대조해 1판 원본을 만들어요. 문형은 홀수형이나 짝수형이에요.',
   '  answers <파일 1> <파일 2>     두 사람이 따로 적은 정답 파일이 같을 때만 원본 시험 파일에 정답을 넣어요.',
   '                                발행한 정답을 고칠 때는 --note "<정정 안내>" 가 있어야 해요.',
   '  cuts <입력 파일>              기관별 추정 컷으로 원본 시험 파일의 등급컷을 써요.',
@@ -175,6 +178,8 @@ export async function main(argv: readonly string[], io: Io = consoleIo): Promise
   switch (parsed.command) {
     case 'check':
       return runCheck({ dataDir, dataName }, io);
+    case 'entry':
+      return runEntry(dataDir, parsed.args[0], io);
     case 'answers':
       return runAnswers({ dataDir, files: [files[0], files[1]], names: [names[0], names[1]], note: parsed.options.note ?? null, dataArg }, io);
     case 'cuts':
